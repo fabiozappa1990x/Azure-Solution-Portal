@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure Solution Portal — Setup</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* ── Setup Page Specific Styles ── */
+        .setup-hero {
+            text-align: center;
+            padding: 60px 20px 40px;
+            background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%);
+            color: white;
+        }
+        .setup-hero h1 { font-size: 2.2rem; margin-bottom: 12px; }
+        .setup-hero p  { font-size: 1.1rem; opacity: 0.9; }
+        .setup-hero .hero-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.9; }
+
+        .setup-container {
+            max-width: 780px;
+            margin: 40px auto;
+            padding: 0 20px 60px;
+        }
+
+        .setup-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 16px rgba(0,0,0,.1);
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+        .setup-card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .setup-card-header h2 { margin: 0; font-size: 1.15rem; color: #1a1a2e; }
+        .setup-card-header .card-icon { font-size: 1.4rem; }
+
+        .setup-checks { padding: 8px 0; }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            padding: 16px 24px;
+            border-bottom: 1px solid #f5f5f5;
+            gap: 16px;
+            transition: background 0.15s;
+        }
+        .check-item:last-child { border-bottom: none; }
+        .check-item:hover { background: #fafafa; }
+
+        .check-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .check-icon.pending  { background: #f0f0f0; color: #666; }
+        .check-icon.checking { background: #e6f3ff; color: #0078d4; }
+        .check-icon.ok       { background: #e8f5e9; color: #107c10; }
+        .check-icon.warning  { background: #fff8e1; color: #ff8c00; }
+        .check-icon.error    { background: #fce8e6; color: #d13438; }
+
+        .check-content { flex: 1; }
+        .check-title   { font-weight: 600; color: #1a1a2e; margin-bottom: 3px; }
+        .check-desc    { font-size: 0.85rem; color: #666; }
+        .check-detail  { font-size: 0.8rem; margin-top: 4px; }
+        .check-detail.ok      { color: #107c10; }
+        .check-detail.warning { color: #ff8c00; }
+        .check-detail.error   { color: #d13438; }
+
+        .check-action { flex-shrink: 0; }
+        .btn-fix {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 7px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.83rem;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-block;
+            transition: background 0.15s;
+        }
+        .btn-fix:hover { background: #005a9e; }
+        .btn-fix.fix-warning { background: #ff8c00; }
+        .btn-fix.fix-warning:hover { background: #c45900; }
+
+        .spinner-small {
+            width: 16px; height: 16px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #0078d4;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .setup-actions {
+            text-align: center;
+            padding: 32px 24px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 16px rgba(0,0,0,.1);
+        }
+        .setup-actions p { color: #666; margin-bottom: 20px; font-size: 0.95rem; }
+
+        .btn-portal {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(135deg, #107c10, #054b05);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn-portal:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+        .btn-portal:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-portal i { font-size: 1.1rem; }
+
+        .btn-recheck {
+            background: none;
+            border: 2px solid #0078d4;
+            color: #0078d4;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            margin-right: 12px;
+            transition: all 0.15s;
+        }
+        .btn-recheck:hover { background: #0078d4; color: white; }
+
+        .setup-progress {
+            margin: 20px 0;
+            background: #f0f0f0;
+            border-radius: 4px;
+            height: 6px;
+            overflow: hidden;
+        }
+        .setup-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #0078d4, #107c10);
+            border-radius: 4px;
+            transition: width 0.4s ease;
+        }
+
+        .status-summary {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .status-summary.all-ok { background: #e8f5e9; color: #107c10; border: 1px solid #c8e6c9; }
+        .status-summary.partial { background: #fff8e1; color: #ff6f00; border: 1px solid #ffe082; }
+        .status-summary.checking { background: #e6f3ff; color: #0078d4; border: 1px solid #bbdefb; }
+
+        .instructions-box {
+            background: #f5f9ff;
+            border: 1px solid #cce4ff;
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: #003f88;
+        }
+        .instructions-box code {
+            background: #e3f0ff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', monospace;
+        }
+        .instructions-box.warning-box {
+            background: #fff8e1;
+            border-color: #ffe082;
+            color: #5f3d00;
+        }
+        .instructions-box.error-box {
+            background: #fce8e6;
+            border-color: #ffcdd2;
+            color: #7f0000;
+        }
+        .sub-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .sub-selector select {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1.5px solid #cce4ff;
+            border-radius: 6px;
+            font-size: 0.88rem;
+            background: white;
+            color: #1a1a2e;
+        }
+        .sub-selector select:focus { outline: none; border-color: #0078d4; }
+        .btn-sub-confirm {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .btn-sub-confirm:hover { background: #005a9e; }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <div class="logo">
+            <img src="https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/Azure.png" alt="Azure Logo">
+            <h1>Portale Soluzioni Azure</h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="setup.html" class="active">Setup</a></li>
+                <li><a href="index.html">Portale Soluzioni</a></li>
+                <li><a href="#">Documentazione</a></li>
+            </ul>
+        </nav>
+        <div class="auth-status">
+            <div id="auth-indicator" class="auth-indicator not-authenticated">
+                <i class="fas fa-user-slash"></i>
+                <span id="auth-text">Non autenticato</span>
+            </div>
+            <button id="auth-button" class="auth-button">Accedi con Microsoft</button>
+        </div>
+    </header>
+
+    <!-- HERO -->
+    <div class="setup-hero">
+        <div class="hero-icon"><i class="fas fa-cogs"></i></div>
+        <h1>Configurazione Prerequisiti</h1>
+        <p>Verifica che tutti i componenti necessari siano correttamente configurati prima di accedere al portale.</p>
+    </div>
+
+    <div class="setup-container">
+
+        <!-- PROGRESS -->
+        <div class="setup-progress">
+            <div class="setup-progress-bar" id="progress-bar" style="width: 0%"></div>
+        </div>
+
+        <!-- STATUS SUMMARY -->
+        <div class="status-summary checking" id="status-summary">
+            <i class="fas fa-sync fa-spin"></i>
+            <span>Verifica prerequisiti in corso...</span>
+        </div>
+
+        <!-- ── CHECK 1: AUTENTICAZIONE MICROSOFT ── -->
+        <div class="setup-card">
+            <div class="setup-card-header">
+                <span class="card-icon">🔐</span>
+                <h2>Autenticazione Microsoft (MSAL)</h2>
+            </div>
+            <div class="setup-checks">
+                <div class="check-item" id="check-msal">
+                    <div class="check-icon pending" id="icon-msal"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Libreria MSAL caricata</div>
+                        <div class="check-desc">Microsoft Authentication Library disponibile per l'autenticazione Azure AD</div>
+                        <div class="check-detail" id="detail-msal"></div>
+                    </div>
+                </div>
+                <div class="check-item" id="check-login">
+                    <div class="check-icon pending" id="icon-login"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Login Microsoft effettuato</div>
+                        <div class="check-desc">Accedi con il tuo account Microsoft/Azure per abilitare i check sulla subscription</div>
+                        <div class="check-detail" id="detail-login"></div>
+                    </div>
+                    <div class="check-action" id="action-login"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── CHECK 2: SUBSCRIPTION ── -->
+        <div class="setup-card">
+            <div class="setup-card-header">
+                <span class="card-icon">☁️</span>
+                <h2>Subscription Azure</h2>
+            </div>
+            <div class="setup-checks">
+                <div class="check-item" id="check-sub">
+                    <div class="check-icon pending" id="icon-sub"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Subscription selezionata</div>
+                        <div class="check-desc">Seleziona la subscription Azure dove sono (o saranno) create le risorse del portale</div>
+                        <div class="check-detail" id="detail-sub"></div>
+                        <div id="instr-sub" style="display:none">
+                            <div class="instructions-box">
+                                <strong>Seleziona la subscription Azure:</strong>
+                                <div class="sub-selector">
+                                    <select id="sub-select">
+                                        <option value="">— In caricamento... —</option>
+                                    </select>
+                                    <button class="btn-sub-confirm" onclick="onSubSelected()">
+                                        <i class="fas fa-check"></i> Conferma
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── CHECK 3: FUNCTION APP ── -->
+        <div class="setup-card">
+            <div class="setup-card-header">
+                <span class="card-icon">⚡</span>
+                <h2>Azure Function App (Backend Precheck)</h2>
+            </div>
+            <div class="setup-checks">
+                <div class="check-item" id="check-funcexist">
+                    <div class="check-icon pending" id="icon-funcexist"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Function App esistente nella subscription</div>
+                        <div class="check-desc">Verifica tramite Azure Management API che la Function App sia presente</div>
+                        <div class="check-detail" id="detail-funcexist"></div>
+                        <div id="instr-funcexist" style="display:none">
+                            <div class="instructions-box error-box">
+                                <strong>Function App non trovata — esegui Bootstrap.ps1:</strong><br><br>
+                                1. Apri <strong>PowerShell 7</strong> sul tuo PC<br>
+                                2. Naviga nella cartella del progetto<br>
+                                3. Esegui: <code>.\Bootstrap.ps1</code><br>
+                                4. Lo script crea automaticamente Function App, App Registration e configura tutto<br>
+                                5. Torna qui e clicca <strong>Ricontrolla</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="check-item" id="check-cors">
+                    <div class="check-icon pending" id="icon-cors"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Function App raggiungibile (CORS)</div>
+                        <div class="check-desc">La Function App deve accettare richieste cross-origin dal dominio corrente</div>
+                        <div class="check-detail" id="detail-cors"></div>
+                        <div id="instr-cors" style="display:none">
+                            <div class="instructions-box warning-box">
+                                <strong>Come configurare CORS:</strong><br>
+                                Opzione A — Azure Portal: Function App → Settings → CORS → Aggiungi <code id="cors-origin"></code><br>
+                                Opzione B — Azure CLI: <code>az functionapp cors add --name NOME --resource-group RG --allowed-origins *</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="check-item" id="check-funcs">
+                    <div class="check-icon pending" id="icon-funcs"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Tutti gli endpoint precheck attivi</div>
+                        <div class="check-desc">Le 5 funzioni (Monitor, AVD, Backup, Defender, Updates) devono essere deployate e rispondere</div>
+                        <div class="check-detail" id="detail-funcs"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── CHECK 4: AZURE AI ── -->
+        <div class="setup-card">
+            <div class="setup-card-header">
+                <span class="card-icon">🤖</span>
+                <h2>Azure OpenAI (Analisi AI)</h2>
+            </div>
+            <div class="setup-checks">
+                <div class="check-item" id="check-ai">
+                    <div class="check-icon pending" id="icon-ai"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Istanza Azure OpenAI configurata</div>
+                        <div class="check-desc">L'AI è configurata nella Function App per analizzare i risultati precheck</div>
+                        <div class="check-detail" id="detail-ai"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── ACTIONS ── -->
+        <div class="setup-actions">
+            <div id="actions-status"></div>
+            <p id="actions-desc">Completa tutti i prerequisiti per accedere al portale delle soluzioni.</p>
+            <button class="btn-recheck" id="btn-recheck" onclick="runAllChecks()">
+                <i class="fas fa-sync-alt"></i> Ricontrolla
+            </button>
+            <a href="index.html" class="btn-portal" id="btn-portal" style="display:none;">
+                <i class="fas fa-rocket"></i> Vai al Portale Soluzioni
+            </a>
+            <button class="btn-portal" id="btn-portal-disabled" disabled>
+                <i class="fas fa-lock"></i> Portale Soluzioni (prerequisiti mancanti)
+            </button>
+        </div>
+
+    </div><!-- /setup-container -->
+
+    <footer>
+        <p>&copy; 2024 Portale Soluzioni Azure. Tutti i diritti riservati.</p>
+    </footer>
+
+    <!-- MSAL -->
+    <script>
+        (function loadMSAL() {
+            const cdnUrls = [
+                'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js',
+                'https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js'
+            ];
+            let idx = 0;
+            function tryLoad() {
+                if (idx >= cdnUrls.length) { console.error('MSAL load failed'); return; }
+                const s = document.createElement('script');
+                s.src = cdnUrls[idx];
+                s.async = false;
+                s.onload = () => { console.log('MSAL loaded'); window.msalLoaded = true; };
+                s.onerror = () => { idx++; tryLoad(); };
+                document.head.appendChild(s);
+            }
+            tryLoad();
+        })();
+    </script>
+    <script src="setup.js"></script>
+</body>
+</html>

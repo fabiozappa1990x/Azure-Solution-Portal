@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portale Soluzioni Azure</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <img src="https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/Azure.png" alt="Azure Logo">
+            <h1>Portale Soluzioni Azure</h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="setup.html">Setup</a></li>
+                <li><a href="index.html" class="active">Soluzioni</a></li>
+                <li><a href="#">Documentazione</a></li>
+                <li><a href="#">Supporto</a></li>
+            </ul>
+        </nav>
+
+        <div class="auth-status">
+            <div id="auth-indicator" class="auth-indicator not-authenticated">
+                <i class="fas fa-user-slash"></i>
+                <span id="auth-text">Non autenticato</span>
+            </div>
+            <button id="auth-button" class="auth-button">Accedi con Microsoft</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h2>Soluzioni Azure Enterprise</h2>
+            <p>Implementa rapidamente soluzioni Azure pronte per l'uso in ambiente enterprise</p>
+        </section>
+
+        <section class="solutions">
+            <h2>Soluzioni Disponibili</h2>
+            <div class="solution-grid">
+
+                <!-- Azure Monitor -->
+                <div class="solution-card" id="card-azure-monitor">
+                    <div class="solution-icon" style="background: linear-gradient(135deg, #0078d4, #005a9e);">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="solution-badge badge-available">Disponibile</div>
+                    <h3>Azure Monitor</h3>
+                    <p>Monitoraggio completo per VM Azure: dashboard KQL, alert CPU/Memoria/Disco, Data Collection Rules e policy di auto-enrollment.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> Dashboard con 4 tab (Panoramica, Performance, Alert, Disponibilità)</li>
+                        <li><i class="fas fa-check"></i> Alert CPU, Memoria, Disco, Heartbeat</li>
+                        <li><i class="fas fa-check"></i> Azure Monitor Agent + DCR automatici</li>
+                        <li><i class="fas fa-check"></i> Policy auto-enrollment nuove VM</li>
+                    </ul>
+                    <div class="solution-actions">
+                        <button class="btn-details" data-solution="azure-monitor">Dettagli</button>
+                        <button class="btn-precheck" data-solution="azure-monitor">Precheck</button>
+                        <button class="btn-deploy" data-solution="azure-monitor">Deploy</button>
+                    </div>
+                </div>
+
+                <!-- Azure Virtual Desktop -->
+                <div class="solution-card" id="card-azure-avd">
+                    <div class="solution-icon" style="background: linear-gradient(135deg, #7719aa, #5c0e8b);">
+                        <i class="fas fa-desktop"></i>
+                    </div>
+                    <div class="solution-badge badge-available">Disponibile</div>
+                    <h3>Azure Virtual Desktop</h3>
+                    <p>Desktop virtuale enterprise con Host Pool, Session Hosts, FSLogix per profili utente, Scaling Plan automatico e integrazione Entra ID.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> Host Pool Pooled / Personal</li>
+                        <li><i class="fas fa-check"></i> Session Hosts Windows 11 multi-session</li>
+                        <li><i class="fas fa-check"></i> FSLogix su Azure Files (AADKERB)</li>
+                        <li><i class="fas fa-check"></i> Scaling Plan automatico</li>
+                    </ul>
+                    <div class="solution-actions">
+                        <button class="btn-details" data-solution="avd">Dettagli</button>
+                        <button class="btn-precheck" data-solution="avd">Precheck</button>
+                        <button class="btn-deploy" data-solution="avd">Deploy</button>
+                    </div>
+                </div>
+
+                <!-- Azure Backup -->
+                <div class="solution-card" id="card-azure-backup">
+                    <div class="solution-icon" style="background: linear-gradient(135deg, #107c10, #054b05);">
+                        <i class="fas fa-shield-halved"></i>
+                    </div>
+                    <div class="solution-badge badge-available">Disponibile</div>
+                    <h3>Azure Backup</h3>
+                    <p>Protezione dati enterprise con Recovery Services Vault, policy GFS (Daily/Weekly/Monthly/Yearly), soft delete e auto-protezione tramite Azure Policy.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> Recovery Services Vault (GRS/LRS)</li>
+                        <li><i class="fas fa-check"></i> Policy GFS configurabili</li>
+                        <li><i class="fas fa-check"></i> Enhanced Policy (backup orario)</li>
+                        <li><i class="fas fa-check"></i> Auto-protezione VM con tag</li>
+                    </ul>
+                    <div class="solution-actions">
+                        <button class="btn-details" data-solution="backup">Dettagli</button>
+                        <button class="btn-precheck" data-solution="backup">Precheck</button>
+                        <button class="btn-deploy" data-solution="backup">Deploy</button>
+                    </div>
+                </div>
+
+                <!-- Microsoft Defender for Cloud -->
+                <div class="solution-card" id="card-defender">
+                    <div class="solution-icon" style="background: linear-gradient(135deg, #d13438, #a01015);">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <div class="solution-badge badge-available">Disponibile</div>
+                    <h3>Microsoft Defender for Cloud</h3>
+                    <p>Postura di sicurezza cloud con piani Defender attivabili (Server, Storage, Key Vault, ARM), contatti di sicurezza e auto-provisioning MDE.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> Defender per Server P1/P2 (con MDE)</li>
+                        <li><i class="fas fa-check"></i> Defender CSPM</li>
+                        <li><i class="fas fa-check"></i> Auto-provisioning MDE + AMA</li>
+                        <li><i class="fas fa-check"></i> Microsoft Cloud Security Benchmark</li>
+                    </ul>
+                    <div class="solution-actions">
+                        <button class="btn-details" data-solution="defender">Dettagli</button>
+                        <button class="btn-precheck" data-solution="defender">Precheck</button>
+                        <button class="btn-deploy" data-solution="defender">Deploy</button>
+                    </div>
+                </div>
+
+                <!-- Azure Update Manager -->
+                <div class="solution-card" id="card-update-manager">
+                    <div class="solution-icon" style="background: linear-gradient(135deg, #ff8c00, #c45900);">
+                        <i class="fas fa-arrows-rotate"></i>
+                    </div>
+                    <div class="solution-badge badge-available">Disponibile</div>
+                    <h3>Azure Update Manager</h3>
+                    <p>Gestione patch centralizzata per VM Windows e Linux con Maintenance Configuration, finestre di manutenzione configurabili e policy di auto-patching.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> Maintenance Configuration Weekly/Monthly</li>
+                        <li><i class="fas fa-check"></i> Classificazioni aggiornamento configurabili</li>
+                        <li><i class="fas fa-check"></i> Policy auto-assessment e auto-patching</li>
+                        <li><i class="fas fa-check"></i> Supporto Windows e Linux</li>
+                    </ul>
+                    <div class="solution-actions">
+                        <button class="btn-details" data-solution="update-manager">Dettagli</button>
+                        <button class="btn-precheck" data-solution="update-manager">Precheck</button>
+                        <button class="btn-deploy" data-solution="update-manager">Deploy</button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <!-- ===== MODAL PRECHECK (generico, adattato per ogni soluzione) ===== -->
+    <div id="precheck-modal" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close-modal">&times;</span>
+            <h2 id="precheck-modal-title">Precheck</h2>
+            <p id="precheck-modal-desc">Analizza il tuo tenant Azure per verificare la compatibilità:</p>
+
+            <div class="precheck-form">
+                <div class="form-group">
+                    <label for="subscription-id">ID Sottoscrizione Azure:</label>
+                    <input type="text" id="subscription-id" placeholder="Inserisci l'ID della sottoscrizione (GUID)">
+                </div>
+                <div class="form-group">
+                    <label for="resource-group">Gruppo di Risorse (opzionale):</label>
+                    <input type="text" id="resource-group" placeholder="Inserisci il nome del gruppo di risorse">
+                </div>
+                <button id="run-precheck" class="btn-primary">Esegui Precheck</button>
+                <div class="precheck-tools" style="margin-top:12px;">
+                    <button id="copy-precheck-command" class="btn-secondary">Copia comando PowerShell</button>
+                </div>
+            </div>
+
+            <div id="precheck-loading" class="precheck-loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Analisi in corso... Questo potrebbe richiedere alcuni minuti.</p>
+                <div class="loading-steps">
+                    <div class="loading-step"><i class="fas fa-plug"></i><span>Connessione ad Azure in corso...</span></div>
+                    <div class="loading-step"><i class="fas fa-search"></i><span>Raccolta informazioni sulle risorse...</span></div>
+                    <div class="loading-step"><i class="fas fa-chart-bar"></i><span>Generazione report di compatibilità...</span></div>
+                </div>
+            </div>
+
+            <div id="precheck-results" class="precheck-results" style="display: none;">
+                <h3>Report di Compatibilità</h3>
+                <div class="report-header">
+                    <div class="report-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">Stato Generale:</span>
+                            <span id="overall-status" class="status-badge">In attesa</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">VM Analizzate:</span>
+                            <span id="vm-count">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Workspace Esistenti:</span>
+                            <span id="workspace-count">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tabs-container">
+                    <div class="tabs-nav">
+                        <button class="tab-button active" data-tab="overview">Panoramica</button>
+                        <button class="tab-button" data-tab="virtual-machines">Macchine Virtuali</button>
+                        <button class="tab-button" data-tab="workspaces">Log Analytics</button>
+                        <button class="tab-button" data-tab="dcr">Data Collection Rules</button>
+                        <button class="tab-button" data-tab="recommendations">Raccomandazioni</button>
+                    </div>
+
+                    <div class="tab-content">
+                        <div id="overview" class="tab-pane active">
+                            <h4>Analisi dell'ambiente</h4>
+                            <div class="overview-stats">
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-server"></i></div>
+                                    <div class="stat-value" id="overview-vm-total">0</div>
+                                    <div class="stat-label">VM Totali</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                                    <div class="stat-value" id="overview-vm-monitored">0</div>
+                                    <div class="stat-label">VM Monitorate</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-database"></i></div>
+                                    <div class="stat-value" id="overview-workspaces">0</div>
+                                    <div class="stat-label">Workspace</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-list"></i></div>
+                                    <div class="stat-value" id="overview-dcr">0</div>
+                                    <div class="stat-label">DCR</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="virtual-machines" class="tab-pane">
+                            <h4>Dettaglio Macchine Virtuali</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="vm-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome VM</th>
+                                            <th>Gruppo di Risorse</th>
+                                            <th>Stato</th>
+                                            <th>Agente Monitor</th>
+                                            <th>Sistema Operativo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="workspaces" class="tab-pane">
+                            <h4>Dettaglio Log Analytics Workspace</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="workspace-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome Workspace</th>
+                                            <th>Gruppo di Risorse</th>
+                                            <th>Regione</th>
+                                            <th>VM Insights</th>
+                                            <th>Retention (giorni)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="dcr" class="tab-pane">
+                            <h4>Dettaglio Data Collection Rules</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="dcr-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome DCR</th>
+                                            <th>Gruppo di Risorse</th>
+                                            <th>Tipo</th>
+                                            <th>Destinazione</th>
+                                            <th>VM Associate</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="recommendations" class="tab-pane">
+                            <h4>Raccomandazioni</h4>
+                            <div class="recommendations-container" id="recommendations-content"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="report-actions">
+                    <button id="download-report" class="btn-secondary">Scarica Report</button>
+                    <button id="proceed-to-deploy" class="btn-primary">Procedi con il Deployment</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL DEPLOY (generico, adattato per ogni soluzione) ===== -->
+    <div id="deploy-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 id="deploy-modal-title">Deploy</h2>
+            <p id="deploy-modal-desc">Deployment rapido con un click tramite il portale Azure:</p>
+
+            <!-- Deploy to Azure — opzione PRIMARIA -->
+            <div id="deploy-portal-option" class="deploy-options deploy-primary">
+                <a id="deploy-portal-link" href="#" class="deploy-button" target="_blank">
+                    <img src="https://aka.ms/deploytoazurebutton" alt="Deploy to Azure">
+                </a>
+                <div class="deploy-info">
+                    <h4>Deploy to Azure Portal</h4>
+                    <p>Wizard guidato: configura i parametri e deploya la soluzione in pochi minuti senza scrittura di codice.</p>
+                </div>
+            </div>
+
+            <!-- PowerShell — opzione OPZIONALE (download) -->
+            <div class="deploy-options deploy-optional">
+                <div class="deploy-ps-icon">
+                    <i class="fas fa-terminal"></i>
+                </div>
+                <div class="deploy-info">
+                    <h4>Script PowerShell <span class="badge-optional">Opzionale</span></h4>
+                    <p>Per deployment automatizzato, pipeline CI/CD o personalizzazione avanzata.</p>
+                    <pre id="deploy-ps-command"><code>.\Deploy-MonitorHub.ps1 -SubscriptionId "YOUR-SUB-ID"</code></pre>
+                    <div id="deploy-ps-download-area" style="margin-top: 10px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 Portale Soluzioni Azure. Tutti i diritti riservati.</p>
+    </footer>
+
+    <!-- MSAL Library -->
+    <script>
+        (function loadMSAL() {
+            const cdnUrls = [
+                'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js',
+                'https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js'
+            ];
+            let currentIndex = 0;
+            function tryLoadScript() {
+                if (currentIndex >= cdnUrls.length) { console.error('❌ Impossibile caricare MSAL'); return; }
+                const script = document.createElement('script');
+                script.src = cdnUrls[currentIndex];
+                script.async = false;
+                script.onload = () => console.log('✅ MSAL caricato da:', cdnUrls[currentIndex]);
+                script.onerror = () => { console.warn('⚠️ Fallito:', cdnUrls[currentIndex]); currentIndex++; tryLoadScript(); };
+                document.head.appendChild(script);
+            }
+            tryLoadScript();
+        })();
+    </script>
+
+    <script src="script.js"></script>
+</body>
+</html>

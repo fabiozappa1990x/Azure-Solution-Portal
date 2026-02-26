@@ -1,0 +1,8 @@
+.git*
+.vscode
+local.settings.json
+test
+.DS_Store
+*.md
+bin
+obj

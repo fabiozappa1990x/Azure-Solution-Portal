@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.vs/
+bin/
+obj/
+
+.DS_Store
+*.tmp
+server-log.txt

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portale Soluzioni Azure</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <img src="https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/Azure.png" alt="Azure Logo">
+            <h1>Portale Soluzioni Azure</h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="#" class="active">Home</a></li>
+                <li><a href="#">Documentazione</a></li>
+                <li><a href="#">Supporto</a></li>
+                <li><a href="#">Contatti</a></li>
+            </ul>
+        </nav>
+        
+        <div class="auth-status">
+            <div id="auth-indicator" class="auth-indicator not-authenticated">
+                <i class="fas fa-user-slash"></i>
+                <span id="auth-text">Non autenticato</span>
+            </div>
+            <button id="auth-button" class="auth-button">Accedi con Microsoft</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h2>Soluzioni Azure Enterprise</h2>
+            <p>Implementa rapidamente soluzioni Azure pronte per l'uso in ambiente enterprise</p>
+        </section>
+
+        <section class="solutions">
+            <h2>Soluzioni Disponibili</h2>
+            <div class="solution-grid">
+                <!-- Azure Monitor Solution -->
+                <div class="solution-card" id="azure-monitor">
+                    <div class="solution-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h3>Azure Monitor</h3>
+                    <p>Soluzione completa di monitoraggio per macchine virtuali Azure con dashboard, alert e automazione.</p>
+                    <div class="solution-actions">
+                        <button class="btn-details">Dettagli</button>
+                        <button class="btn-precheck" data-solution="azure-monitor">Precheck</button>
+                        <button class="btn-deploy" data-solution="azure-monitor">Deploy</button>
+                    </div>
+                </div>
+
+                <!-- Other Azure Solutions (placeholders) -->
+                <div class="solution-card">
+                    <div class="solution-icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <h3>Azure Security Center</h3>
+                    <p>Protezione avanzata per i tuoi workload cloud con monitoraggio continuo e suggerimenti di sicurezza.</p>
+                    <div class="solution-actions">
+                        <button class="btn-details">Dettagli</button>
+                        <button class="btn-deploy" data-solution="security-center">Deploy</button>
+                    </div>
+                </div>
+
+                <div class="solution-card">
+                    <div class="solution-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <h3>Azure SQL Database</h3>
+                    <p>Database SQL completamente gestito con alta disponibilità, backup automatici e intelligence integrata.</p>
+                    <div class="solution-actions">
+                        <button class="btn-details">Dettagli</button>
+                        <button class="btn-deploy" data-solution="sql-database">Deploy</button>
+                    </div>
+                </div>
+
+                <div class="solution-card">
+                    <div class="solution-icon">
+                        <i class="fas fa-server"></i>
+                    </div>
+                    <h3>Azure Kubernetes Service</h3>
+                    <p>Servizio Kubernetes gestito per semplificare il deployment, la gestione e le operazioni di Kubernetes.</p>
+                    <div class="solution-actions">
+                        <button class="btn-details">Dettagli</button>
+                        <button class="btn-deploy" data-solution="kubernetes">Deploy</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal per Azure Monitor Deploy -->
+    <div id="deploy-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Deploy Azure Monitor Hub</h2>
+            <p>Scegli un'opzione di deployment:</p>
+            <div class="deploy-options">
+                <a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fsoridsnake%2Fazure-monitor-hub%2Fmain%2Fportal-ui%2Fdeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Fsoridsnake%2Fazure-monitor-hub%2Fmain%2Fportal-ui%2FcreateUiDefinition.json%3Fv%3D5" class="deploy-button" target="_blank">
+                    <img src="https://aka.ms/deploytoazurebutton" alt="Deploy to Azure">
+                </a>
+                <div class="deploy-info">
+                    <h4>Deployment rapido tramite Azure Portal</h4>
+                    <p>Questa opzione ti porterà direttamente al portale Azure dove potrai configurare e deployare Azure Monitor Hub in pochi minuti.</p>
+                </div>
+            </div>
+            <div class="deploy-options">
+                <button class="deploy-button script-deploy">
+                    <i class="fas fa-terminal"></i> PowerShell
+                </button>
+                <div class="deploy-info">
+                    <h4>Deployment tramite PowerShell</h4>
+                    <p>Utilizza lo script PowerShell per un deployment automatizzato e personalizzabile.</p>
+                    <pre><code>.\Deploy-MonitorHub.ps1 -SubscriptionId "YOUR-SUB-ID" -DeploymentName "my-monitoring"</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal per Azure Monitor Precheck -->
+    <div id="precheck-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Precheck Azure Monitor Hub</h2>
+            <p>Analizza il tuo tenant Azure per verificare la compatibilità con Azure Monitor Hub:</p>
+            
+            <div class="precheck-form">
+                <div class="form-group">
+                    <label for="subscription-id">ID Sottoscrizione Azure:</label>
+                    <input type="text" id="subscription-id" placeholder="Inserisci l'ID della sottoscrizione">
+                </div>
+                <div class="form-group">
+                    <label for="resource-group">Gruppo di Risorse (opzionale):</label>
+                    <input type="text" id="resource-group" placeholder="Inserisci il nome del gruppo di risorse">
+                </div>
+                <button id="run-precheck" class="btn-primary">Esegui Precheck</button>
+                <div class="precheck-tools" style="margin-top:12px;">
+                    <button id="copy-precheck-command" class="btn-secondary">Copia comando PowerShell (testluca.ps1)</button>
+                    <a href="scripts/testluca.ps1" download style="margin-left:8px;" class="btn-link">Scarica testluca.ps1</a>
+                </div>
+            </div>
+            
+            <div id="precheck-loading" class="precheck-loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Analisi in corso... Questo potrebbe richiedere alcuni minuti.</p>
+                <div class="loading-steps">
+                    <div class="loading-step">
+                        <i class="fas fa-plug"></i>
+                        <span>Connessione ad Azure in corso...</span>
+                    </div>
+                    <div class="loading-step">
+                        <i class="fas fa-search"></i>
+                        <span>Raccolta informazioni su VM, Workspace e DCR...</span>
+                    </div>
+                    <div class="loading-step">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Generazione report di compatibilità...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="precheck-results" class="precheck-results" style="display: none;">
+                <h3>Report di Compatibilità</h3>
+                <div class="report-header">
+                    <div class="report-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">Stato Generale:</span>
+                            <span id="overall-status" class="status-badge">In attesa</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">VM Analizzate:</span>
+                            <span id="vm-count">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Workspace Esistenti:</span>
+                            <span id="workspace-count">0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tab Navigation -->
+                <div class="tabs-container">
+                    <div class="tabs-nav">
+                        <button class="tab-button active" data-tab="overview">Panoramica</button>
+                        <button class="tab-button" data-tab="virtual-machines">Macchine Virtuali</button>
+                        <button class="tab-button" data-tab="workspaces">Log Analytics</button>
+                        <button class="tab-button" data-tab="dcr">Data Collection Rules</button>
+                        <button class="tab-button" data-tab="recommendations">Raccomandazioni</button>
+                    </div>
+                    
+                    <!-- Tab Content -->
+                    <div class="tab-content">
+                        <!-- Overview Tab -->
+                        <div id="overview" class="tab-pane active">
+                            <h4>Analisi dell'ambiente</h4>
+                            <p>L'analisi del tenant ha rilevato le seguenti informazioni:</p>
+                            
+                            <div class="overview-stats">
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-server"></i></div>
+                                    <div class="stat-value" id="overview-vm-total">0</div>
+                                    <div class="stat-label">VM Totali</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                                    <div class="stat-value" id="overview-vm-monitored">0</div>
+                                    <div class="stat-label">VM Monitorate</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-database"></i></div>
+                                    <div class="stat-value" id="overview-workspaces">0</div>
+                                    <div class="stat-label">Workspace</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-list"></i></div>
+                                    <div class="stat-value" id="overview-dcr">0</div>
+                                    <div class="stat-label">DCR</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Virtual Machines Tab -->
+                        <div id="virtual-machines" class="tab-pane">
+                            <h4>Dettaglio Macchine Virtuali</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="vm-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome VM</th>
+                                            <th>Gruppo di Risorse</th>
+                                            <th>Stato</th>
+                                            <th>Agente Monitor</th>
+                                            <th>Sistema Operativo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- I dati delle VM saranno inseriti qui dinamicamente -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Log Analytics Workspaces Tab -->
+                        <div id="workspaces" class="tab-pane">
+                            <h4>Dettaglio Log Analytics Workspace</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="workspace-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome Workspace</th>
+                                            <th>Gruppo di Risorse</th>
+                                            <th>Regione</th>
+                                            <th>VM Insights</th>
+                                            <th>Retention (giorni)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- I dati dei workspace saranno inseriti qui dinamicamente -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Data Collection Rules Tab -->
+                        <div id="dcr" class="tab-pane">
+                            <h4>Dettaglio Data Collection Rules</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="dcr-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome DCR</th>
+                                            <th>Gruppo di Risorse</th>
+                                            <th>Tipo</th>
+                                            <th>Destinazione</th>
+                                            <th>VM Associate</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- I dati delle DCR saranno inseriti qui dinamicamente -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Recommendations Tab -->
+                        <div id="recommendations" class="tab-pane">
+                            <h4>Raccomandazioni</h4>
+                            <div class="recommendations-container" id="recommendations-content">
+                                <!-- Le raccomandazioni saranno inserite qui dinamicamente -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="report-actions">
+                    <button id="download-report" class="btn-secondary">Scarica Report</button>
+                    <button id="proceed-to-deploy" class="btn-primary">Procedi con il Deployment</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 Portale Soluzioni Azure. Tutti i diritti riservati.</p>
+    </footer>
+
+    <!-- ✅ MSAL Library da CDN multipli -->
+    <script>
+        // Carica MSAL da CDN con fallback
+        (function loadMSAL() {
+            const cdnUrls = [
+                'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js',
+                'https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js'
+            ];
+            
+            let currentIndex = 0;
+            
+            function tryLoadScript() {
+                if (currentIndex >= cdnUrls.length) {
+                    console.error('❌ Impossibile caricare MSAL');
+                    return;
+                }
+                
+                const script = document.createElement('script');
+                script.src = cdnUrls[currentIndex];
+                script.async = false;
+                
+                script.onload = function() {
+                    console.log('✅ MSAL caricato da:', cdnUrls[currentIndex]);
+                };
+                
+                script.onerror = function() {
+                    console.warn('⚠️ Fallito:', cdnUrls[currentIndex]);
+                    currentIndex++;
+                    tryLoadScript();
+                };
+                
+                document.head.appendChild(script);
+            }
+            
+            tryLoadScript();
+        })();
+    </script>
+    
+    <!-- ✅ Application Script -->
+    <script src="script.js"></script>
+</body>
+</html>

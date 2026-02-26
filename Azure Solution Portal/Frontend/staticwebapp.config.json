@@ -1,0 +1,26 @@
+{
+  "routes": [
+    {
+      "route": "/",
+      "rewrite": "/setup.html"
+    },
+    {
+      "route": "/api/*",
+      "allowedRoles": ["anonymous"]
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/setup.html",
+    "exclude": ["/index.html", "/setup.html", "/*.css", "/*.js"]
+  },
+  "responseOverrides": {
+    "404": {
+      "rewrite": "/setup.html"
+    }
+  },
+  "mimeTypes": {
+    ".json": "application/json",
+    ".css": "text/css",
+    ".js": "application/javascript"
+  }
+}

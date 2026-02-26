@@ -16,7 +16,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check SWA token configured
+        id: check_token
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "⚠️  AZURE_STATIC_WEB_APPS_API_TOKEN non configurato."
+            echo "   Crea la Static Web App da Azure Portal per impostare il secret automaticamente."
+            echo "   Workflow saltato."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+
       - name: Deploy to Azure Static Web Apps
+        if: steps.check_token.outputs.skip == 'false'
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
