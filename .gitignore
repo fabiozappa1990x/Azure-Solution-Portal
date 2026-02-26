@@ -1,0 +1,40 @@
+# ── Azure Functions local settings (contengono connection string e segreti) ──
+**/local.settings.json
+
+# ── Log files ──
+**/*-log.txt
+**/*.log
+**/logs/
+
+# ── Temporary files ──
+**/*.tmp
+**/*.temp
+**/tmp/
+
+# ── Azure CLI / Azure Developer CLI ──
+.azure/
+
+# ── Node.js (se usato localmente) ──
+node_modules/
+npm-debug.log*
+
+# ── VS Code ──
+.vscode/settings.json
+.vscode/launch.json
+
+# ── OS artifacts ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Build output / compilati Bicep locali ──
+# (i deploy.json compilati vengono generati dalla CI/CD)
+# Decommenta se vuoi escluderli:
+# **/portal-ui/deploy.json
+
+# ── PowerShell module cache ──
+**/.local/
+
+# ── Azure Function output ──
+**/bin/
+**/obj/

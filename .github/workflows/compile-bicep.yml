@@ -1,0 +1,76 @@
+name: Compile Bicep → ARM JSON
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Solution - */*/workload/bicep/**'
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    name: Compile Bicep templates to ARM JSON
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Azure CLI + Bicep
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          az bicep install
+
+      - name: Compile Azure Monitor
+        run: |
+          SRC="Solution - Azure Monitor/Azure Monitor Hub - Deploy to Azure/workload/bicep/deploy.bicep"
+          DST="Solution - Azure Monitor/Azure Monitor Hub - Deploy to Azure/portal-ui/deploy.json"
+          mkdir -p "$(dirname "$DST")"
+          az bicep build --file "$SRC" --outfile "$DST"
+          echo "✅ Azure Monitor compiled"
+
+      - name: Compile Azure Virtual Desktop
+        run: |
+          SRC="Solution - Azure Virtual Desktop/Azure Virtual Desktop - Deploy to Azure/workload/bicep/deploy.bicep"
+          DST="Solution - Azure Virtual Desktop/Azure Virtual Desktop - Deploy to Azure/portal-ui/deploy.json"
+          mkdir -p "$(dirname "$DST")"
+          az bicep build --file "$SRC" --outfile "$DST"
+          echo "✅ AVD compiled"
+
+      - name: Compile Azure Backup
+        run: |
+          SRC="Solution - Azure Backup/Azure Backup - Deploy to Azure/workload/bicep/deploy.bicep"
+          DST="Solution - Azure Backup/Azure Backup - Deploy to Azure/portal-ui/deploy.json"
+          mkdir -p "$(dirname "$DST")"
+          az bicep build --file "$SRC" --outfile "$DST"
+          echo "✅ Backup compiled"
+
+      - name: Compile Microsoft Defender
+        run: |
+          SRC="Solution - Microsoft Defender/Microsoft Defender - Deploy to Azure/workload/bicep/deploy.bicep"
+          DST="Solution - Microsoft Defender/Microsoft Defender - Deploy to Azure/portal-ui/deploy.json"
+          mkdir -p "$(dirname "$DST")"
+          az bicep build --file "$SRC" --outfile "$DST"
+          echo "✅ Defender compiled"
+
+      - name: Compile Azure Update Manager
+        run: |
+          SRC="Solution - Azure Update Manager/Azure Update Manager - Deploy to Azure/workload/bicep/deploy.bicep"
+          DST="Solution - Azure Update Manager/Azure Update Manager - Deploy to Azure/portal-ui/deploy.json"
+          mkdir -p "$(dirname "$DST")"
+          az bicep build --file "$SRC" --outfile "$DST"
+          echo "✅ Update Manager compiled"
+
+      - name: Commit compiled ARM templates
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "**portal-ui/deploy.json"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ci: compile Bicep → ARM JSON [skip ci]"
+            git push
+          fi

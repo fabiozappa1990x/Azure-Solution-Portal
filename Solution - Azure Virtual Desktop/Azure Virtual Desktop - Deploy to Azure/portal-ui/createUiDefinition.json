@@ -1,0 +1,321 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "deploymentName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Nome deployment",
+        "toolTip": "Prefisso usato per nominare tutte le risorse AVD (es: avd-prod, avd-test)",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z0-9][a-z0-9-]{2,20}[a-z0-9]$",
+          "validationMessage": "Deve essere lowercase, 4-22 caratteri, solo lettere, numeri e trattini"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "hostPool",
+        "label": "Host Pool",
+        "elements": [
+          {
+            "name": "hostPoolType",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Tipo Host Pool",
+            "defaultValue": "Pooled - Utenti condividono i session host",
+            "toolTip": "Pooled: più utenti per VM. Personal: un utente per VM.",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Pooled - Utenti condividono i session host", "value": "Pooled" },
+                { "label": "Personal - Un session host dedicato per utente", "value": "Personal" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "loadBalancerType",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Algoritmo di load balancing",
+            "defaultValue": "BreadthFirst - Distribuisce su tutti gli host",
+            "visible": "[equals(steps('hostPool').hostPoolType, 'Pooled')]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "BreadthFirst - Distribuisce su tutti gli host", "value": "BreadthFirst" },
+                { "label": "DepthFirst - Riempie un host prima di usarne un altro", "value": "DepthFirst" }
+              ]
+            }
+          },
+          {
+            "name": "maxSessionLimit",
+            "type": "Microsoft.Common.Slider",
+            "label": "Sessioni massime per session host",
+            "toolTip": "Numero massimo di sessioni simultanee per VM (solo Pooled)",
+            "min": 1,
+            "max": 50,
+            "defaultValue": 10,
+            "visible": "[equals(steps('hostPool').hostPoolType, 'Pooled')]"
+          },
+          {
+            "name": "startVMOnConnect",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Abilita Start VM on Connect",
+            "toolTip": "Avvia automaticamente le VM quando un utente si connette",
+            "defaultValue": true
+          }
+        ]
+      },
+      {
+        "name": "sessionHosts",
+        "label": "Session Hosts",
+        "elements": [
+          {
+            "name": "sessionHostCount",
+            "type": "Microsoft.Common.Slider",
+            "label": "Numero di session host da deployare",
+            "toolTip": "Imposta a 0 per creare solo il Host Pool senza VM",
+            "min": 0,
+            "max": 20,
+            "defaultValue": 2
+          },
+          {
+            "name": "vmSize",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Dimensione VM",
+            "defaultValue": "Standard_D4s_v5 (4 vCPU, 16 GB RAM)",
+            "visible": "[greater(steps('sessionHosts').sessionHostCount, 0)]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Standard_D2s_v5 (2 vCPU, 8 GB RAM)", "value": "Standard_D2s_v5" },
+                { "label": "Standard_D4s_v5 (4 vCPU, 16 GB RAM)", "value": "Standard_D4s_v5" },
+                { "label": "Standard_D8s_v5 (8 vCPU, 32 GB RAM)", "value": "Standard_D8s_v5" },
+                { "label": "Standard_D16s_v5 (16 vCPU, 64 GB RAM)", "value": "Standard_D16s_v5" },
+                { "label": "Standard_NV6ads_A10_v5 (GPU - per grafica avanzata)", "value": "Standard_NV6ads_A10_v5" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "imageSku",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Immagine OS",
+            "defaultValue": "Windows 11 Enterprise multi-session 23H2",
+            "visible": "[greater(steps('sessionHosts').sessionHostCount, 0)]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Windows 11 Enterprise multi-session 23H2", "value": "win11-23h2-avd" },
+                { "label": "Windows 11 Enterprise multi-session 23H2 + Microsoft 365", "value": "win11-23h2-avd-m365" },
+                { "label": "Windows 11 Enterprise multi-session 22H2", "value": "win11-22h2-avd" },
+                { "label": "Windows 10 Enterprise multi-session 22H2 (Gen2)", "value": "win10-22h2-avd-g2" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "osDiskType",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Tipo disco OS",
+            "defaultValue": "Premium SSD (prestazioni migliori)",
+            "visible": "[greater(steps('sessionHosts').sessionHostCount, 0)]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Premium SSD (prestazioni migliori)", "value": "Premium_LRS" },
+                { "label": "Standard SSD (bilanciato)", "value": "StandardSSD_LRS" },
+                { "label": "Standard HDD (costo minimo)", "value": "Standard_LRS" }
+              ]
+            }
+          },
+          {
+            "name": "adminCredentials",
+            "type": "Microsoft.Compute.CredentialsCombo",
+            "label": {
+              "password": "Password amministratore locale",
+              "confirmPassword": "Conferma password"
+            },
+            "toolTip": {
+              "password": "Password per l'account amministratore locale sui session host"
+            },
+            "visible": "[greater(steps('sessionHosts').sessionHostCount, 0)]",
+            "osPlatform": "Windows",
+            "constraints": {
+              "required": true
+            }
+          }
+        ]
+      },
+      {
+        "name": "networking",
+        "label": "Rete",
+        "elements": [
+          {
+            "name": "vnetSelector",
+            "type": "Microsoft.Solutions.ResourceSelector",
+            "label": "Virtual Network",
+            "resourceType": "Microsoft.Network/virtualNetworks",
+            "constraints": {
+              "required": true
+            },
+            "toolTip": "Seleziona la VNet in cui deployare i session host"
+          },
+          {
+            "name": "subnetName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Nome Subnet",
+            "defaultValue": "snet-avd",
+            "toolTip": "Nome della subnet dedicata ai session host",
+            "constraints": {
+              "required": true,
+              "regex": "^[a-zA-Z0-9][a-zA-Z0-9-_]{1,78}[a-zA-Z0-9]$"
+            }
+          }
+        ]
+      },
+      {
+        "name": "identity",
+        "label": "Identità e Accesso",
+        "elements": [
+          {
+            "name": "joinType",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Tipo di join",
+            "defaultValue": "Azure Active Directory (Entra ID)",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Azure Active Directory (Entra ID)", "value": "AzureAD" },
+                { "label": "Active Directory Domain Services (ADDS)", "value": "ActiveDirectory" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "domainToJoin",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Dominio AD da unire",
+            "placeholder": "contoso.com",
+            "visible": "[equals(steps('identity').joinType, 'ActiveDirectory')]",
+            "constraints": { "required": true }
+          },
+          {
+            "name": "domainJoinCredentials",
+            "type": "Microsoft.Compute.CredentialsCombo",
+            "label": {
+              "password": "Password account domain join",
+              "confirmPassword": "Conferma password"
+            },
+            "osPlatform": "Windows",
+            "visible": "[equals(steps('identity').joinType, 'ActiveDirectory')]",
+            "constraints": { "required": true }
+          },
+          {
+            "name": "intuneEnrollment",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Abilita enrollment Intune",
+            "defaultValue": false,
+            "visible": "[equals(steps('identity').joinType, 'AzureAD')]"
+          }
+        ]
+      },
+      {
+        "name": "fslogix",
+        "label": "FSLogix Profiles",
+        "elements": [
+          {
+            "name": "deployFSLogix",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Deploya storage FSLogix (Azure Files)",
+            "toolTip": "Crea un account di storage con Azure Files per i profili utente FSLogix",
+            "defaultValue": true
+          },
+          {
+            "name": "fslogixShareQuotaGB",
+            "type": "Microsoft.Common.Slider",
+            "label": "Quota share FSLogix (GB)",
+            "min": 100,
+            "max": 10240,
+            "defaultValue": 512,
+            "visible": "[steps('fslogix').deployFSLogix]"
+          },
+          {
+            "name": "fslogixStorageSku",
+            "type": "Microsoft.Common.DropDown",
+            "label": "SKU storage FSLogix",
+            "defaultValue": "Premium LRS (prestazioni migliori per profili)",
+            "visible": "[steps('fslogix').deployFSLogix]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Premium LRS (prestazioni migliori per profili)", "value": "Premium_LRS" },
+                { "label": "Premium ZRS (ridondanza zona)", "value": "Premium_ZRS" },
+                { "label": "Standard LRS (basso costo)", "value": "Standard_LRS" }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "scalingMonitoring",
+        "label": "Scaling & Monitoraggio",
+        "elements": [
+          {
+            "name": "deployScalingPlan",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Deploya Scaling Plan",
+            "toolTip": "Crea un piano di scaling automatico per i session host (Pooled only)",
+            "defaultValue": true
+          },
+          {
+            "name": "logAnalyticsWorkspaceId",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Log Analytics Workspace Resource ID (opzionale)",
+            "placeholder": "/subscriptions/.../resourceGroups/.../providers/Microsoft.OperationalInsights/workspaces/...",
+            "toolTip": "Se presente, AVD invierà i log di diagnostica al workspace specificato"
+          }
+        ]
+      },
+      {
+        "name": "tags",
+        "label": "Tag",
+        "elements": [
+          {
+            "name": "tagsByResource",
+            "type": "Microsoft.Common.TagsByResource",
+            "resources": [
+              "Microsoft.DesktopVirtualization/hostPools",
+              "Microsoft.DesktopVirtualization/workspaces",
+              "Microsoft.Compute/virtualMachines",
+              "Microsoft.Storage/storageAccounts"
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "deploymentName": "[basics('deploymentName')]",
+      "location": "[location()]",
+      "hostPoolType": "[steps('hostPool').hostPoolType]",
+      "loadBalancerType": "[steps('hostPool').loadBalancerType]",
+      "maxSessionLimit": "[steps('hostPool').maxSessionLimit]",
+      "startVMOnConnect": "[steps('hostPool').startVMOnConnect]",
+      "sessionHostCount": "[steps('sessionHosts').sessionHostCount]",
+      "vmSize": "[steps('sessionHosts').vmSize]",
+      "imageSku": "[steps('sessionHosts').imageSku]",
+      "osDiskType": "[steps('sessionHosts').osDiskType]",
+      "adminUsername": "[steps('sessionHosts').adminCredentials.username]",
+      "adminPassword": "[steps('sessionHosts').adminCredentials.password]",
+      "vnetId": "[steps('networking').vnetSelector.id]",
+      "subnetName": "[steps('networking').subnetName]",
+      "joinType": "[steps('identity').joinType]",
+      "domainToJoin": "[steps('identity').domainToJoin]",
+      "domainJoinUser": "[steps('identity').domainJoinCredentials.username]",
+      "domainJoinPassword": "[steps('identity').domainJoinCredentials.password]",
+      "intuneEnrollment": "[steps('identity').intuneEnrollment]",
+      "deployFSLogix": "[steps('fslogix').deployFSLogix]",
+      "fslogixShareQuotaGB": "[steps('fslogix').fslogixShareQuotaGB]",
+      "fslogixStorageSku": "[steps('fslogix').fslogixStorageSku]",
+      "deployScalingPlan": "[steps('scalingMonitoring').deployScalingPlan]",
+      "logAnalyticsWorkspaceId": "[steps('scalingMonitoring').logAnalyticsWorkspaceId]",
+      "tagsByResource": "[steps('tags').tagsByResource]"
+    }
+  }
+}

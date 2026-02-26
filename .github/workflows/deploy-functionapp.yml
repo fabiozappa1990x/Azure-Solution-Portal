@@ -1,0 +1,26 @@
+name: Deploy Function App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Azure Solution Portal/FunctionApp/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+    name: Deploy Azure Function App
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: func-azure-solution-monitor-precheck-dac4ewdca4h3agbv
+          package: './Azure Solution Portal/FunctionApp'
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          # Per PowerShell runtime, non serve build step aggiuntivo
+          scm-do-build-during-deployment: false
