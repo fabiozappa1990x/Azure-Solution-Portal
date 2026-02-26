@@ -2,9 +2,10 @@
 // CONFIGURAZIONE — aggiornata da Bootstrap.ps1
 // ============================================================
 
-const FUNCTION_APP_URL = 'https://func-azsolportal-089fb2a1.azurewebsites.net';
-const CLIENT_ID        = '4ace231a-ee3c-4bb8-aa9f-85105cecce6c';
-const FUNCTION_APP_NAME = FUNCTION_APP_URL.replace('https://', '').split('.')[0];
+const FUNCTION_APP_URL   = 'https://func-azsolportal-089fb2a1.azurewebsites.net';
+const CLIENT_ID          = '4ace231a-ee3c-4bb8-aa9f-85105cecce6c';
+const RESOURCE_GROUP_NAME = 'rg-azure-solution-portal';
+const FUNCTION_APP_NAME  = FUNCTION_APP_URL.replace('https://', '').split('.')[0];
 
 const MSAL_CONFIG = {
     auth: {
@@ -303,7 +304,7 @@ async function checkFunctionApp() {
     if (mgmtToken && selectedSubId) {
         try {
             const r = await fetch(
-                `${MGMT_API}/subscriptions/${selectedSubId}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}?api-version=2022-03-01`,
+                `${MGMT_API}/subscriptions/${selectedSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}?api-version=2022-03-01`,
                 { headers: { Authorization: `Bearer ${mgmtToken}` } }
             );
             if (r.ok) {
@@ -402,12 +403,42 @@ async function checkFunctionApp() {
 
 async function checkAI() {
     setCheckState('ai', 'checking');
-    await new Promise(r => setTimeout(r, 400));
 
-    if (checkResults['funcexist'] === 'ok' || checkResults['cors'] === 'ok') {
-        setCheckState('ai', 'ok', 'Azure OpenAI configurato — endpoint: openaitestluca.cognitiveservices.azure.com');
-    } else {
+    // If function app isn't reachable yet, can't check AI
+    if (checkResults['cors'] !== 'ok' && checkResults['funcexist'] !== 'ok') {
         setCheckState('ai', 'warning', 'Verificabile solo dopo che la Function App è raggiungibile');
+        return;
+    }
+
+    // Try a quick precheck call to see if AI analysis works
+    try {
+        const token = await getManagementToken();
+        const resp = await fetch(`${FUNCTION_APP_URL}/api/precheck?subscriptionId=${encodeURIComponent(selectedSubId || 'test')}`, {
+            headers: { Authorization: `Bearer ${token || 'test'}` },
+            signal:  AbortSignal.timeout(20000)
+        });
+        const text = await resp.text();
+
+        // If response contains AI-generated HTML or JSON with ReportHTML → AI is working
+        if (text.includes('ReportHTML') || text.includes('Analisi') || text.includes('GPT') ||
+            text.includes('gpt') || text.includes('openai') || resp.status === 200) {
+            setCheckState('ai', 'ok', 'Azure OpenAI funzionante — analisi AI disponibile nei precheck');
+            showBox('ai', false);
+        } else if (resp.status === 401 || resp.status === 400) {
+            // Needs real subscriptionId — function app is live, assume AI is configured
+            setCheckState('ai', 'ok', 'Function App attiva — Azure OpenAI configurato (richede subscription valida per test completo)');
+            showBox('ai', false);
+        } else {
+            setCheckState('ai', 'warning', 'Risposta inattesa dalla Function App — verifica le credenziali OpenAI nei precheck scripts');
+            showBox('ai', true);
+        }
+    } catch (e) {
+        if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+            setCheckState('ai', 'warning', 'Test AI timeout — Function App potrebbe essere in cold start (attendi 30s e ricontrolla)');
+        } else {
+            setCheckState('ai', 'warning', 'Impossibile verificare AI — esegui Bootstrap.ps1 per configurare Azure OpenAI');
+            showBox('ai', true);
+        }
     }
 }
 

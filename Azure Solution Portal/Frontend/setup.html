@@ -394,9 +394,17 @@
                 <div class="check-item" id="check-ai">
                     <div class="check-icon pending" id="icon-ai"><i class="fas fa-circle"></i></div>
                     <div class="check-content">
-                        <div class="check-title">Istanza Azure OpenAI configurata</div>
-                        <div class="check-desc">L'AI è configurata nella Function App per analizzare i risultati precheck</div>
+                        <div class="check-title">Azure OpenAI configurato (analisi AI)</div>
+                        <div class="check-desc">L'istanza Azure OpenAI deve essere attiva e le credenziali configurate nei precheck scripts</div>
                         <div class="check-detail" id="detail-ai"></div>
+                        <div id="instr-ai" style="display:none">
+                            <div class="instructions-box warning-box">
+                                <strong>Azure OpenAI non configurato:</strong><br>
+                                Bootstrap.ps1 crea automaticamente l'istanza OpenAI e aggiorna le credenziali.<br>
+                                Se hai già un'istanza, aggiorna manualmente <code>$endpoint</code> e <code>$apiKey</code>
+                                nei file <code>FunctionApp/scripts/*.ps1</code> e fai un nuovo push.
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

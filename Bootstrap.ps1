@@ -269,6 +269,104 @@ az functionapp cors add `
 Write-OK "CORS configurato: allowed-origins = *"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STEP 6c: Azure OpenAI
+# ─────────────────────────────────────────────────────────────────────────────
+
+Write-Header "STEP 6c — Azure OpenAI (per analisi AI precheck)"
+
+$openAiName       = $null
+$openAiEndpoint   = $null
+$openAiKey        = $null
+$openAiDeployment = 'AVM'
+
+# Prova region: westeurope, poi eastus come fallback
+$openAiRegions = @('westeurope', 'eastus', 'swedencentral')
+
+# Cerca se esiste già un'istanza OpenAI nel resource group
+$existingOai = az cognitiveservices account list --resource-group $ResourceGroupName --query "[?kind=='OpenAI'].name" -o tsv 2>$null
+if ($existingOai) {
+    $openAiName = $existingOai.Trim()
+    Write-OK "Azure OpenAI '$openAiName' già esistente nel resource group — skip creazione"
+} else {
+    $openAiName = "oai-$AppNamePrefix-$suffix"
+    $openAiCreated = $false
+
+    foreach ($region in $openAiRegions) {
+        Write-Step "Tentativo creazione Azure OpenAI in '$region'..."
+        az cognitiveservices account create `
+            --name $openAiName `
+            --resource-group $ResourceGroupName `
+            --kind OpenAI `
+            --sku S0 `
+            --location $region `
+            --yes `
+            --output none 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Azure OpenAI creato in '$region'"
+            $openAiCreated = $true
+            break
+        } else {
+            Write-Warn "Region '$region' non disponibile, provo la prossima..."
+        }
+    }
+
+    if (-not $openAiCreated) {
+        Write-Warn "Impossibile creare Azure OpenAI automaticamente (capacity o accesso non disponibile nella region)."
+        Write-Info "Puoi crearlo manualmente da Azure Portal e aggiornare le credenziali nei precheck scripts."
+        Write-Info "Continuo con la configurazione degli altri componenti..."
+        $openAiName = $null
+    }
+}
+
+# Se l'istanza esiste, crea il deployment e ottieni le credenziali
+if ($openAiName) {
+    # Ottieni endpoint
+    $openAiEndpoint = az cognitiveservices account show `
+        --name $openAiName `
+        --resource-group $ResourceGroupName `
+        --query "properties.endpoint" -o tsv 2>$null
+
+    # Ottieni API key
+    $openAiKey = az cognitiveservices account keys list `
+        --name $openAiName `
+        --resource-group $ResourceGroupName `
+        --query "key1" -o tsv 2>$null
+
+    # Crea/verifica deployment del modello 'AVM'
+    $deployExists = az cognitiveservices account deployment show `
+        --name $openAiName `
+        --resource-group $ResourceGroupName `
+        --deployment-name $openAiDeployment `
+        --output none 2>$null
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Step "Creazione deployment modello gpt-4o-mini (deployment name: '$openAiDeployment')..."
+        az cognitiveservices account deployment create `
+            --name $openAiName `
+            --resource-group $ResourceGroupName `
+            --deployment-name $openAiDeployment `
+            --model-name 'gpt-4o-mini' `
+            --model-version '2024-07-18' `
+            --model-format OpenAI `
+            --sku-capacity 1 `
+            --sku-name GlobalStandard `
+            --output none 2>$null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Deployment '$openAiDeployment' creato"
+        } else {
+            Write-Warn "Deployment automatico non riuscito — potrebbe richiedere capacità manuale."
+            Write-Info "Crea manualmente il deployment 'AVM' con modello gpt-4o-mini da Azure Portal."
+        }
+    } else {
+        Write-OK "Deployment '$openAiDeployment' già esistente — skip"
+    }
+
+    Write-OK "Azure OpenAI configurato"
+    Write-Info "Endpoint: $openAiEndpoint"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # STEP 7: App Registration
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -336,13 +434,12 @@ $scriptJsPath = Join-Path $scriptDir "Azure Solution Portal\Frontend\script.js"
 $workflowPath = Join-Path $scriptDir ".github\workflows\deploy-functionapp.yml"
 
 # ── setup.js ──────────────────────────────────────────────────
-Write-Step "Aggiornamento setup.js (FUNCTION_APP_URL, CLIENT_ID)..."
+Write-Step "Aggiornamento setup.js (FUNCTION_APP_URL, CLIENT_ID, RESOURCE_GROUP_NAME)..."
 $setupJs = Get-Content $setupJsPath -Raw -Encoding UTF8
 
-# Sostituisci FUNCTION_APP_URL
-$setupJs = $setupJs -replace "const FUNCTION_APP_URL = '.*?';", "const FUNCTION_APP_URL = '$functionAppUrl';"
-# Sostituisci CLIENT_ID (con spazi variabili per allineamento)
-$setupJs = $setupJs -replace "const CLIENT_ID\s+=\s+'[^']*';", "const CLIENT_ID        = '$clientId';"
+$setupJs = $setupJs -replace "const FUNCTION_APP_URL\s+=\s+'.*?';",   "const FUNCTION_APP_URL   = '$functionAppUrl';"
+$setupJs = $setupJs -replace "const CLIENT_ID\s+=\s+'[^']*';",         "const CLIENT_ID          = '$clientId';"
+$setupJs = $setupJs -replace "const RESOURCE_GROUP_NAME\s+=\s+'.*?';", "const RESOURCE_GROUP_NAME = '$ResourceGroupName';"
 
 Set-Content -Path $setupJsPath -Value $setupJs -Encoding UTF8 -NoNewline
 Write-OK "setup.js aggiornato"
@@ -351,9 +448,7 @@ Write-OK "setup.js aggiornato"
 Write-Step "Aggiornamento script.js (API_BASE_URL, clientId)..."
 $scriptJs = Get-Content $scriptJsPath -Raw -Encoding UTF8
 
-# Sostituisci API_BASE_URL
 $scriptJs = $scriptJs -replace "const API_BASE_URL = '.*?';", "const API_BASE_URL = '$functionAppUrl';"
-# Sostituisci clientId nel MSAL_CONFIG
 $scriptJs = $scriptJs -replace '(clientId:\s*")[^"]*(")', "`${1}$clientId`${2}"
 
 Set-Content -Path $scriptJsPath -Value $scriptJs -Encoding UTF8 -NoNewline
@@ -365,6 +460,36 @@ $workflow = Get-Content $workflowPath -Raw -Encoding UTF8
 $workflow = $workflow -replace 'app-name: [^\n]+', "app-name: $functionAppName"
 Set-Content -Path $workflowPath -Value $workflow -Encoding UTF8 -NoNewline
 Write-OK "deploy-functionapp.yml aggiornato"
+
+# ── Precheck scripts (OpenAI credentials) ─────────────────────
+if ($openAiEndpoint -and $openAiKey) {
+    Write-Step "Aggiornamento credenziali Azure OpenAI nei precheck scripts..."
+    $precheckScripts = @(
+        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\testluca.ps1"
+        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-avd.ps1"
+        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-backup.ps1"
+        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-defender.ps1"
+        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-updates.ps1"
+    )
+
+    # Costruisci il nuovo endpoint URL (stesso formato, deployment 'AVM')
+    $newEndpoint = "$($openAiEndpoint.TrimEnd('/'))openai/deployments/$openAiDeployment/chat/completions?api-version=2025-01-01-preview"
+
+    foreach ($scriptPath in $precheckScripts) {
+        if (Test-Path $scriptPath) {
+            $content = Get-Content $scriptPath -Raw -Encoding UTF8
+            # Sostituisci endpoint (pattern: $endpoint = "https://...cognitiveservices.azure.com/...")
+            $content = $content -replace '\$endpoint\s*=\s*"https://[^"]+cognitiveservices\.azure\.com[^"]*"', "`$endpoint = `"$newEndpoint`""
+            # Sostituisci API key (pattern: $apiKey = "...")
+            $content = $content -replace '\$apiKey\s*=\s*"[^"]{30,}"', "`$apiKey = `"$openAiKey`""
+            Set-Content -Path $scriptPath -Value $content -Encoding UTF8 -NoNewline
+            Write-OK "  $(Split-Path $scriptPath -Leaf) aggiornato"
+        }
+    }
+} else {
+    Write-Warn "OpenAI non configurato — i precheck scripts usano ancora le credenziali originali."
+    Write-Info "Aggiorna manualmente \$endpoint e \$apiKey nei file FunctionApp/scripts/*.ps1"
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 9: GitHub secret (Publish Profile)
@@ -409,6 +534,7 @@ if ($gitStatus) {
     git add "Azure Solution Portal/Frontend/setup.js"
     git add "Azure Solution Portal/Frontend/script.js"
     git add ".github/workflows/deploy-functionapp.yml"
+    git add "Azure Solution Portal/FunctionApp/scripts/"
     git commit -m "bootstrap: configure resources - funcapp=$functionAppName clientId=$clientId"
     Write-OK "Commit creato"
 }
