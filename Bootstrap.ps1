@@ -268,6 +268,22 @@ az functionapp cors add `
     --output none
 Write-OK "CORS configurato: allowed-origins = *"
 
+# Abilita Basic Auth SCM (necessario per deploy con publish profile da GitHub Actions)
+Write-Step "Abilitazione Basic Auth SCM (richiesto da GitHub Actions deploy)..."
+az resource update `
+    --resource-group $ResourceGroupName `
+    --name "$functionAppName/basicPublishingCredentialsPolicies/scm" `
+    --resource-type "Microsoft.Web/sites/basicPublishingCredentialsPolicies" `
+    --set properties.allow=true `
+    --output none 2>$null
+az resource update `
+    --resource-group $ResourceGroupName `
+    --name "$functionAppName/basicPublishingCredentialsPolicies/ftp" `
+    --resource-type "Microsoft.Web/sites/basicPublishingCredentialsPolicies" `
+    --set properties.allow=true `
+    --output none 2>$null
+Write-OK "Basic Auth abilitato per SCM e FTP"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 6c: Azure OpenAI
 # ─────────────────────────────────────────────────────────────────────────────

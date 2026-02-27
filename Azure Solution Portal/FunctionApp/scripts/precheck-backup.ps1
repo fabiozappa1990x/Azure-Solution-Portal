@@ -11,8 +11,8 @@ param(
     [Parameter(Mandatory=$false)] [string]$OutputPath = ".\Backup-Report.html"
 )
 
-$apiKey   = "1pN5y5zgK2iSmWhNNFrA0UpNX5krFMI10mz8A6XWFb9gXLs0Kvw2JQQJ99BJACYeBjFXJ3w3AAAAACOGR3VY"
-$endpoint = "https://openaitestluca.cognitiveservices.azure.com/openai/deployments/AVM/chat/completions?api-version=2025-01-01-preview"
+$apiKey  $apiKey = "9KpLBHsBIK9gn9rEI7cssnC8sVBLVsmIXr8nWDlUrfxUZUNVGDePJQQJ99CBAC5RqLJXJ3w3AAABACOG7Did"
+$endpoint = "https://westeurope.api.cognitive.microsoft.com/openai/deployments/AVM/chat/completions?api-version=2025-01-01-preview"
 
 $accessToken = $env:AZURE_ACCESS_TOKEN
 if (-not $accessToken) { Write-Error "AZURE_ACCESS_TOKEN not found."; exit 1 }
