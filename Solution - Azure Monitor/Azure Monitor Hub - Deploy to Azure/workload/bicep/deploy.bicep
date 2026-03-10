@@ -87,15 +87,10 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingRe
   tags: union(tags, contains(tagsByResource, 'Microsoft.Resources/resourceGroups') ? tagsByResource['Microsoft.Resources/resourceGroups'] : {})
 }
 
-// Get existing Resource Group if needed
-resource existingRg 'Microsoft.Resources/resourceGroups@2024-03-01' existing = if (useExistingResourceGroup) {
-  name: existingResourceGroupName
-}
-
 // Deploy Log Analytics Workspace
 module logAnalytics 'modules/log-analytics.bicep' = if (!useExistingLogAnalytics) {
   name: 'deploy-log-analytics'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     workspaceName: logAnalyticsWorkspaceName
     location: location
@@ -111,7 +106,7 @@ var workspaceResourceId = useExistingLogAnalytics ? existingLogAnalyticsWorkspac
 // Deploy Data Collection Rules
 module dataCollectionRules 'modules/data-collection-rules.bicep' = {
   name: 'deploy-dcr'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     location: location
     workspaceResourceId: workspaceResourceId
@@ -126,7 +121,7 @@ module dataCollectionRules 'modules/data-collection-rules.bicep' = {
 // Deploy Action Group
 module actionGroup 'modules/action-group.bicep' = if (createActionGroup) {
   name: 'deploy-action-group'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     actionGroupName: actionGroupName
     location: 'global'
@@ -138,7 +133,7 @@ module actionGroup 'modules/action-group.bicep' = if (createActionGroup) {
 // Deploy Alert Rules
 module alertRules 'modules/alert-rules.bicep' = if (createActionGroup) {
   name: 'deploy-alert-rules'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     location: location
     workspaceResourceId: workspaceResourceId
@@ -162,7 +157,7 @@ module alertRules 'modules/alert-rules.bicep' = if (createActionGroup) {
 // Associate VMs with DCR
 module vmAssociations 'modules/vm-associations.bicep' = if (monitorExistingVMs && length(selectedVMIds) > 0) {
   name: 'deploy-vm-associations'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     vmIds: selectedVMIds
     dcrId: dataCollectionRules.outputs.dcrId
@@ -190,7 +185,7 @@ module autoEnrollPolicy 'modules/azure-policy.bicep' = if (autoEnrollNewVMs) {
 // Deploy Workbook Dashboard
 module workbook 'modules/workbook.bicep' = if (deployDashboard) {
   name: 'deploy-workbook'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     workbookName: dashboardName
     location: location
