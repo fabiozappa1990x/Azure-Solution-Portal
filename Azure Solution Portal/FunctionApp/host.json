@@ -12,9 +12,5 @@
       "default": "Information"
     }
   },
-  "functionTimeout": "00:10:00",
-  "cors": {
-    "allowedOrigins": ["*"],
-    "supportCredentials": false
-  }
+  "functionTimeout": "00:10:00"
 }
