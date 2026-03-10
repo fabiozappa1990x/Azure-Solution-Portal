@@ -11,7 +11,7 @@ param(
     [Parameter(Mandatory=$false)] [string]$OutputPath = ".\Defender-Report.html"
 )
 
-$apiKey  $apiKey = "9KpLBHsBIK9gn9rEI7cssnC8sVBLVsmIXr8nWDlUrfxUZUNVGDePJQQJ99CBAC5RqLJXJ3w3AAABACOG7Did"
+$apiKey = "9KpLBHsBIK9gn9rEI7cssnC8sVBLVsmIXr8nWDlUrfxUZUNVGDePJQQJ99CBAC5RqLJXJ3w3AAABACOG7Did"
 $endpoint = "https://westeurope.api.cognitive.microsoft.com/openai/deployments/AVM/chat/completions?api-version=2025-01-01-preview"
 
 $accessToken = $env:AZURE_ACCESS_TOKEN
@@ -235,3 +235,4 @@ $jsonPath = $OutputPath -replace "\.html$", ".json"
 $data | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
 
 Write-Host "=== DEFENDER PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s"
+
