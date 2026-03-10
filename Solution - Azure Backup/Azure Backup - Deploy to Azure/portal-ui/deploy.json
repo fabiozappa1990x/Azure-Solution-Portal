@@ -1,0 +1,1116 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "13179215605640173262"
+    }
+  },
+  "parameters": {
+    "deploymentName": {
+      "type": "string",
+      "metadata": {
+        "description": "Deployment name prefix"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[deployment().location]",
+      "metadata": {
+        "description": "Azure region for the Recovery Services Vault"
+      }
+    },
+    "useExistingResourceGroup": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Use existing Resource Group"
+      }
+    },
+    "existingResourceGroupName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Resource Group name"
+      }
+    },
+    "storageType": {
+      "type": "string",
+      "defaultValue": "GeoRedundant",
+      "allowedValues": [
+        "GeoRedundant",
+        "LocallyRedundant",
+        "ZoneRedundant"
+      ],
+      "metadata": {
+        "description": "Vault storage replication type"
+      }
+    },
+    "enableCrossRegionRestore": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Cross Region Restore"
+      }
+    },
+    "enableSoftDelete": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable soft delete"
+      }
+    },
+    "softDeleteRetentionDays": {
+      "type": "int",
+      "defaultValue": 14,
+      "minValue": 14,
+      "maxValue": 180,
+      "metadata": {
+        "description": "Soft delete retention in days"
+      }
+    },
+    "backupTime": {
+      "type": "string",
+      "defaultValue": "23:00",
+      "metadata": {
+        "description": "Backup schedule time (UTC, e.g. 23:00)"
+      }
+    },
+    "dailyRetentionDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 7,
+      "maxValue": 9999,
+      "metadata": {
+        "description": "Daily retention in days"
+      }
+    },
+    "weeklyRetentionWeeks": {
+      "type": "int",
+      "defaultValue": 12,
+      "metadata": {
+        "description": "Weekly retention in weeks"
+      }
+    },
+    "monthlyRetentionMonths": {
+      "type": "int",
+      "defaultValue": 12,
+      "metadata": {
+        "description": "Monthly retention in months"
+      }
+    },
+    "yearlyRetentionYears": {
+      "type": "int",
+      "defaultValue": 3,
+      "metadata": {
+        "description": "Yearly retention in years"
+      }
+    },
+    "deployEnhancedPolicy": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy Enhanced Policy (hourly backup)"
+      }
+    },
+    "deploySqlPolicy": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Deploy SQL Server backup policy"
+      }
+    },
+    "vmIdsToProtect": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "VM Resource IDs to protect with backup"
+      }
+    },
+    "enableBackupPolicy": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Azure Policy for auto-protection of tagged VMs"
+      }
+    },
+    "autoProtectTagKey": {
+      "type": "string",
+      "defaultValue": "BackupEnabled",
+      "metadata": {
+        "description": "Tag key used to identify VMs for auto-protection"
+      }
+    },
+    "autoProtectTagValue": {
+      "type": "string",
+      "defaultValue": "true",
+      "metadata": {
+        "description": "Tag value used to identify VMs for auto-protection"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Log Analytics Workspace Resource ID for diagnostics"
+      }
+    },
+    "alertEmailRecipients": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Email recipients for backup alerts (semicolon-separated)"
+      }
+    },
+    "tagsByResource": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags for resources"
+      }
+    }
+  },
+  "variables": {
+    "resourceGroupName": "[if(parameters('useExistingResourceGroup'), parameters('existingResourceGroupName'), format('rg-{0}', parameters('deploymentName')))]",
+    "vaultName": "[format('rsv-{0}', parameters('deploymentName'))]",
+    "baseTags": {
+      "DeployedBy": "Azure-Solution-Portal",
+      "Solution": "Azure-Backup",
+      "ManagedBy": "Bicep"
+    }
+  },
+  "resources": [
+    {
+      "condition": "[not(parameters('useExistingResourceGroup'))]",
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[union(variables('baseTags'), if(contains(parameters('tagsByResource'), 'Microsoft.Resources/resourceGroups'), parameters('tagsByResource')['Microsoft.Resources/resourceGroups'], createObject()))]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-rsv",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "vaultName": {
+            "value": "[variables('vaultName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "storageType": {
+            "value": "[parameters('storageType')]"
+          },
+          "enableCrossRegionRestore": {
+            "value": "[parameters('enableCrossRegionRestore')]"
+          },
+          "enableSoftDelete": {
+            "value": "[parameters('enableSoftDelete')]"
+          },
+          "softDeleteRetentionDays": {
+            "value": "[parameters('softDeleteRetentionDays')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[parameters('logAnalyticsWorkspaceId')]"
+          },
+          "tags": {
+            "value": "[union(variables('baseTags'), if(contains(parameters('tagsByResource'), 'Microsoft.RecoveryServices/vaults'), parameters('tagsByResource')['Microsoft.RecoveryServices/vaults'], createObject()))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "7803178648942605419"
+            }
+          },
+          "parameters": {
+            "vaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Recovery Services Vault name"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "storageType": {
+              "type": "string",
+              "defaultValue": "GeoRedundant",
+              "allowedValues": [
+                "GeoRedundant",
+                "LocallyRedundant",
+                "ZoneRedundant"
+              ],
+              "metadata": {
+                "description": "Storage replication type"
+              }
+            },
+            "enableCrossRegionRestore": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable Cross Region Restore (requires GeoRedundant storage)"
+              }
+            },
+            "enableSoftDelete": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable soft delete for backup items"
+              }
+            },
+            "softDeleteRetentionDays": {
+              "type": "int",
+              "defaultValue": 14,
+              "minValue": 14,
+              "maxValue": 180,
+              "metadata": {
+                "description": "Soft delete retention in days (14-180)"
+              }
+            },
+            "immutabilityState": {
+              "type": "string",
+              "defaultValue": "Disabled",
+              "allowedValues": [
+                "Disabled",
+                "Unlocked",
+                "Locked"
+              ],
+              "metadata": {
+                "description": "Enable immutability (Locked prevents changes)"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics Workspace Resource ID for diagnostics"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.RecoveryServices/vaults",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('vaultName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "RS0",
+                "tier": "Standard"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.RecoveryServices/vaults/backupconfig",
+              "apiVersion": "2023-04-01",
+              "name": "[format('{0}/{1}', parameters('vaultName'), 'vaultconfig')]",
+              "properties": {
+                "storageModelType": "[parameters('storageType')]",
+                "crossRegionRestoreFlag": "[and(parameters('enableCrossRegionRestore'), equals(parameters('storageType'), 'GeoRedundant'))]",
+                "softDeleteFeatureState": "[if(parameters('enableSoftDelete'), 'Enabled', 'Disabled')]",
+                "softDeleteRetentionPeriodInDays": "[parameters('softDeleteRetentionDays')]",
+                "isSoftDeleteFeatureStateEditable": true
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.RecoveryServices/vaults', parameters('vaultName'))]"
+              ]
+            },
+            {
+              "condition": "[not(equals(parameters('immutabilityState'), 'Disabled'))]",
+              "type": "Microsoft.RecoveryServices/vaults/backupstorageconfig",
+              "apiVersion": "2023-04-01",
+              "name": "[format('{0}/{1}', parameters('vaultName'), 'vaultstorageconfig')]",
+              "properties": {
+                "storageModelType": "[parameters('storageType')]",
+                "crossRegionRestoreFlag": "[parameters('enableCrossRegionRestore')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.RecoveryServices/vaults', parameters('vaultName'))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('logAnalyticsWorkspaceId')))]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[resourceId('Microsoft.RecoveryServices/vaults', parameters('vaultName'))]",
+              "name": "[format('diag-{0}', parameters('vaultName'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "AzureBackupReport",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "CoreAzureBackup",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "AddonAzureBackupJobs",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "AddonAzureBackupAlerts",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "AddonAzureBackupPolicy",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "AddonAzureBackupStorage",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  },
+                  {
+                    "category": "AddonAzureBackupProtectedInstance",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ],
+                "metrics": [
+                  {
+                    "category": "Health",
+                    "enabled": true,
+                    "retentionPolicy": {
+                      "enabled": false,
+                      "days": 0
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.RecoveryServices/vaults', parameters('vaultName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vaultId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.RecoveryServices/vaults', parameters('vaultName'))]"
+            },
+            "vaultName": {
+              "type": "string",
+              "value": "[parameters('vaultName')]"
+            },
+            "vaultPrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.RecoveryServices/vaults', parameters('vaultName')), '2024-04-01', 'full').identity.principalId]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-backup-policies",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "vaultName": {
+            "value": "[variables('vaultName')]"
+          },
+          "policyNamePrefix": {
+            "value": "[format('policy-{0}', parameters('deploymentName'))]"
+          },
+          "backupTime": {
+            "value": "[parameters('backupTime')]"
+          },
+          "dailyRetentionDays": {
+            "value": "[parameters('dailyRetentionDays')]"
+          },
+          "weeklyRetentionWeeks": {
+            "value": "[parameters('weeklyRetentionWeeks')]"
+          },
+          "monthlyRetentionMonths": {
+            "value": "[parameters('monthlyRetentionMonths')]"
+          },
+          "yearlyRetentionYears": {
+            "value": "[parameters('yearlyRetentionYears')]"
+          },
+          "deployEnhancedPolicy": {
+            "value": "[parameters('deployEnhancedPolicy')]"
+          },
+          "deploySqlPolicy": {
+            "value": "[parameters('deploySqlPolicy')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "11805246842427097276"
+            }
+          },
+          "parameters": {
+            "vaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Recovery Services Vault name"
+              }
+            },
+            "policyNamePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Backup policy name prefix"
+              }
+            },
+            "backupTime": {
+              "type": "string",
+              "defaultValue": "23:00",
+              "metadata": {
+                "description": "VM backup schedule time (UTC, 24h format, e.g. 23:00)"
+              }
+            },
+            "backupFrequency": {
+              "type": "string",
+              "defaultValue": "Daily",
+              "allowedValues": [
+                "Daily",
+                "Weekly"
+              ],
+              "metadata": {
+                "description": "VM backup frequency"
+              }
+            },
+            "daysOfWeek": {
+              "type": "array",
+              "defaultValue": [
+                "Sunday"
+              ],
+              "metadata": {
+                "description": "Days of week for weekly backup"
+              }
+            },
+            "dailyRetentionDays": {
+              "type": "int",
+              "defaultValue": 30,
+              "minValue": 7,
+              "maxValue": 9999,
+              "metadata": {
+                "description": "Daily backup retention days"
+              }
+            },
+            "weeklyRetentionWeeks": {
+              "type": "int",
+              "defaultValue": 12,
+              "minValue": 1,
+              "maxValue": 5163,
+              "metadata": {
+                "description": "Weekly backup retention weeks"
+              }
+            },
+            "monthlyRetentionMonths": {
+              "type": "int",
+              "defaultValue": 12,
+              "minValue": 1,
+              "maxValue": 1188,
+              "metadata": {
+                "description": "Monthly backup retention months"
+              }
+            },
+            "yearlyRetentionYears": {
+              "type": "int",
+              "defaultValue": 3,
+              "minValue": 1,
+              "maxValue": 99,
+              "metadata": {
+                "description": "Yearly backup retention years"
+              }
+            },
+            "instantRestoreRetentionDays": {
+              "type": "int",
+              "defaultValue": 2,
+              "minValue": 1,
+              "maxValue": 5,
+              "metadata": {
+                "description": "Enable instant restore snapshot retention (days)"
+              }
+            },
+            "deployEnhancedPolicy": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Deploy an Enhanced Policy (supports Trusted Azure VMs and full disk backup)"
+              }
+            },
+            "deploySqlPolicy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Deploy SQL Server in VM backup policy"
+              }
+            }
+          },
+          "variables": {
+            "backupTimeArray": "[split(parameters('backupTime'), ':')]",
+            "backupHour": "[int(variables('backupTimeArray')[0])]",
+            "backupMinute": "[int(variables('backupTimeArray')[1])]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.RecoveryServices/vaults/backupPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('vaultName'), format('{0}-vm-standard', parameters('policyNamePrefix')))]",
+              "properties": {
+                "backupManagementType": "AzureIaasVM",
+                "instantRPDetails": {
+                  "azureBackupRGNamePrefix": "rg-backup-snapshots",
+                  "azureBackupRGNameSuffix": ""
+                },
+                "schedulePolicy": {
+                  "schedulePolicyType": "SimpleSchedulePolicy",
+                  "scheduleRunFrequency": "[parameters('backupFrequency')]",
+                  "scheduleRunTimes": [
+                    "[format('2024-01-01T{0}:{1}:00Z', padLeft(string(variables('backupHour')), 2, '0'), padLeft(string(variables('backupMinute')), 2, '0'))]"
+                  ],
+                  "scheduleRunDays": "[if(equals(parameters('backupFrequency'), 'Weekly'), parameters('daysOfWeek'), null())]"
+                },
+                "retentionPolicy": {
+                  "retentionPolicyType": "LongTermRetentionPolicy",
+                  "dailySchedule": {
+                    "retentionTimes": [
+                      "[format('2024-01-01T{0}:{1}:00Z', padLeft(string(variables('backupHour')), 2, '0'), padLeft(string(variables('backupMinute')), 2, '0'))]"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('dailyRetentionDays')]",
+                      "durationType": "Days"
+                    }
+                  },
+                  "weeklySchedule": {
+                    "daysOfTheWeek": [
+                      "[parameters('daysOfWeek')[0]]"
+                    ],
+                    "retentionTimes": [
+                      "[format('2024-01-01T{0}:{1}:00Z', padLeft(string(variables('backupHour')), 2, '0'), padLeft(string(variables('backupMinute')), 2, '0'))]"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('weeklyRetentionWeeks')]",
+                      "durationType": "Weeks"
+                    }
+                  },
+                  "monthlySchedule": {
+                    "retentionScheduleFormatType": "Daily",
+                    "retentionScheduleDaily": {
+                      "daysOfTheMonth": [
+                        {
+                          "date": 1,
+                          "isLast": false
+                        }
+                      ]
+                    },
+                    "retentionTimes": [
+                      "[format('2024-01-01T{0}:{1}:00Z', padLeft(string(variables('backupHour')), 2, '0'), padLeft(string(variables('backupMinute')), 2, '0'))]"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('monthlyRetentionMonths')]",
+                      "durationType": "Months"
+                    }
+                  },
+                  "yearlySchedule": {
+                    "retentionScheduleFormatType": "Daily",
+                    "monthsOfYear": [
+                      "January"
+                    ],
+                    "retentionScheduleDaily": {
+                      "daysOfTheMonth": [
+                        {
+                          "date": 1,
+                          "isLast": false
+                        }
+                      ]
+                    },
+                    "retentionTimes": [
+                      "[format('2024-01-01T{0}:{1}:00Z', padLeft(string(variables('backupHour')), 2, '0'), padLeft(string(variables('backupMinute')), 2, '0'))]"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('yearlyRetentionYears')]",
+                      "durationType": "Years"
+                    }
+                  }
+                },
+                "instantRpRetentionRangeInDays": "[parameters('instantRestoreRetentionDays')]",
+                "tieringPolicy": {
+                  "ArchivedRP": {
+                    "tieringMode": "DoNotTier",
+                    "duration": 0,
+                    "durationType": "Invalid"
+                  }
+                },
+                "policyType": "V1"
+              }
+            },
+            {
+              "condition": "[parameters('deployEnhancedPolicy')]",
+              "type": "Microsoft.RecoveryServices/vaults/backupPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('vaultName'), format('{0}-vm-enhanced', parameters('policyNamePrefix')))]",
+              "properties": {
+                "backupManagementType": "AzureIaasVM",
+                "schedulePolicy": {
+                  "schedulePolicyType": "SimpleSchedulePolicyV2",
+                  "scheduleRunFrequency": "Hourly",
+                  "hourlySchedule": {
+                    "interval": 4,
+                    "scheduleWindowStartTime": "2024-01-01T08:00:00Z",
+                    "scheduleWindowDuration": 16
+                  }
+                },
+                "retentionPolicy": {
+                  "retentionPolicyType": "LongTermRetentionPolicy",
+                  "dailySchedule": {
+                    "retentionTimes": [
+                      "2024-01-01T23:00:00Z"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('dailyRetentionDays')]",
+                      "durationType": "Days"
+                    }
+                  },
+                  "weeklySchedule": {
+                    "daysOfTheWeek": [
+                      "[parameters('daysOfWeek')[0]]"
+                    ],
+                    "retentionTimes": [
+                      "2024-01-01T23:00:00Z"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('weeklyRetentionWeeks')]",
+                      "durationType": "Weeks"
+                    }
+                  },
+                  "monthlySchedule": {
+                    "retentionScheduleFormatType": "Daily",
+                    "retentionScheduleDaily": {
+                      "daysOfTheMonth": [
+                        {
+                          "date": 1,
+                          "isLast": false
+                        }
+                      ]
+                    },
+                    "retentionTimes": [
+                      "2024-01-01T23:00:00Z"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('monthlyRetentionMonths')]",
+                      "durationType": "Months"
+                    }
+                  }
+                },
+                "instantRpRetentionRangeInDays": "[parameters('instantRestoreRetentionDays')]",
+                "policyType": "V2"
+              }
+            },
+            {
+              "condition": "[parameters('deploySqlPolicy')]",
+              "type": "Microsoft.RecoveryServices/vaults/backupPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('vaultName'), format('{0}-sql', parameters('policyNamePrefix')))]",
+              "properties": {
+                "backupManagementType": "AzureWorkload",
+                "workLoadType": "SQLDataBase",
+                "subProtectionPolicy": [
+                  {
+                    "policyType": "Full",
+                    "schedulePolicy": {
+                      "schedulePolicyType": "SimpleSchedulePolicy",
+                      "scheduleRunFrequency": "Weekly",
+                      "scheduleRunDays": "[parameters('daysOfWeek')]",
+                      "scheduleRunTimes": [
+                        "2024-01-01T23:00:00Z"
+                      ]
+                    },
+                    "retentionPolicy": {
+                      "retentionPolicyType": "LongTermRetentionPolicy",
+                      "weeklySchedule": {
+                        "daysOfTheWeek": [
+                          "[parameters('daysOfWeek')[0]]"
+                        ],
+                        "retentionTimes": [
+                          "2024-01-01T23:00:00Z"
+                        ],
+                        "retentionDuration": {
+                          "count": "[parameters('weeklyRetentionWeeks')]",
+                          "durationType": "Weeks"
+                        }
+                      },
+                      "monthlySchedule": {
+                        "retentionScheduleFormatType": "Weekly",
+                        "retentionScheduleWeekly": {
+                          "daysOfTheWeek": [
+                            "[parameters('daysOfWeek')[0]]"
+                          ],
+                          "weeksOfTheMonth": [
+                            "First"
+                          ]
+                        },
+                        "retentionTimes": [
+                          "2024-01-01T23:00:00Z"
+                        ],
+                        "retentionDuration": {
+                          "count": "[parameters('monthlyRetentionMonths')]",
+                          "durationType": "Months"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "policyType": "Log",
+                    "schedulePolicy": {
+                      "schedulePolicyType": "LogSchedulePolicy",
+                      "scheduleFrequencyInMins": 60
+                    },
+                    "retentionPolicy": {
+                      "retentionPolicyType": "SimpleRetentionPolicy",
+                      "retentionDuration": {
+                        "count": 15,
+                        "durationType": "Days"
+                      }
+                    }
+                  }
+                ],
+                "settings": {
+                  "timeZone": "UTC",
+                  "isCompression": false,
+                  "issqlcompression": false
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "vmPolicyId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', parameters('vaultName'), format('{0}-vm-standard', parameters('policyNamePrefix')))]"
+            },
+            "vmEnhancedPolicyId": {
+              "type": "string",
+              "value": "[if(parameters('deployEnhancedPolicy'), resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', parameters('vaultName'), format('{0}-vm-enhanced', parameters('policyNamePrefix'))), '')]"
+            },
+            "sqlPolicyId": {
+              "type": "string",
+              "value": "[if(parameters('deploySqlPolicy'), resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', parameters('vaultName'), format('{0}-sql', parameters('policyNamePrefix'))), '')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv')]"
+      ]
+    },
+    {
+      "condition": "[greater(length(parameters('vmIdsToProtect')), 0)]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-vm-protection",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "vaultName": {
+            "value": "[variables('vaultName')]"
+          },
+          "backupPolicyId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
+          },
+          "vmIds": {
+            "value": "[parameters('vmIdsToProtect')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "7505124761559845239"
+            }
+          },
+          "parameters": {
+            "vaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Recovery Services Vault name"
+              }
+            },
+            "backupPolicyId": {
+              "type": "string",
+              "metadata": {
+                "description": "Backup Policy Resource ID"
+              }
+            },
+            "vmIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Array of VM Resource IDs to protect"
+              }
+            }
+          },
+          "resources": [
+            {
+              "copy": {
+                "name": "vmProtection",
+                "count": "[length(parameters('vmIds'))]"
+              },
+              "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems",
+              "apiVersion": "2023-04-01",
+              "name": "[format('{0}/Azure/iaasvmcontainer;iaasvmcontainerv2;{1};{2}/vm;iaasvmcontainerv2;{3};{4}', parameters('vaultName'), split(parameters('vmIds')[copyIndex()], '/')[4], last(split(parameters('vmIds')[copyIndex()], '/')), split(parameters('vmIds')[copyIndex()], '/')[4], last(split(parameters('vmIds')[copyIndex()], '/')))]",
+              "location": "[resourceGroup().location]",
+              "properties": {
+                "protectedItemType": "Microsoft.Compute/virtualMachines",
+                "policyId": "[parameters('backupPolicyId')]",
+                "sourceResourceId": "[parameters('vmIds')[copyIndex()]]"
+              }
+            }
+          ],
+          "outputs": {
+            "protectedItemCount": {
+              "type": "int",
+              "value": "[length(parameters('vmIds'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies')]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableBackupPolicy')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-backup-auto-policy",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "policyName": {
+            "value": "[format('policy-{0}-backup-auto', parameters('deploymentName'))]"
+          },
+          "vaultId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv'), '2025-04-01').outputs.vaultId.value]"
+          },
+          "backupPolicyId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
+          },
+          "tagKey": {
+            "value": "[parameters('autoProtectTagKey')]"
+          },
+          "tagValue": {
+            "value": "[parameters('autoProtectTagValue')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "1562968204584868453"
+            }
+          },
+          "parameters": {
+            "policyName": {
+              "type": "string",
+              "metadata": {
+                "description": "Policy assignment name"
+              }
+            },
+            "vaultId": {
+              "type": "string",
+              "metadata": {
+                "description": "Recovery Services Vault Resource ID"
+              }
+            },
+            "backupPolicyId": {
+              "type": "string",
+              "metadata": {
+                "description": "Backup Policy Resource ID"
+              }
+            },
+            "tagKey": {
+              "type": "string",
+              "defaultValue": "BackupEnabled",
+              "metadata": {
+                "description": "Tag key to identify VMs for auto-protection"
+              }
+            },
+            "tagValue": {
+              "type": "string",
+              "defaultValue": "true",
+              "metadata": {
+                "description": "Tag value to identify VMs for auto-protection"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for policy assignment identity"
+              }
+            }
+          },
+          "variables": {
+            "configureBackupPolicyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/09ce66bc-1220-4153-8171-b09ce908e8ee"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[take(parameters('policyName'), 64)]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "displayName": "Auto-protezione VM con Azure Backup",
+                "description": "[format('Abilita automaticamente il backup per le VM con il tag {0}={1}', parameters('tagKey'), parameters('tagValue'))]",
+                "policyDefinitionId": "[variables('configureBackupPolicyDefinitionId')]",
+                "parameters": {
+                  "vaultLocation": {
+                    "value": "[parameters('location')]"
+                  },
+                  "inclusionTagName": {
+                    "value": "[parameters('tagKey')]"
+                  },
+                  "inclusionTagValue": {
+                    "value": [
+                      "[parameters('tagValue')]"
+                    ]
+                  },
+                  "backupPolicyId": {
+                    "value": "[parameters('backupPolicyId')]"
+                  }
+                },
+                "enforcementMode": "Default"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(parameters('policyName'), 64)), subscription().id, 'Contributor')]",
+              "properties": {
+                "principalId": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(parameters('policyName'), 64)), '2023-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]"
+              },
+              "dependsOn": [
+                "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(parameters('policyName'), 64))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "policyAssignmentId": {
+              "type": "string",
+              "value": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(parameters('policyName'), 64))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[variables('resourceGroupName')]"
+    },
+    "vaultId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv'), '2025-04-01').outputs.vaultId.value]"
+    },
+    "vaultName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv'), '2025-04-01').outputs.vaultName.value]"
+    },
+    "vmPolicyId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
+    },
+    "enhancedPolicyId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmEnhancedPolicyId.value]"
+    },
+    "backupCenterUrl": {
+      "type": "string",
+      "value": "https://portal.azure.com/#blade/Microsoft_Azure_DataProtection/BackupCenterMenuBlade/overview"
+    }
+  }
+}

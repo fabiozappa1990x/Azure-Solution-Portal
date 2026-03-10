@@ -1,0 +1,120 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "config": {
+      "isWizard": true,
+      "basics": {
+        "description": "Deploy Azure Backup accelerator: Recovery Services Vault, policy GFS e auto-protection via Azure Policy.",
+        "resourceGroup": {
+          "allowExisting": true
+        },
+        "location": {
+          "visible": true,
+          "resourceTypes": [
+            "Microsoft.RecoveryServices/vaults"
+          ]
+        }
+      }
+    },
+    "basics": [
+      {
+        "name": "deploymentName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Deployment Name",
+        "placeholder": "backup-prod",
+        "toolTip": "Prefisso usato per nominare le risorse (es: rsv-<deploymentName>).",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z0-9-]{3,24}$",
+          "validationMessage": "Solo lowercase, numeri e trattini. Lunghezza 3-24."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "resourceGroup",
+        "label": "Resource Group",
+        "elements": [
+          {
+            "name": "useExistingResourceGroup",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Usa un Resource Group esistente",
+            "defaultValue": false
+          },
+          {
+            "name": "existingResourceGroupName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Nome Resource Group esistente",
+            "placeholder": "rg-backup-prod",
+            "visible": "[steps('resourceGroup').useExistingResourceGroup]",
+            "constraints": {
+              "required": true
+            }
+          }
+        ]
+      },
+      {
+        "name": "vault",
+        "label": "Vault & Policy",
+        "elements": [
+          {
+            "name": "storageType",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Replication type",
+            "defaultValue": "GeoRedundant",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Geo-Redundant (GRS)", "value": "GeoRedundant" },
+                { "label": "Locally-Redundant (LRS)", "value": "LocallyRedundant" },
+                { "label": "Zone-Redundant (ZRS)", "value": "ZoneRedundant" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "enableSoftDelete",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Enable Soft Delete",
+            "defaultValue": true
+          },
+          {
+            "name": "enableBackupPolicy",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Abilita auto-protection (Azure Policy)",
+            "defaultValue": true,
+            "toolTip": "Protegge automaticamente le VM taggate."
+          },
+          {
+            "name": "autoProtectTagKey",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Auto-protect tag key",
+            "defaultValue": "BackupEnabled",
+            "visible": "[steps('vault').enableBackupPolicy]"
+          },
+          {
+            "name": "autoProtectTagValue",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Auto-protect tag value",
+            "defaultValue": "true",
+            "visible": "[steps('vault').enableBackupPolicy]"
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "deploymentName": "[basics('deploymentName')]",
+      "location": "[location()]",
+      "useExistingResourceGroup": "[steps('resourceGroup').useExistingResourceGroup]",
+      "existingResourceGroupName": "[steps('resourceGroup').existingResourceGroupName]",
+      "storageType": "[steps('vault').storageType]",
+      "enableSoftDelete": "[steps('vault').enableSoftDelete]",
+      "enableBackupPolicy": "[steps('vault').enableBackupPolicy]",
+      "autoProtectTagKey": "[steps('vault').autoProtectTagKey]",
+      "autoProtectTagValue": "[steps('vault').autoProtectTagValue]",
+      "tagsByResource": {}
+    }
+  }
+}
+

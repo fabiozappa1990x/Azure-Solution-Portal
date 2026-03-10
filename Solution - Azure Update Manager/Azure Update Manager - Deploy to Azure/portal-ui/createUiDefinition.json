@@ -1,0 +1,88 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "config": {
+      "isWizard": true,
+      "basics": {
+        "description": "Deploy Azure Update Manager accelerator: Maintenance Configuration e policy per assessment/auto-patching.",
+        "resourceGroup": { "allowExisting": true },
+        "location": { "visible": true }
+      }
+    },
+    "basics": [
+      {
+        "name": "deploymentName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Deployment Name",
+        "placeholder": "updates-prod",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z0-9-]{3,24}$",
+          "validationMessage": "Solo lowercase, numeri e trattini. Lunghezza 3-24."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "resourceGroup",
+        "label": "Resource Group",
+        "elements": [
+          {
+            "name": "useExistingResourceGroup",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Usa un Resource Group esistente",
+            "defaultValue": false
+          },
+          {
+            "name": "existingResourceGroupName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Nome Resource Group esistente",
+            "placeholder": "rg-updates-prod",
+            "visible": "[steps('resourceGroup').useExistingResourceGroup]",
+            "constraints": { "required": true }
+          }
+        ]
+      },
+      {
+        "name": "window",
+        "label": "Maintenance Window",
+        "elements": [
+          {
+            "name": "recurEvery",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Recurrence",
+            "defaultValue": "Weekly",
+            "constraints": { "allowedValues": [ { "label": "Weekly", "value": "Weekly" }, { "label": "Monthly", "value": "Monthly" } ], "required": true }
+          },
+          {
+            "name": "dayOfWeek",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Day of week",
+            "defaultValue": "Sunday",
+            "visible": "[equals(steps('window').recurEvery, 'Weekly')]",
+            "constraints": { "allowedValues": [ { "label": "Sunday", "value": "Sunday" }, { "label": "Monday", "value": "Monday" }, { "label": "Tuesday", "value": "Tuesday" }, { "label": "Wednesday", "value": "Wednesday" }, { "label": "Thursday", "value": "Thursday" }, { "label": "Friday", "value": "Friday" }, { "label": "Saturday", "value": "Saturday" } ], "required": true }
+          },
+          {
+            "name": "maintenanceTimeZone",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Time zone",
+            "defaultValue": "W. Europe Standard Time"
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "deploymentName": "[basics('deploymentName')]",
+      "location": "[location()]",
+      "useExistingResourceGroup": "[steps('resourceGroup').useExistingResourceGroup]",
+      "existingResourceGroupName": "[steps('resourceGroup').existingResourceGroupName]",
+      "recurEvery": "[steps('window').recurEvery]",
+      "dayOfWeek": "[steps('window').dayOfWeek]",
+      "maintenanceTimeZone": "[steps('window').maintenanceTimeZone]",
+      "tagsByResource": {}
+    }
+  }
+}
+

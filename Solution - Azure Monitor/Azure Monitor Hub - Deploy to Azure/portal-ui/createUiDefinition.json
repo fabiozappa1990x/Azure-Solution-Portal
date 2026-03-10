@@ -1,0 +1,594 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "config": {
+      "isWizard": true,
+      "basics": {
+        "description": "Deploy enterprise-grade VM monitoring with Azure Monitor Hub - supports Azure VMs and Azure Arc-enabled servers",
+        "resourceGroup": {
+          "allowExisting": true
+        },
+        "location": {
+          "visible": true,
+          "resourceTypes": [
+            "Microsoft.OperationalInsights/workspaces"
+          ]
+        }
+      }
+    },
+    "basics": [
+      {
+        "name": "deploymentName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Deployment Name",
+        "placeholder": "prod-monitoring",
+        "defaultValue": "",
+        "toolTip": "Unique name for this monitoring deployment",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z0-9-]{3,24}$",
+          "validationMessage": "Only lowercase letters, numbers, and hyphens. Length 3-24."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "infrastructure",
+        "label": "Infrastructure",
+        "elements": [
+          {
+            "name": "logAnalyticsSection",
+            "type": "Microsoft.Common.Section",
+            "label": "Log Analytics Workspace",
+            "elements": [
+              {
+                "name": "newOrExisting",
+                "type": "Microsoft.Common.OptionsGroup",
+                "label": "Log Analytics Workspace",
+                "defaultValue": "new",
+                "toolTip": "Create a new workspace or use an existing one",
+                "constraints": {
+                  "allowedValues": [
+                    {
+                      "label": "Create new",
+                      "value": "new"
+                    },
+                    {
+                      "label": "Use existing",
+                      "value": "existing"
+                    }
+                  ],
+                  "required": true
+                }
+              },
+              {
+                "name": "name",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Workspace Name",
+                "defaultValue": "[concat('law-', basics('deploymentName'))]",
+                "toolTip": "Name for the Log Analytics Workspace",
+                "constraints": {
+                  "required": true,
+                  "regex": "^[a-zA-Z0-9-]{4,63}$",
+                  "validationMessage": "Alphanumeric and hyphens. Length 4-63."
+                },
+                "visible": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'new')]"
+              },
+              {
+                "name": "existing",
+                "type": "Microsoft.Solutions.ResourceSelector",
+                "label": "Select Workspace",
+                "resourceType": "Microsoft.OperationalInsights/workspaces",
+                "options": {
+                  "filter": {
+                    "subscription": "onBasics",
+                    "location": "onBasics"
+                  }
+                },
+                "visible": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing')]"
+              },
+              {
+                "name": "retentionInDays",
+                "type": "Microsoft.Common.Slider",
+                "min": 30,
+                "max": 730,
+                "label": "Log Retention",
+                "subLabel": "days",
+                "defaultValue": 90,
+                "toolTip": "Number of days to retain log data",
+                "constraints": {
+                  "required": true
+                },
+                "visible": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'new')]"
+              }
+            ]
+          },
+          {
+            "name": "managedIdentitySection",
+            "type": "Microsoft.Common.Section",
+            "label": "Managed Identity",
+            "elements": [
+              {
+                "name": "newOrExisting",
+                "type": "Microsoft.Common.OptionsGroup",
+                "label": "Managed Identity",
+                "defaultValue": "new",
+                "toolTip": "Create a new managed identity or use an existing one for deployment scripts and Azure Policy",
+                "constraints": {
+                  "allowedValues": [
+                    {
+                      "label": "Create new",
+                      "value": "new"
+                    },
+                    {
+                      "label": "Use existing",
+                      "value": "existing"
+                    }
+                  ],
+                  "required": true
+                }
+              },
+              {
+                "name": "name",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Managed Identity Name",
+                "defaultValue": "[concat('id-', basics('deploymentName'))]",
+                "toolTip": "Name for the User-Assigned Managed Identity",
+                "constraints": {
+                  "required": true,
+                  "regex": "^[a-zA-Z0-9-]{3,128}$",
+                  "validationMessage": "Alphanumeric and hyphens. Length 3-128."
+                },
+                "visible": "[equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'new')]"
+              },
+              {
+                "name": "existing",
+                "type": "Microsoft.Solutions.ResourceSelector",
+                "label": "Select Managed Identity",
+                "resourceType": "Microsoft.ManagedIdentity/userAssignedIdentities",
+                "options": {
+                  "filter": {
+                    "subscription": "onBasics"
+                  }
+                },
+                "visible": "[equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing')]"
+              },
+              {
+                "name": "identityInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": true,
+                "options": {
+                  "icon": "Info",
+                  "text": "A User-Assigned Managed Identity is used to run deployment scripts and by Azure Policy to configure VMs and Arc-enabled servers. It will automatically receive Contributor and other necessary permissions at the subscription level."
+                }
+              }
+            ]
+          },
+          {
+            "name": "vmMonitoringSection",
+            "type": "Microsoft.Common.Section",
+            "label": "Azure Virtual Machine Monitoring",
+            "elements": [
+              {
+                "name": "monitorVMs",
+                "type": "Microsoft.Common.OptionsGroup",
+                "label": "Monitor Azure Virtual Machines",
+                "defaultValue": "none",
+                "toolTip": "Choose whether to monitor existing Azure VMs now",
+                "constraints": {
+                  "allowedValues": [
+                    {
+                      "label": "Don't monitor Azure VMs now (configure later)",
+                      "value": "none"
+                    },
+                    {
+                      "label": "Select specific Azure VMs to monitor",
+                      "value": "selected"
+                    },
+                    {
+                      "label": "Monitor all Azure VMs in subscription",
+                      "value": "all"
+                    }
+                  ],
+                  "required": true
+                }
+              },
+              {
+                "name": "selectedVMResourceIds",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Azure VM Resource IDs",
+                "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm2",
+                "toolTip": "Enter full Resource IDs of Azure VMs to monitor, separated by commas. Copy Resource ID from VM's Properties page.",
+                "multiLine": true,
+                "constraints": {
+                  "required": true
+                },
+                "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected')]"
+              },
+              {
+                "name": "vmInfoBoxSelected",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected')]",
+                "options": {
+                  "icon": "Info",
+                  "text": "To get Azure VM Resource ID: Go to VM → Properties → Copy 'Resource ID'. Paste multiple IDs separated by commas."
+                }
+              },
+              {
+                "name": "vmInfoBoxAll",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all')]",
+                "options": {
+                  "icon": "Warning",
+                  "text": "ALL Azure Virtual Machines in the subscription will be discovered and monitored automatically. The deployment script will query all Azure VMs and associate them with the unified Data Collection Rule. This may take several minutes."
+                }
+              },
+              {
+                "name": "autoEnrollInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none'))]",
+                "options": {
+                  "icon": "Info",
+                  "text": "A unified Data Collection Rule will be created for both Windows and Linux Azure VMs. The rule will be automatically associated with Azure VMs using a deployment script. Azure Monitor Agent (AMA) will be automatically installed on running Azure VMs."
+                }
+              }
+            ]
+          },
+          {
+            "name": "arcMonitoringSection",
+            "type": "Microsoft.Common.Section",
+            "label": "Azure Arc-enabled Server Monitoring",
+            "elements": [
+              {
+                "name": "monitorArcServers",
+                "type": "Microsoft.Common.OptionsGroup",
+                "label": "Monitor Azure Arc-enabled Servers",
+                "defaultValue": "none",
+                "toolTip": "Choose whether to monitor existing Arc-enabled servers now",
+                "constraints": {
+                  "allowedValues": [
+                    {
+                      "label": "Don't monitor Arc servers now (configure later)",
+                      "value": "none"
+                    },
+                    {
+                      "label": "Select specific Arc servers to monitor",
+                      "value": "selected"
+                    },
+                    {
+                      "label": "Monitor all Arc servers in subscription",
+                      "value": "all"
+                    }
+                  ],
+                  "required": true
+                }
+              },
+              {
+                "name": "selectedArcResourceIds",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Arc Server Resource IDs",
+                "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.HybridCompute/machines/server1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.HybridCompute/machines/server2",
+                "toolTip": "Enter full Resource IDs of Arc-enabled servers to monitor, separated by commas. Copy Resource ID from Arc machine's Properties page.",
+                "multiLine": true,
+                "constraints": {
+                  "required": true
+                },
+                "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected')]"
+              },
+              {
+                "name": "arcInfoBoxSelected",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected')]",
+                "options": {
+                  "icon": "Info",
+                  "text": "To get Arc Server Resource ID: Go to Arc machine → Properties → Copy 'Resource ID'. Paste multiple IDs separated by commas."
+                }
+              },
+              {
+                "name": "arcInfoBoxAll",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all')]",
+                "options": {
+                  "icon": "Warning",
+                  "text": "ALL Azure Arc-enabled servers in the subscription will be discovered and monitored automatically. The deployment script will query all Arc machines and associate them with the unified Data Collection Rule. This may take several minutes."
+                }
+              },
+              {
+                "name": "arcAutoEnrollInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none'))]",
+                "options": {
+                  "icon": "Info",
+                  "text": "The same unified Data Collection Rule will be used for Arc-enabled servers (both Windows and Linux). Azure Monitor Agent (AMA) will be automatically installed on Arc-connected machines."
+                }
+              }
+            ]
+          },
+          {
+            "name": "dcrSection",
+            "type": "Microsoft.Common.Section",
+            "label": "Data Collection Rule",
+            "elements": [
+              {
+                "name": "dcrName",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Data Collection Rule Name",
+                "defaultValue": "[concat('dcr-', basics('deploymentName'), '-unified')]",
+                "toolTip": "Name for the unified Data Collection Rule (supports Azure VMs, Arc servers, Windows and Linux)",
+                "constraints": {
+                  "required": true,
+                  "regex": "^[a-zA-Z0-9-]{3,64}$",
+                  "validationMessage": "Alphanumeric and hyphens. Length 3-64."
+                },
+                "visible": "[or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none')))]"
+              },
+              {
+                "name": "dcrInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none')))]",
+                "options": {
+                  "icon": "Info",
+                  "text": "A single unified Data Collection Rule will be created and shared across:\n• Azure Windows VMs\n• Azure Linux VMs\n• Arc-enabled Windows servers\n• Arc-enabled Linux servers\n\nThis ensures consistent monitoring configuration across all platforms."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "monitoring",
+        "label": "Monitoring",
+        "elements": [
+          {
+            "name": "alertThresholdsSection",
+            "type": "Microsoft.Common.Section",
+            "label": "Alert Thresholds",
+            "elements": [
+              {
+                "name": "cpuThreshold",
+                "type": "Microsoft.Common.Slider",
+                "min": 50,
+                "max": 100,
+                "label": "CPU Threshold",
+                "subLabel": "%",
+                "defaultValue": 85,
+                "toolTip": "Alert when CPU usage exceeds this percentage",
+                "constraints": {
+                  "required": true
+                }
+              },
+              {
+                "name": "memoryThreshold",
+                "type": "Microsoft.Common.Slider",
+                "min": 50,
+                "max": 100,
+                "label": "Memory Threshold",
+                "subLabel": "%",
+                "defaultValue": 85,
+                "toolTip": "Alert when Memory usage exceeds this percentage",
+                "constraints": {
+                  "required": true
+                }
+              },
+              {
+                "name": "diskThreshold",
+                "type": "Microsoft.Common.Slider",
+                "min": 50,
+                "max": 100,
+                "label": "Disk Threshold",
+                "subLabel": "%",
+                "defaultValue": 85,
+                "toolTip": "Alert when Disk usage exceeds this percentage",
+                "constraints": {
+                  "required": true
+                }
+              }
+            ]
+          },
+          {
+            "name": "enabledAlertsSection",
+            "type": "Microsoft.Common.Section",
+            "label": "Enabled Alerts",
+            "elements": [
+              {
+                "name": "enableCPUAlerts",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable CPU alerts",
+                "defaultValue": true
+              },
+              {
+                "name": "enableMemoryAlerts",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable Memory alerts",
+                "defaultValue": true
+              },
+              {
+                "name": "enableDiskAlerts",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable Disk alerts",
+                "defaultValue": true
+              },
+              {
+                "name": "enableHeartbeatAlerts",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable Heartbeat alerts",
+                "toolTip": "Alert when machine stops sending heartbeat (offline)",
+                "defaultValue": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "notifications",
+        "label": "Notifications",
+        "elements": [
+          {
+            "name": "actionGroupName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Action Group Name",
+            "defaultValue": "[concat('ag-', basics('deploymentName'))]",
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "name": "emailRecipients",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Email Recipients",
+            "placeholder": "admin@company.com;ops@company.com",
+            "toolTip": "Semicolon-separated email addresses for alert notifications",
+            "constraints": {
+              "required": true,
+              "regex": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}(;[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})*$",
+              "validationMessage": "Enter valid email addresses separated by semicolons"
+            }
+          }
+        ]
+      },
+      {
+        "name": "automation",
+        "label": "Automation",
+        "elements": [
+          {
+            "name": "azureVMPolicySection",
+            "type": "Microsoft.Common.Section",
+            "label": "Azure Policy - Automatic Azure VM Enrollment",
+            "elements": [
+              {
+                "name": "enableAzureVMPolicy",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable Azure Policy for automatic monitoring of new Azure VMs",
+                "defaultValue": false,
+                "toolTip": "When enabled, Azure Policy will automatically install Azure Monitor Agent on new Azure VMs and associate them with Data Collection Rules"
+              },
+              {
+                "name": "policyAssignmentName",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Policy Assignment Name",
+                "defaultValue": "[concat('ama-vm-monitoring-', basics('deploymentName'))]",
+                "toolTip": "Name for the Azure VM Policy assignment",
+                "constraints": {
+                  "required": true,
+                  "regex": "^[a-zA-Z0-9-]{3,64}$",
+                  "validationMessage": "Alphanumeric and hyphens. Length 3-64."
+                },
+                "visible": "[steps('automation').azureVMPolicySection.enableAzureVMPolicy]"
+              },
+              {
+                "name": "policyEnabledInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[steps('automation').azureVMPolicySection.enableAzureVMPolicy]",
+                "options": {
+                  "icon": "Info",
+                  "text": "Azure Policy will be deployed at subscription level to automatically:\n• Install Azure Monitor Agent (AMA) on new Windows and Linux Azure VMs\n• Assign the user-assigned managed identity to VMs\n• Associate VMs with the unified Data Collection Rule\n\nPolicy evaluation occurs within 15 minutes of VM creation. Existing non-compliant VMs will be automatically remediated.",
+                  "uri": "https://learn.microsoft.com/azure/governance/policy/overview"
+                }
+              },
+              {
+                "name": "policyDisabledInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[not(steps('automation').azureVMPolicySection.enableAzureVMPolicy)]",
+                "options": {
+                  "icon": "Warning",
+                  "text": "Azure Policy is disabled. New Azure VMs will NOT be automatically enrolled in monitoring. You will need to manually install Azure Monitor Agent and associate the Data Collection Rule for each new VM."
+                }
+              }
+            ]
+          },
+          {
+            "name": "arcPolicySection",
+            "type": "Microsoft.Common.Section",
+            "label": "Azure Policy - Automatic Arc Server Enrollment",
+            "elements": [
+              {
+                "name": "enableArcPolicy",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable Azure Policy for automatic monitoring of new Arc-enabled servers",
+                "defaultValue": false,
+                "toolTip": "When enabled, Azure Policy will automatically install Azure Monitor Agent on new Arc-enabled servers and associate them with Data Collection Rules"
+              },
+              {
+                "name": "policyAssignmentName",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Policy Assignment Name",
+                "defaultValue": "[concat('ama-arc-monitoring-', basics('deploymentName'))]",
+                "toolTip": "Name for the Arc Policy assignment",
+                "constraints": {
+                  "required": true,
+                  "regex": "^[a-zA-Z0-9-]{3,64}$",
+                  "validationMessage": "Alphanumeric and hyphens. Length 3-64."
+                },
+                "visible": "[steps('automation').arcPolicySection.enableArcPolicy]"
+              },
+              {
+                "name": "enableProcessesAndDependencies",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable Processes and Dependencies (VM Insights)",
+                "defaultValue": true,
+                "toolTip": "Enable collection of process details and network dependencies for Service Map",
+                "visible": "[steps('automation').arcPolicySection.enableArcPolicy]"
+              },
+              {
+                "name": "arcPolicyEnabledInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[steps('automation').arcPolicySection.enableArcPolicy]",
+                "options": {
+                  "icon": "Info",
+                  "text": "Azure Policy will be deployed at subscription level to automatically:\n• Install Azure Monitor Agent (AMA) on new Arc-enabled Windows and Linux servers\n• Assign the user-assigned managed identity to Arc machines\n• Associate Arc servers with the unified Data Collection Rule\n• Optionally enable VM Insights with processes and dependencies\n\nPolicy evaluation occurs within 15 minutes of Arc machine connection. Existing non-compliant Arc servers will be automatically remediated.",
+                  "uri": "https://learn.microsoft.com/azure/azure-arc/servers/overview"
+                }
+              },
+              {
+                "name": "arcPolicyDisabledInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[not(steps('automation').arcPolicySection.enableArcPolicy)]",
+                "options": {
+                  "icon": "Warning",
+                  "text": "Azure Policy is disabled. New Arc-enabled servers will NOT be automatically enrolled in monitoring. You will need to manually install Azure Monitor Agent and associate the Data Collection Rule for each new Arc server."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "location": "[location()]",
+      "deploymentName": "[basics('deploymentName')]",
+      "useExistingLogAnalytics": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing')]",
+      "existingLogAnalyticsWorkspaceId": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), steps('infrastructure').logAnalyticsSection.existing.id, '')]",
+      "logAnalyticsWorkspaceName": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'new'), steps('infrastructure').logAnalyticsSection.name, if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), steps('infrastructure').logAnalyticsSection.existing.name, concat('law-', basics('deploymentName'))))]",
+      "retentionInDays": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'new'), steps('infrastructure').logAnalyticsSection.retentionInDays, 90)]",
+      "useExistingManagedIdentity": "[equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing')]",
+      "existingManagedIdentityId": "[if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing'), steps('infrastructure').managedIdentitySection.existing.id, '')]",
+      "managedIdentityName": "[if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'new'), steps('infrastructure').managedIdentitySection.name, if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing'), steps('infrastructure').managedIdentitySection.existing.name, concat('id-', basics('deploymentName'))))]",
+      "monitorExistingVMs": "[or(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all'))]",
+      "monitorAllVMs": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all')]",
+      "selectedVMIds": "[if(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), split(replace(steps('infrastructure').vmMonitoringSection.selectedVMResourceIds, ' ', ''), ','), parse('[]'))]",
+      "monitorExistingArcServers": "[or(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all'))]",
+      "monitorAllArcServers": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all')]",
+      "selectedArcServerIds": "[if(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), split(replace(steps('infrastructure').arcMonitoringSection.selectedArcResourceIds, ' ', ''), ','), parse('[]'))]",
+      "dcrNameWindows": "[if(or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none'))), steps('infrastructure').dcrSection.dcrName, concat('dcr-', basics('deploymentName'), '-unified'))]",
+      "dcrNameLinux": "[if(or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none'))), steps('infrastructure').dcrSection.dcrName, concat('dcr-', basics('deploymentName'), '-unified'))]",
+      "enableAzureVMPolicy": "[steps('automation').azureVMPolicySection.enableAzureVMPolicy]",
+      "azureVMPolicyAssignmentName": "[if(steps('automation').azureVMPolicySection.enableAzureVMPolicy, steps('automation').azureVMPolicySection.policyAssignmentName, concat('ama-vm-monitoring-', basics('deploymentName')))]",
+      "enableArcPolicy": "[steps('automation').arcPolicySection.enableArcPolicy]",
+      "arcPolicyAssignmentName": "[if(steps('automation').arcPolicySection.enableArcPolicy, steps('automation').arcPolicySection.policyAssignmentName, concat('ama-arc-monitoring-', basics('deploymentName')))]",
+      "enableProcessesAndDependencies": "[if(steps('automation').arcPolicySection.enableArcPolicy, steps('automation').arcPolicySection.enableProcessesAndDependencies, true)]",
+      "enableCPUAlerts": "[steps('monitoring').enabledAlertsSection.enableCPUAlerts]",
+      "cpuThreshold": "[steps('monitoring').alertThresholdsSection.cpuThreshold]",
+      "enableMemoryAlerts": "[steps('monitoring').enabledAlertsSection.enableMemoryAlerts]",
+      "memoryThreshold": "[steps('monitoring').alertThresholdsSection.memoryThreshold]",
+      "enableDiskAlerts": "[steps('monitoring').enabledAlertsSection.enableDiskAlerts]",
+      "diskThreshold": "[steps('monitoring').alertThresholdsSection.diskThreshold]",
+      "enableHeartbeatAlerts": "[steps('monitoring').enabledAlertsSection.enableHeartbeatAlerts]",
+      "createActionGroup": true,
+      "actionGroupName": "[steps('notifications').actionGroupName]",
+      "emailRecipients": "[steps('notifications').emailRecipients]",
+      "tagsByResource": {}
+    }
+  }
+}

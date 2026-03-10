@@ -15,7 +15,7 @@ param appGroupType string = 'Desktop'
 param friendlyName string = ''
 
 @description('Description')
-param description string = ''
+param appGroupDescription string = ''
 
 @description('Azure AD Group Object IDs to assign Users role')
 param userGroupObjectIds array = []
@@ -36,7 +36,7 @@ resource appGroup 'Microsoft.DesktopVirtualization/applicationGroups@2023-09-05'
     hostPoolArmPath: hostPoolId
     applicationGroupType: appGroupType
     friendlyName: appGroupFriendlyName
-    description: description
+    description: appGroupDescription
   }
 }
 

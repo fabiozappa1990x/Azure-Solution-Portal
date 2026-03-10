@@ -82,13 +82,9 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingRe
   tags: union(baseTags, contains(tagsByResource, 'Microsoft.Resources/resourceGroups') ? tagsByResource['Microsoft.Resources/resourceGroups'] : {})
 }
 
-resource existingRg 'Microsoft.Resources/resourceGroups@2024-03-01' existing = if (useExistingResourceGroup) {
-  name: existingResourceGroupName
-}
-
 module maintenanceConfig 'modules/maintenance-configuration.bicep' = {
   name: 'deploy-maintenance-config'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     configName: maintenanceConfigName
     location: location

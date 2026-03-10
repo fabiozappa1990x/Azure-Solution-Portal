@@ -98,13 +98,9 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingRe
   tags: union(baseTags, contains(tagsByResource, 'Microsoft.Resources/resourceGroups') ? tagsByResource['Microsoft.Resources/resourceGroups'] : {})
 }
 
-resource existingRg 'Microsoft.Resources/resourceGroups@2024-03-01' existing = if (useExistingResourceGroup) {
-  name: existingResourceGroupName
-}
-
 module vault 'modules/recovery-services-vault.bicep' = {
   name: 'deploy-rsv'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     vaultName: vaultName
     location: location
@@ -119,7 +115,7 @@ module vault 'modules/recovery-services-vault.bicep' = {
 
 module backupPolicies 'modules/backup-policies.bicep' = {
   name: 'deploy-backup-policies'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     vaultName: vaultName
     policyNamePrefix: 'policy-${deploymentName}'
@@ -136,7 +132,7 @@ module backupPolicies 'modules/backup-policies.bicep' = {
 
 module vmProtection 'modules/vm-protection.bicep' = if (length(vmIdsToProtect) > 0) {
   name: 'deploy-vm-protection'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     vaultName: vaultName
     backupPolicyId: backupPolicies.outputs.vmPolicyId

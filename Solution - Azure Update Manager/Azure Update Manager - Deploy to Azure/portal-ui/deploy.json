@@ -1,0 +1,605 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "17339605377771684041"
+    }
+  },
+  "parameters": {
+    "deploymentName": {
+      "type": "string",
+      "metadata": {
+        "description": "Deployment name prefix"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[deployment().location]",
+      "metadata": {
+        "description": "Azure region"
+      }
+    },
+    "useExistingResourceGroup": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Use existing Resource Group"
+      }
+    },
+    "existingResourceGroupName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Resource Group name"
+      }
+    },
+    "maintenanceStartDateTime": {
+      "type": "string",
+      "defaultValue": "2024-01-01 23:00",
+      "metadata": {
+        "description": "Maintenance window start date-time (UTC, format: 2024-01-01 23:00)"
+      }
+    },
+    "maintenanceDuration": {
+      "type": "string",
+      "defaultValue": "PT2H",
+      "metadata": {
+        "description": "Maintenance window duration (ISO 8601, e.g. PT2H)"
+      }
+    },
+    "maintenanceTimeZone": {
+      "type": "string",
+      "defaultValue": "W. Europe Standard Time",
+      "metadata": {
+        "description": "Maintenance timezone"
+      }
+    },
+    "recurEvery": {
+      "type": "string",
+      "defaultValue": "Weekly",
+      "allowedValues": [
+        "Weekly",
+        "Monthly"
+      ],
+      "metadata": {
+        "description": "Recurrence schedule"
+      }
+    },
+    "dayOfWeek": {
+      "type": "string",
+      "defaultValue": "Sunday",
+      "allowedValues": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday"
+      ],
+      "metadata": {
+        "description": "Day of week for weekly maintenance"
+      }
+    },
+    "rebootSetting": {
+      "type": "string",
+      "defaultValue": "IfRequired",
+      "allowedValues": [
+        "IfRequired",
+        "Never",
+        "Always"
+      ],
+      "metadata": {
+        "description": "Reboot behavior after patching"
+      }
+    },
+    "osType": {
+      "type": "string",
+      "defaultValue": "Both",
+      "allowedValues": [
+        "Windows",
+        "Linux",
+        "Both"
+      ],
+      "metadata": {
+        "description": "Target OS types"
+      }
+    },
+    "windowsClassifications": {
+      "type": "array",
+      "defaultValue": [
+        "Critical",
+        "Security",
+        "UpdateRollup"
+      ],
+      "metadata": {
+        "description": "Windows update classifications to include"
+      }
+    },
+    "linuxClassifications": {
+      "type": "array",
+      "defaultValue": [
+        "Critical",
+        "Security"
+      ],
+      "metadata": {
+        "description": "Linux update classifications to include"
+      }
+    },
+    "enablePeriodicAssessmentPolicy": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Assign policy for periodic assessment of available updates"
+      }
+    },
+    "enableAutoPatchingPolicy": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Assign policy to auto-patch VMs with the maintenance config"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Log Analytics Workspace Resource ID for Update Manager diagnostics"
+      }
+    },
+    "tagsByResource": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags for resources"
+      }
+    }
+  },
+  "variables": {
+    "resourceGroupName": "[if(parameters('useExistingResourceGroup'), parameters('existingResourceGroupName'), format('rg-{0}', parameters('deploymentName')))]",
+    "maintenanceConfigName": "[format('mc-{0}', parameters('deploymentName'))]",
+    "baseTags": {
+      "DeployedBy": "Azure-Solution-Portal",
+      "Solution": "Azure-Update-Manager",
+      "ManagedBy": "Bicep"
+    }
+  },
+  "resources": [
+    {
+      "condition": "[not(parameters('useExistingResourceGroup'))]",
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[union(variables('baseTags'), if(contains(parameters('tagsByResource'), 'Microsoft.Resources/resourceGroups'), parameters('tagsByResource')['Microsoft.Resources/resourceGroups'], createObject()))]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-maintenance-config",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "configName": {
+            "value": "[variables('maintenanceConfigName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "startDateTime": {
+            "value": "[parameters('maintenanceStartDateTime')]"
+          },
+          "duration": {
+            "value": "[parameters('maintenanceDuration')]"
+          },
+          "timeZone": {
+            "value": "[parameters('maintenanceTimeZone')]"
+          },
+          "recurEvery": {
+            "value": "[parameters('recurEvery')]"
+          },
+          "dayOfWeek": {
+            "value": "[parameters('dayOfWeek')]"
+          },
+          "osType": {
+            "value": "[parameters('osType')]"
+          },
+          "windowsClassifications": {
+            "value": "[parameters('windowsClassifications')]"
+          },
+          "linuxClassifications": {
+            "value": "[parameters('linuxClassifications')]"
+          },
+          "rebootSetting": {
+            "value": "[parameters('rebootSetting')]"
+          },
+          "tags": {
+            "value": "[union(variables('baseTags'), if(contains(parameters('tagsByResource'), 'Microsoft.Maintenance/maintenanceConfigurations'), parameters('tagsByResource')['Microsoft.Maintenance/maintenanceConfigurations'], createObject()))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "4505414926573536301"
+            }
+          },
+          "parameters": {
+            "configName": {
+              "type": "string",
+              "metadata": {
+                "description": "Maintenance Configuration name"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "startDateTime": {
+              "type": "string",
+              "defaultValue": "2024-01-01 23:00",
+              "metadata": {
+                "description": "Maintenance window start date-time (UTC, format: 2024-01-01 23:00)"
+              }
+            },
+            "duration": {
+              "type": "string",
+              "defaultValue": "PT2H",
+              "metadata": {
+                "description": "Maintenance window duration (ISO 8601, e.g. PT2H = 2 hours)"
+              }
+            },
+            "timeZone": {
+              "type": "string",
+              "defaultValue": "W. Europe Standard Time",
+              "metadata": {
+                "description": "Maintenance window timezone"
+              }
+            },
+            "recurEvery": {
+              "type": "string",
+              "defaultValue": "Weekly",
+              "allowedValues": [
+                "Daily",
+                "Weekly",
+                "Monthly"
+              ],
+              "metadata": {
+                "description": "Recurrence: Daily, Weekly, Monthly"
+              }
+            },
+            "dayOfWeek": {
+              "type": "string",
+              "defaultValue": "Sunday",
+              "metadata": {
+                "description": "Day of week for weekly maintenance (e.g. Sunday)"
+              }
+            },
+            "weekOfMonth": {
+              "type": "string",
+              "defaultValue": "Second",
+              "allowedValues": [
+                "First",
+                "Second",
+                "Third",
+                "Fourth",
+                "Last"
+              ],
+              "metadata": {
+                "description": "Week of month for monthly maintenance (First, Second, Third, Fourth, Last)"
+              }
+            },
+            "useWeeklyOccurrence": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Day of month for monthly maintenance (1-28, or use weekOfMonth+dayOfWeek)"
+              }
+            },
+            "osType": {
+              "type": "string",
+              "defaultValue": "Both",
+              "allowedValues": [
+                "Windows",
+                "Linux",
+                "Both"
+              ],
+              "metadata": {
+                "description": "OS types to update: Windows, Linux, or Both"
+              }
+            },
+            "windowsClassifications": {
+              "type": "array",
+              "defaultValue": [
+                "Critical",
+                "Security",
+                "UpdateRollup",
+                "FeaturePack",
+                "ServicePack",
+                "Definition",
+                "Tools",
+                "Updates"
+              ],
+              "metadata": {
+                "description": "Update classifications for Windows"
+              }
+            },
+            "linuxClassifications": {
+              "type": "array",
+              "defaultValue": [
+                "Critical",
+                "Security",
+                "Other"
+              ],
+              "metadata": {
+                "description": "Update classifications for Linux"
+              }
+            },
+            "windowsExcludeKbIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "KBIDs to exclude from Windows updates (optional)"
+              }
+            },
+            "linuxExcludePackages": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Package name-masks to exclude from Linux updates (optional)"
+              }
+            },
+            "rebootSetting": {
+              "type": "string",
+              "defaultValue": "IfRequired",
+              "allowedValues": [
+                "IfRequired",
+                "Never",
+                "Always"
+              ],
+              "metadata": {
+                "description": "Reboot setting after update"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "recurrenceExpression": "[if(equals(parameters('recurEvery'), 'Daily'), '1Day', if(equals(parameters('recurEvery'), 'Weekly'), format('1Week {0}', parameters('dayOfWeek')), if(parameters('useWeeklyOccurrence'), format('1Month {0} {1}', parameters('weekOfMonth'), parameters('dayOfWeek')), '1Month')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Maintenance/maintenanceConfigurations",
+              "apiVersion": "2023-09-01-preview",
+              "name": "[parameters('configName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "maintenanceScope": "InGuestPatch",
+                "maintenanceWindow": {
+                  "startDateTime": "[parameters('startDateTime')]",
+                  "duration": "[parameters('duration')]",
+                  "timeZone": "[parameters('timeZone')]",
+                  "recurEvery": "[variables('recurrenceExpression')]",
+                  "expirationDateTime": null
+                },
+                "installPatches": {
+                  "rebootSetting": "[parameters('rebootSetting')]",
+                  "windowsParameters": "[if(not(equals(parameters('osType'), 'Linux')), createObject('classificationsToInclude', parameters('windowsClassifications'), 'kbNumbersToExclude', parameters('windowsExcludeKbIds'), 'kbNumbersToInclude', createArray()), null())]",
+                  "linuxParameters": "[if(not(equals(parameters('osType'), 'Windows')), createObject('classificationsToInclude', parameters('linuxClassifications'), 'packageNameMasksToExclude', parameters('linuxExcludePackages'), 'packageNameMasksToInclude', createArray()), null())]"
+                },
+                "visibility": "Custom",
+                "namespace": "Microsoft.Maintenance",
+                "extensionProperties": {}
+              }
+            }
+          ],
+          "outputs": {
+            "maintenanceConfigId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Maintenance/maintenanceConfigurations', parameters('configName'))]"
+            },
+            "maintenanceConfigName": {
+              "type": "string",
+              "value": "[parameters('configName')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-update-policies",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "policyNamePrefix": {
+            "value": "[format('policy-{0}-update', parameters('deploymentName'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "maintenanceConfigId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value]"
+          },
+          "enablePeriodicAssessment": {
+            "value": "[parameters('enablePeriodicAssessmentPolicy')]"
+          },
+          "enableAutoPatching": {
+            "value": "[parameters('enableAutoPatchingPolicy')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "1604994779217592015"
+            }
+          },
+          "parameters": {
+            "policyNamePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Policy assignment name prefix"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for policy assignment identity"
+              }
+            },
+            "maintenanceConfigId": {
+              "type": "string",
+              "metadata": {
+                "description": "Maintenance Configuration Resource ID"
+              }
+            },
+            "enablePeriodicAssessment": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Assign policy to periodically check for missing updates (assessment)"
+              }
+            },
+            "enableAutoPatching": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Assign policy to automatically apply updates via maintenance config"
+              }
+            }
+          },
+          "variables": {
+            "assessmentPolicyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/59efceea-0c96-497e-a4a1-4eb2290dac15",
+            "autoPatchPolicyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/ba0df93e-e4ac-479a-aac2-134bbae39a1a"
+          },
+          "resources": [
+            {
+              "condition": "[parameters('enablePeriodicAssessment')]",
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[take(format('{0}-assess', parameters('policyNamePrefix')), 64)]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "displayName": "Abilita valutazione periodica aggiornamenti VM",
+                "description": "Configura le VM per la valutazione automatica e periodica degli aggiornamenti disponibili",
+                "policyDefinitionId": "[variables('assessmentPolicyDefinitionId')]",
+                "enforcementMode": "Default",
+                "parameters": {}
+              }
+            },
+            {
+              "condition": "[parameters('enableAutoPatching')]",
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[take(format('{0}-patch', parameters('policyNamePrefix')), 64)]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "displayName": "Pianifica aggiornamenti VM con Azure Update Manager",
+                "description": "Associa le VM alla Maintenance Configuration per il patching automatico",
+                "policyDefinitionId": "[variables('autoPatchPolicyDefinitionId')]",
+                "enforcementMode": "Default",
+                "parameters": {
+                  "maintenanceConfigurationResourceId": {
+                    "value": "[parameters('maintenanceConfigId')]"
+                  }
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enablePeriodicAssessment')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-assess', parameters('policyNamePrefix')), 64)), subscription().id, 'Contributor')]",
+              "properties": {
+                "principalId": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-assess', parameters('policyNamePrefix')), 64)), '2023-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]"
+              },
+              "dependsOn": [
+                "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-assess', parameters('policyNamePrefix')), 64))]"
+              ]
+            },
+            {
+              "condition": "[parameters('enableAutoPatching')]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-patch', parameters('policyNamePrefix')), 64)), subscription().id, 'Contributor')]",
+              "properties": {
+                "principalId": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-patch', parameters('policyNamePrefix')), 64)), '2023-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]"
+              },
+              "dependsOn": [
+                "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-patch', parameters('policyNamePrefix')), 64))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "assessmentPolicyId": {
+              "type": "string",
+              "value": "[if(parameters('enablePeriodicAssessment'), subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-assess', parameters('policyNamePrefix')), 64)), '')]"
+            },
+            "autoPatchPolicyId": {
+              "type": "string",
+              "value": "[if(parameters('enableAutoPatching'), subscriptionResourceId('Microsoft.Authorization/policyAssignments', take(format('{0}-patch', parameters('policyNamePrefix')), 64)), '')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[variables('resourceGroupName')]"
+    },
+    "maintenanceConfigId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value]"
+    },
+    "maintenanceConfigName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigName.value]"
+    },
+    "updateManagerPortalUrl": {
+      "type": "string",
+      "value": "https://portal.azure.com/#view/Microsoft_Azure_Automation/UpdateCenterMenuBlade/~/overview"
+    }
+  }
+}

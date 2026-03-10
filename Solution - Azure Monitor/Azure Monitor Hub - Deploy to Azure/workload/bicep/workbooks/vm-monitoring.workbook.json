@@ -1,0 +1,560 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# 🖥️ VM Monitoring Dashboard\n---\nDashboard completo per il monitoraggio delle macchine virtuali Azure. Naviga tra i tab per visualizzare panoramica, performance, alert e disponibilità."
+      },
+      "customWidth": "100",
+      "name": "text-header"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "timeRangeParam",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Intervallo di tempo",
+            "type": 4,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 3600000 },
+                { "durationMs": 14400000 },
+                { "durationMs": 43200000 },
+                { "durationMs": 86400000 },
+                { "durationMs": 172800000 },
+                { "durationMs": 604800000 },
+                { "durationMs": 2592000000 }
+              ],
+              "allowCustom": true
+            },
+            "resourceType": "microsoft.operationalinsights/workspaces"
+          },
+          {
+            "id": "selectedTabParam",
+            "version": "KqlParameterItem/1.0",
+            "name": "selectedTab",
+            "type": 1,
+            "defaultValue": "overview",
+            "isHiddenWhenLocked": true,
+            "resourceType": "microsoft.operationalinsights/workspaces"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "tab-overview",
+            "cellValue": "overview",
+            "linkTarget": "parameter",
+            "linkLabel": "📊 Panoramica",
+            "subTarget": "selectedTab",
+            "preText": "",
+            "style": "link"
+          },
+          {
+            "id": "tab-performance",
+            "cellValue": "performance",
+            "linkTarget": "parameter",
+            "linkLabel": "⚡ Performance",
+            "subTarget": "selectedTab",
+            "preText": "",
+            "style": "link"
+          },
+          {
+            "id": "tab-alerts",
+            "cellValue": "alerts",
+            "linkTarget": "parameter",
+            "linkLabel": "🔔 Alert & Soglie",
+            "subTarget": "selectedTab",
+            "preText": "",
+            "style": "link"
+          },
+          {
+            "id": "tab-heartbeat",
+            "cellValue": "heartbeat",
+            "linkTarget": "parameter",
+            "linkLabel": "💚 Disponibilità",
+            "subTarget": "selectedTab",
+            "preText": "",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs-nav"
+    },
+
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Heartbeat\n| summarize LastBeat = max(TimeGenerated) by Computer\n| summarize\n    TotalVMs = count(),\n    OnlineVMs = countif(LastBeat > ago(5m)),\n    OfflineVMs = countif(LastBeat <= ago(5m))\n| extend CoverturaPct = round(todouble(OnlineVMs) / iff(TotalVMs == 0, 1, todouble(TotalVMs)) * 100, 1)\n| project\n    ['VM Totali'] = TotalVMs,\n    ['VM Online'] = OnlineVMs,\n    ['VM Offline'] = OfflineVMs,\n    ['Copertura Monitoraggio'] = strcat(CoverturaPct, ' %')",
+              "size": 4,
+              "title": "Riepilogo Infrastruttura",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "tiles",
+              "tileSettings": {
+                "titleContent": {
+                  "columnMatch": "$gen_group",
+                  "formatter": 1
+                },
+                "leftContent": {
+                  "columnMatch": "$gen_firstCol",
+                  "formatter": 12,
+                  "formatOptions": { "palette": "auto" },
+                  "numberFormat": { "unit": 17, "options": { "maximumSignificantDigits": 3, "maximumFractionDigits": 2 } }
+                },
+                "showBorder": false,
+                "size": "auto"
+              }
+            },
+            "customWidth": "100",
+            "name": "overview-stats-tiles"
+          },
+          {
+            "type": 1,
+            "content": {
+              "json": "### Stato VM in Tempo Reale"
+            },
+            "name": "text-vm-status"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Heartbeat\n| summarize\n    LastHeartbeat = max(TimeGenerated),\n    TotalHeartbeats = count()\n    by Computer,\n       OSType,\n       ResourceGroup = tostring(split(ResourceId, '/')[4]),\n       Location = RemoteIPCountry\n| extend Status = iff(LastHeartbeat > ago(5m), '🟢 Online', '🔴 Offline')\n| extend MinutesSince = datetime_diff('minute', now(), LastHeartbeat)\n| project\n    Computer,\n    ['Gruppo di Risorse'] = ResourceGroup,\n    ['OS'] = OSType,\n    Status,\n    ['Ultimo Heartbeat'] = LastHeartbeat,\n    ['Minuti Fa'] = MinutesSince\n| sort by Status asc, Computer asc",
+              "size": 0,
+              "title": "Inventario e Stato VM",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Status",
+                    "formatter": 1
+                  },
+                  {
+                    "columnMatch": "Minuti Fa",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "palette": "greenRed",
+                      "customColumnWidthSetting": "80px"
+                    }
+                  }
+                ],
+                "filter": true,
+                "sortBy": [{ "itemKey": "Status", "sortOrder": 1 }]
+              }
+            },
+            "name": "overview-vm-grid"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      },
+      "name": "group-overview"
+    },
+
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "### Utilizzo CPU"
+            },
+            "customWidth": "100",
+            "name": "text-cpu"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\n| where ObjectName == \"Processor\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\"\n| summarize AvgCPU = round(avg(CounterValue), 2) by bin(TimeGenerated, {TimeRange:grain}), Computer\n| project TimeGenerated, Computer, AvgCPU\n| render timechart",
+              "size": 0,
+              "title": "CPU % per VM nel Tempo",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces"
+            },
+            "customWidth": "60",
+            "name": "perf-cpu-chart"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\n| where ObjectName == \"Processor\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\"\n| summarize\n    ['CPU Media (%)'] = round(avg(CounterValue), 2),\n    ['CPU Max (%)'] = round(max(CounterValue), 2),\n    ['CPU Min (%)'] = round(min(CounterValue), 2)\n    by Computer\n| top 10 by ['CPU Media (%)'] desc\n| sort by ['CPU Media (%)'] desc",
+              "size": 0,
+              "title": "Top 10 - CPU Media",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "CPU Media (%)",
+                    "formatter": 8,
+                    "formatOptions": { "palette": "yellowOrangeRed" }
+                  }
+                ]
+              }
+            },
+            "customWidth": "40",
+            "name": "perf-top-cpu"
+          },
+          {
+            "type": 1,
+            "content": {
+              "json": "### Utilizzo Memoria"
+            },
+            "customWidth": "100",
+            "name": "text-memory"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\n| where ObjectName == \"Memory\" and CounterName == \"% Committed Bytes In Use\"\n| summarize AvgMem = round(avg(CounterValue), 2) by bin(TimeGenerated, {TimeRange:grain}), Computer\n| project TimeGenerated, Computer, AvgMem\n| render timechart",
+              "size": 0,
+              "title": "Memoria % per VM nel Tempo",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces"
+            },
+            "customWidth": "60",
+            "name": "perf-memory-chart"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\n| where ObjectName == \"Memory\" and CounterName == \"Available MBytes\"\n| summarize\n    ['Memoria Disponibile Avg (MB)'] = round(avg(CounterValue), 0),\n    ['Memoria Disponibile Min (MB)'] = round(min(CounterValue), 0)\n    by Computer\n| sort by ['Memoria Disponibile Avg (MB)'] asc\n| top 10 by ['Memoria Disponibile Avg (MB)'] asc",
+              "size": 0,
+              "title": "Top 10 - Memoria Disponibile Minima",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Memoria Disponibile Avg (MB)",
+                    "formatter": 8,
+                    "formatOptions": { "palette": "redGreen" }
+                  }
+                ]
+              }
+            },
+            "customWidth": "40",
+            "name": "perf-top-memory"
+          },
+          {
+            "type": 1,
+            "content": {
+              "json": "### Utilizzo Disco"
+            },
+            "customWidth": "100",
+            "name": "text-disk"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\n| where ObjectName == \"LogicalDisk\"\n    and CounterName == \"% Free Space\"\n    and InstanceName !in (\"_Total\", \"HarddiskVolume1\", \"HarddiskVolume2\", \"HarddiskVolume3\")\n    and InstanceName !startswith \"HarddiskVolume\"\n| summarize AvgFreeSpace = round(avg(CounterValue), 1) by Computer, InstanceName\n| extend ['Usato (%)'] = round(100 - AvgFreeSpace, 1)\n| extend ['Libero (%)'] = AvgFreeSpace\n| project\n    Computer,\n    ['Drive'] = InstanceName,\n    ['Usato (%)'],\n    ['Libero (%)']\n| sort by ['Usato (%)'] desc",
+              "size": 0,
+              "title": "Utilizzo Disco per VM e Drive",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Usato (%)",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "palette": "yellowOrangeRed",
+                      "customColumnWidthSetting": "120px"
+                    },
+                    "numberFormat": { "unit": 1, "options": { "style": "decimal", "maximumFractionDigits": 1 } }
+                  },
+                  {
+                    "columnMatch": "Libero (%)",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "palette": "redGreen",
+                      "customColumnWidthSetting": "120px"
+                    }
+                  }
+                ],
+                "filter": true
+              }
+            },
+            "customWidth": "60",
+            "name": "perf-disk-table"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Perf\n| where ObjectName == \"Network Adapter\"\n    and CounterName in (\"Bytes Received/sec\", \"Bytes Sent/sec\")\n| summarize\n    ['Rx Avg (KB/s)'] = round(avg(iff(CounterName == \"Bytes Received/sec\", CounterValue, 0.0)) / 1024, 2),\n    ['Tx Avg (KB/s)'] = round(avg(iff(CounterName == \"Bytes Sent/sec\", CounterValue, 0.0)) / 1024, 2)\n    by Computer\n| sort by ['Rx Avg (KB/s)'] desc\n| top 10 by ['Rx Avg (KB/s)'] desc",
+              "size": 0,
+              "title": "Top 10 - Traffico di Rete",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table"
+            },
+            "customWidth": "40",
+            "name": "perf-network"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "performance"
+      },
+      "name": "group-performance"
+    },
+
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let cpuThreshold = 85;\nlet memThreshold = 85;\nlet diskThreshold = 85;\nlet cpuAlerts = Perf\n| where ObjectName == \"Processor\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\"\n| where CounterValue > cpuThreshold\n| extend AlertType = \"🔴 CPU Alta\", MetricValue = round(CounterValue, 1), Threshold = cpuThreshold, Unit = \"%\";\nlet memAlerts = Perf\n| where ObjectName == \"Memory\" and CounterName == \"% Committed Bytes In Use\"\n| where CounterValue > memThreshold\n| extend AlertType = \"🟠 Memoria Alta\", MetricValue = round(CounterValue, 1), Threshold = memThreshold, Unit = \"%\";\nlet diskAlerts = Perf\n| where ObjectName == \"LogicalDisk\" and CounterName == \"% Free Space\"\n    and InstanceName !in (\"_Total\") and InstanceName !startswith \"HarddiskVolume\"\n| where CounterValue < (100 - diskThreshold)\n| extend AlertType = \"🟡 Disco Pieno\", MetricValue = round(100 - CounterValue, 1), Threshold = diskThreshold, Unit = \"%\";\nunion cpuAlerts, memAlerts, diskAlerts\n| project\n    ['Data/Ora'] = TimeGenerated,\n    Computer,\n    ['Tipo Alert'] = AlertType,\n    ['Valore'] = strcat(tostring(MetricValue), \" \", Unit),\n    ['Soglia'] = strcat(tostring(Threshold), \" \", Unit)\n| sort by ['Data/Ora'] desc\n| limit 200",
+              "size": 0,
+              "title": "Violazioni di Soglia nel Periodo",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "filter": true,
+                "formatters": [
+                  {
+                    "columnMatch": "Tipo Alert",
+                    "formatter": 1
+                  }
+                ]
+              }
+            },
+            "customWidth": "100",
+            "name": "alerts-threshold-table"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let cpuThreshold = 85;\nlet memThreshold = 85;\nPerf\n| where (ObjectName == \"Processor\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\" and CounterValue > cpuThreshold)\n    or (ObjectName == \"Memory\" and CounterName == \"% Committed Bytes In Use\" and CounterValue > memThreshold)\n| extend AlertType = iff(ObjectName == \"Processor\", \"CPU\", \"Memoria\")\n| summarize Violazioni = count() by bin(TimeGenerated, {TimeRange:grain}), AlertType\n| render barchart",
+              "size": 0,
+              "title": "Frequenza Violazioni nel Tempo",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces"
+            },
+            "customWidth": "60",
+            "name": "alerts-frequency-chart"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let cpuThreshold = 85;\nlet memThreshold = 85;\nlet diskThreshold = 85;\nlet cpuAlerts = Perf\n| where ObjectName == \"Processor\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\"\n| where CounterValue > cpuThreshold\n| extend AlertType = \"CPU Alta\";\nlet memAlerts = Perf\n| where ObjectName == \"Memory\" and CounterName == \"% Committed Bytes In Use\"\n| where CounterValue > memThreshold\n| extend AlertType = \"Memoria Alta\";\nlet diskAlerts = Perf\n| where ObjectName == \"LogicalDisk\" and CounterName == \"% Free Space\"\n    and InstanceName !in (\"_Total\") and InstanceName !startswith \"HarddiskVolume\"\n| where CounterValue < (100 - diskThreshold)\n| extend AlertType = \"Disco Pieno\";\nunion cpuAlerts, memAlerts, diskAlerts\n| summarize Violazioni = count() by Computer\n| top 10 by Violazioni desc\n| project Computer, Violazioni",
+              "size": 0,
+              "title": "Top 10 - VM con più Violazioni",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "formatters": [
+                  {
+                    "columnMatch": "Violazioni",
+                    "formatter": 8,
+                    "formatOptions": { "palette": "redGreen" }
+                  }
+                ]
+              }
+            },
+            "customWidth": "40",
+            "name": "alerts-top-vm"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Event\n| where EventLog in (\"System\", \"Application\")\n    and EventLevelName in (\"Error\", \"Critical\", \"Warning\")\n| project\n    ['Data/Ora'] = TimeGenerated,\n    Computer,\n    ['Log'] = EventLog,\n    ['Livello'] = EventLevelName,\n    ['Event ID'] = EventID,\n    ['Messaggio'] = substring(RenderedDescription, 0, 200)\n| sort by ['Data/Ora'] desc\n| limit 100",
+              "size": 0,
+              "title": "Windows Event Log - Errori e Warning",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "filter": true,
+                "formatters": [
+                  {
+                    "columnMatch": "Livello",
+                    "formatter": 18,
+                    "formatOptions": {
+                      "thresholdsOptions": "icons",
+                      "thresholdsGrid": [
+                        { "operator": "==", "thresholdValue": "Critical", "representation": "critical", "text": "Critical" },
+                        { "operator": "==", "thresholdValue": "Error", "representation": "4", "text": "Error" },
+                        { "operator": "==", "thresholdValue": "Warning", "representation": "2", "text": "Warning" },
+                        { "operator": "Default", "thresholdValue": null, "representation": "success", "text": "" }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "customWidth": "100",
+            "name": "alerts-events-table"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "alerts"
+      },
+      "name": "group-alerts"
+    },
+
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let startTime = {TimeRange:start};\nlet endTime = {TimeRange:end};\nlet totalMinutes = toreal(datetime_diff('minute', endTime, startTime));\nHeartbeat\n| where TimeGenerated between (startTime .. endTime)\n| summarize HeartbeatCount = count() by Computer\n| extend ExpectedHeartbeats = totalMinutes\n| extend UptimePct = round(min_of(toreal(HeartbeatCount) / ExpectedHeartbeats * 100.0, 100.0), 2)\n| extend Status = case(\n    UptimePct >= 99.5, '🟢 Eccellente',\n    UptimePct >= 99.0, '🟢 Buono',\n    UptimePct >= 95.0, '🟡 Degradato',\n    UptimePct >= 80.0, '🟠 Critico',\n    '🔴 Fuori Servizio'\n  )\n| project\n    Computer,\n    ['Uptime (%)'] = UptimePct,\n    Status,\n    ['Heartbeat Ricevuti'] = HeartbeatCount,\n    ['Heartbeat Attesi'] = toint(ExpectedHeartbeats)\n| sort by ['Uptime (%)'] asc",
+              "size": 0,
+              "title": "Disponibilità VM nel Periodo Selezionato",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table",
+              "gridSettings": {
+                "filter": true,
+                "formatters": [
+                  {
+                    "columnMatch": "Uptime (%)",
+                    "formatter": 8,
+                    "formatOptions": {
+                      "palette": "redGreen",
+                      "customColumnWidthSetting": "120px"
+                    }
+                  },
+                  {
+                    "columnMatch": "Status",
+                    "formatter": 1
+                  }
+                ]
+              }
+            },
+            "customWidth": "60",
+            "name": "heartbeat-uptime-table"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Heartbeat\n| summarize LastBeat = max(TimeGenerated) by Computer\n| extend MinutesOffline = datetime_diff('minute', now(), LastBeat)\n| where MinutesOffline > 10\n| project\n    Computer,\n    ['Ultimo Heartbeat'] = LastBeat,\n    ['Minuti Offline'] = MinutesOffline\n| sort by ['Minuti Offline'] desc",
+              "size": 0,
+              "title": "⚠️ VM Non Raggiungibili (>10 min)",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "visualization": "table"
+            },
+            "customWidth": "40",
+            "name": "heartbeat-offline-vms"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Heartbeat\n| summarize Count = count() by bin(TimeGenerated, {TimeRange:grain}), Computer\n| render timechart",
+              "size": 0,
+              "title": "Frequenza Heartbeat nel Tempo",
+              "timeContext": { "durationMs": 0 },
+              "timeContextFromParameter": "TimeRange",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces"
+            },
+            "customWidth": "100",
+            "name": "heartbeat-timechart"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "selectedTab",
+        "comparison": "isEqualTo",
+        "value": "heartbeat"
+      },
+      "name": "group-heartbeat"
+    }
+  ],
+  "styleSettings": {},
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

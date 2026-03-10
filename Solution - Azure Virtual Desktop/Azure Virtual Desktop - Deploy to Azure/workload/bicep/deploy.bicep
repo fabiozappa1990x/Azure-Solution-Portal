@@ -139,13 +139,9 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingRe
   tags: union(baseTags, contains(tagsByResource, 'Microsoft.Resources/resourceGroups') ? tagsByResource['Microsoft.Resources/resourceGroups'] : {})
 }
 
-resource existingRg 'Microsoft.Resources/resourceGroups@2024-03-01' existing = if (useExistingResourceGroup) {
-  name: existingResourceGroupName
-}
-
 module hostPool 'modules/host-pool.bicep' = {
   name: 'deploy-host-pool'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     hostPoolName: hostPoolName
     location: location
@@ -161,7 +157,7 @@ module hostPool 'modules/host-pool.bicep' = {
 
 module appGroup 'modules/application-group.bicep' = {
   name: 'deploy-app-group'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     appGroupName: appGroupName
     location: location
@@ -176,7 +172,7 @@ module appGroup 'modules/application-group.bicep' = {
 
 module workspace 'modules/workspace.bicep' = {
   name: 'deploy-workspace'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     workspaceName: workspaceName
     location: location
@@ -189,7 +185,7 @@ module workspace 'modules/workspace.bicep' = {
 
 module sessionHosts 'modules/session-hosts.bicep' = if (sessionHostCount > 0) {
   name: 'deploy-session-hosts'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     namePrefix: sessionHostPrefix
     location: location
@@ -216,7 +212,7 @@ module sessionHosts 'modules/session-hosts.bicep' = if (sessionHostCount > 0) {
 
 module fslogix 'modules/fslogix.bicep' = if (deployFSLogix) {
   name: 'deploy-fslogix'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     storageAccountName: take(storageAccountName, 24)
     location: location
@@ -229,7 +225,7 @@ module fslogix 'modules/fslogix.bicep' = if (deployFSLogix) {
 
 module scalingPlan 'modules/scaling-plan.bicep' = if (deployScalingPlan && hostPoolType == 'Pooled') {
   name: 'deploy-scaling-plan'
-  scope: useExistingResourceGroup ? existingRg : rg
+  scope: resourceGroup(resourceGroupName)
   params: {
     scalingPlanName: scalingPlanName
     location: location

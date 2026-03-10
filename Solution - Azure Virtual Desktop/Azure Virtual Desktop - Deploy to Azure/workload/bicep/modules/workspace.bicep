@@ -8,7 +8,7 @@ param location string
 param friendlyName string = ''
 
 @description('Description')
-param description string = ''
+param workspaceDescription string = ''
 
 @description('Application Group IDs to associate with this workspace')
 param applicationGroupIds array = []
@@ -27,7 +27,7 @@ resource workspace 'Microsoft.DesktopVirtualization/workspaces@2023-09-05' = {
   tags: tags
   properties: {
     friendlyName: workspaceFriendlyName
-    description: description
+    description: workspaceDescription
     applicationGroupReferences: applicationGroupIds
   }
 }

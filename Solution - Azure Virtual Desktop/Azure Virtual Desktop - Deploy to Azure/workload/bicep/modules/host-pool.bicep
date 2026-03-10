@@ -22,7 +22,7 @@ param startVMOnConnect bool = true
 param friendlyName string = ''
 
 @description('Description')
-param description string = ''
+param hostPoolDescription string = ''
 
 @description('Preferred app group type')
 @allowed(['Desktop', 'RailApplications'])
@@ -30,6 +30,9 @@ param preferredAppGroupType string = 'Desktop'
 
 @description('Enable validation environment')
 param validationEnvironment bool = false
+
+@description('Registration token expiration time')
+param registrationExpirationTime string = dateTimeAdd(utcNow(), 'PT2H')
 
 @description('Log Analytics Workspace Resource ID for diagnostics')
 param logAnalyticsWorkspaceId string = ''
@@ -49,12 +52,12 @@ resource hostPool 'Microsoft.DesktopVirtualization/hostPools@2023-09-05' = {
     maxSessionLimit: hostPoolType == 'Pooled' ? maxSessionLimit : 1
     startVMOnConnect: startVMOnConnect
     friendlyName: hostPoolFriendlyName
-    description: description
+    description: hostPoolDescription
     preferredAppGroupType: preferredAppGroupType
     validationEnvironment: validationEnvironment
     customRdpProperty: 'audiocapturemode:i:1;audiomode:i:0;drivestoredirect:s:*;redirectclipboard:i:1;redirectcomports:i:1;redirectprinters:i:1;redirectsmartcards:i:1;screen mode id:i:2;'
     registrationInfo: {
-      expirationTime: dateTimeAdd(utcNow(), 'PT2H')
+      expirationTime: registrationExpirationTime
       registrationTokenOperation: 'Update'
     }
   }

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "config": {
+      "isWizard": true,
+      "basics": {
+        "description": "Deploy Microsoft Defender for Cloud accelerator: piani Defender, security contact e policy benchmark (MCSB).",
+        "location": { "visible": true }
+      }
+    },
+    "basics": [
+      {
+        "name": "deploymentName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Deployment Name",
+        "placeholder": "defender-prod",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z0-9-]{3,24}$",
+          "validationMessage": "Solo lowercase, numeri e trattini. Lunghezza 3-24."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "contacts",
+        "label": "Security Contact",
+        "elements": [
+          {
+            "name": "emailRecipients",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Email recipients",
+            "placeholder": "security@contoso.com;secops@contoso.com",
+            "toolTip": "Lista separata da ';' usata per i contatti di sicurezza.",
+            "constraints": { "required": true }
+          },
+          {
+            "name": "notifySubscriptionOwners",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Notify subscription owners (high severity)",
+            "defaultValue": true
+          }
+        ]
+      },
+      {
+        "name": "plans",
+        "label": "Defender Plans",
+        "elements": [
+          { "name": "enableDefenderForServers", "type": "Microsoft.Common.CheckBox", "label": "Defender for Servers", "defaultValue": true },
+          {
+            "name": "serversSubPlan",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Servers Sub-Plan",
+            "defaultValue": "P2",
+            "visible": "[steps('plans').enableDefenderForServers]",
+            "constraints": { "allowedValues": [ { "label": "P1", "value": "P1" }, { "label": "P2 (MDE)", "value": "P2" } ], "required": true }
+          },
+          { "name": "enableCSPM", "type": "Microsoft.Common.CheckBox", "label": "Enable CSPM", "defaultValue": true }
+        ]
+      }
+    ],
+    "outputs": {
+      "deploymentName": "[basics('deploymentName')]",
+      "location": "[location()]",
+      "emailRecipients": "[steps('contacts').emailRecipients]",
+      "notifySubscriptionOwners": "[steps('contacts').notifySubscriptionOwners]",
+      "enableDefenderForServers": "[steps('plans').enableDefenderForServers]",
+      "serversSubPlan": "[steps('plans').serversSubPlan]",
+      "enableCSPM": "[steps('plans').enableCSPM]",
+      "tagsByResource": {}
+    }
+  }
+}
+

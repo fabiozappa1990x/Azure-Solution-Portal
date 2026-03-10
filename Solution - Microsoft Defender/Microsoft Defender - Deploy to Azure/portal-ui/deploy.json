@@ -1,0 +1,536 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.40.2.10011",
+      "templateHash": "13423604431343449615"
+    }
+  },
+  "parameters": {
+    "deploymentName": {
+      "type": "string",
+      "metadata": {
+        "description": "Deployment name prefix"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[deployment().location]",
+      "metadata": {
+        "description": "Azure region (used for policy assignment identity only)"
+      }
+    },
+    "enableDefenderForServers": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Servers"
+      }
+    },
+    "serversSubPlan": {
+      "type": "string",
+      "defaultValue": "P2",
+      "allowedValues": [
+        "P1",
+        "P2"
+      ],
+      "metadata": {
+        "description": "Servers sub-plan: P1 (basic) or P2 (full with MDE)"
+      }
+    },
+    "enableDefenderForSqlVm": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for SQL Servers on Machines"
+      }
+    },
+    "enableDefenderForStorage": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Storage"
+      }
+    },
+    "enableDefenderForKeyVault": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Key Vault"
+      }
+    },
+    "enableDefenderForARM": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender for Resource Manager"
+      }
+    },
+    "enableDefenderForAppService": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Defender for App Service"
+      }
+    },
+    "enableDefenderForContainers": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Defender for Containers"
+      }
+    },
+    "enableCSPM": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable Defender CSPM (Cloud Security Posture Management)"
+      }
+    },
+    "emailRecipients": {
+      "type": "string",
+      "metadata": {
+        "description": "Security contact email addresses (semicolon-separated)"
+      }
+    },
+    "phone": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Security contact phone number"
+      }
+    },
+    "notifySubscriptionOwners": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Notify subscription owners for high severity alerts"
+      }
+    },
+    "enableMDEAutoProvisioning": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable auto-provisioning of Microsoft Defender for Endpoint"
+      }
+    },
+    "enableAMAAutoProvisioning": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable auto-provisioning of Azure Monitor Agent via Defender"
+      }
+    },
+    "assignSecurityBenchmark": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Assign built-in Azure Security Benchmark initiative"
+      }
+    }
+  },
+  "resources": [
+    {
+      "condition": "[parameters('assignSecurityBenchmark')]",
+      "type": "Microsoft.Authorization/policyAssignments",
+      "apiVersion": "2023-04-01",
+      "name": "[format('assign-{0}-mcsb', take(parameters('deploymentName'), 40))]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "displayName": "Microsoft Cloud Security Benchmark",
+        "description": "Iniziativa di sicurezza Microsoft Cloud Security Benchmark per compliance e postura",
+        "policyDefinitionId": "/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8",
+        "enforcementMode": "DoNotEnforce",
+        "parameters": {}
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-defender-plans",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "enableDefenderForServers": {
+            "value": "[parameters('enableDefenderForServers')]"
+          },
+          "serversSubPlan": {
+            "value": "[parameters('serversSubPlan')]"
+          },
+          "enableDefenderForSqlVm": {
+            "value": "[parameters('enableDefenderForSqlVm')]"
+          },
+          "enableDefenderForStorage": {
+            "value": "[parameters('enableDefenderForStorage')]"
+          },
+          "enableDefenderForKeyVault": {
+            "value": "[parameters('enableDefenderForKeyVault')]"
+          },
+          "enableDefenderForARM": {
+            "value": "[parameters('enableDefenderForARM')]"
+          },
+          "enableDefenderForAppService": {
+            "value": "[parameters('enableDefenderForAppService')]"
+          },
+          "enableDefenderForContainers": {
+            "value": "[parameters('enableDefenderForContainers')]"
+          },
+          "enableCSPM": {
+            "value": "[parameters('enableCSPM')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "4890451921441665982"
+            }
+          },
+          "parameters": {
+            "enableDefenderForServers": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable Defender for Servers (Plan 2)"
+              }
+            },
+            "serversPlanTier": {
+              "type": "string",
+              "defaultValue": "Standard",
+              "allowedValues": [
+                "Standard",
+                "Free"
+              ],
+              "metadata": {
+                "description": "Servers plan tier"
+              }
+            },
+            "serversSubPlan": {
+              "type": "string",
+              "defaultValue": "P2",
+              "allowedValues": [
+                "P1",
+                "P2"
+              ],
+              "metadata": {
+                "description": "Servers sub-plan (P1 = basic, P2 = full with EDR)"
+              }
+            },
+            "enableDefenderForSqlVm": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable Defender for SQL Servers on Machines"
+              }
+            },
+            "enableDefenderForAppService": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable Defender for App Service"
+              }
+            },
+            "enableDefenderForStorage": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable Defender for Storage"
+              }
+            },
+            "enableDefenderForKeyVault": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable Defender for Key Vaults"
+              }
+            },
+            "enableDefenderForARM": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable Defender for Resource Manager"
+              }
+            },
+            "enableDefenderForDns": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable Defender for DNS"
+              }
+            },
+            "enableDefenderForContainers": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable Defender for Containers (AKS, ACR)"
+              }
+            },
+            "enableCSPM": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable CSPM (Cloud Security Posture Management) Defender plan"
+              }
+            }
+          },
+          "resources": [
+            {
+              "condition": "[parameters('enableDefenderForServers')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "VirtualMachines",
+              "properties": {
+                "pricingTier": "[parameters('serversPlanTier')]",
+                "subPlan": "[if(equals(parameters('serversPlanTier'), 'Standard'), parameters('serversSubPlan'), null())]"
+              }
+            },
+            {
+              "condition": "[parameters('enableDefenderForSqlVm')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "SqlServerVirtualMachines",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[parameters('enableDefenderForAppService')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "AppServices",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[parameters('enableDefenderForStorage')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "StorageAccounts",
+              "properties": {
+                "pricingTier": "Standard",
+                "subPlan": "DefenderForStorageV2"
+              }
+            },
+            {
+              "condition": "[parameters('enableDefenderForKeyVault')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "KeyVaults",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[parameters('enableDefenderForARM')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "Arm",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[parameters('enableDefenderForDns')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "Dns",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[parameters('enableDefenderForContainers')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "Containers",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[parameters('enableCSPM')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2024-01-01",
+              "name": "CloudPosture",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            }
+          ],
+          "outputs": {
+            "enabledPlans": {
+              "type": "array",
+              "value": "[filter(createArray(if(parameters('enableDefenderForServers'), format('Defender for Servers ({0})', parameters('serversSubPlan')), null()), if(parameters('enableDefenderForSqlVm'), 'Defender for SQL on VMs', null()), if(parameters('enableDefenderForAppService'), 'Defender for App Service', null()), if(parameters('enableDefenderForStorage'), 'Defender for Storage', null()), if(parameters('enableDefenderForKeyVault'), 'Defender for Key Vault', null()), if(parameters('enableDefenderForARM'), 'Defender for Resource Manager', null()), if(parameters('enableDefenderForDns'), 'Defender for DNS', null()), if(parameters('enableDefenderForContainers'), 'Defender for Containers', null()), if(parameters('enableCSPM'), 'Defender CSPM', null())), lambda('item', not(equals(lambdaVariables('item'), null()))))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-security-contacts",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "emailRecipients": {
+            "value": "[parameters('emailRecipients')]"
+          },
+          "phone": {
+            "value": "[parameters('phone')]"
+          },
+          "notifySubscriptionOwners": {
+            "value": "[parameters('notifySubscriptionOwners')]"
+          },
+          "enableMDEAutoProvisioning": {
+            "value": "[parameters('enableMDEAutoProvisioning')]"
+          },
+          "enableAMAAutoProvisioning": {
+            "value": "[parameters('enableAMAAutoProvisioning')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "8979799826447250965"
+            }
+          },
+          "parameters": {
+            "emailRecipients": {
+              "type": "string",
+              "metadata": {
+                "description": "Security contact email addresses (semicolon-separated)"
+              }
+            },
+            "phone": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Security contact phone (optional)"
+              }
+            },
+            "alertNotificationsHighSeverity": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Send notifications for high severity alerts"
+              }
+            },
+            "alertNotificationsMediumSeverity": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Send notifications for medium severity alerts"
+              }
+            },
+            "notifySubscriptionOwners": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Notify subscription owners"
+              }
+            },
+            "enableMDEAutoProvisioning": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable auto-provisioning of Microsoft Defender for Endpoint (MDE)"
+              }
+            },
+            "enableAMAAutoProvisioning": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable auto-provisioning of Azure Monitor Agent via Defender"
+              }
+            },
+            "mdeWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics Workspace Resource ID for MDE data (optional)"
+              }
+            }
+          },
+          "variables": {
+            "emailList": "[filter(split(parameters('emailRecipients'), ';'), lambda('e', not(empty(trim(lambdaVariables('e'))))))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Security/securityContacts",
+              "apiVersion": "2023-12-01-preview",
+              "name": "default",
+              "properties": {
+                "emails": "[join(variables('emailList'), ';')]",
+                "phone": "[parameters('phone')]",
+                "notificationsByRole": {
+                  "state": "[if(parameters('notifySubscriptionOwners'), 'On', 'Off')]",
+                  "roles": "[if(parameters('notifySubscriptionOwners'), createArray('Owner', 'Contributor'), createArray())]"
+                },
+                "alertNotifications": {
+                  "state": "On",
+                  "minimalSeverity": "[if(parameters('alertNotificationsHighSeverity'), if(parameters('alertNotificationsMediumSeverity'), 'Medium', 'High'), 'High')]"
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enableMDEAutoProvisioning')]",
+              "type": "Microsoft.Security/autoProvisioningSettings",
+              "apiVersion": "2017-08-01-preview",
+              "name": "MicrosoftDefenderForEndpoint",
+              "properties": {
+                "autoProvision": "On"
+              }
+            },
+            {
+              "condition": "[parameters('enableAMAAutoProvisioning')]",
+              "type": "Microsoft.Security/autoProvisioningSettings",
+              "apiVersion": "2017-08-01-preview",
+              "name": "MicrosoftMonitoringAgent",
+              "properties": {
+                "autoProvision": "On"
+              }
+            }
+          ],
+          "outputs": {
+            "securityContactId": {
+              "type": "string",
+              "value": "[subscriptionResourceId('Microsoft.Security/securityContacts', 'default')]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "enabledPlans": {
+      "type": "array",
+      "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', 'deploy-defender-plans'), '2025-04-01').outputs.enabledPlans.value]"
+    },
+    "defenderPortalUrl": {
+      "type": "string",
+      "value": "https://portal.azure.com/#view/Microsoft_Azure_Security/SecurityMenuBlade/~/0"
+    }
+  }
+}
