@@ -7,11 +7,6 @@ Write-Host "=== START ==="
 if ($Request.Method -eq 'OPTIONS') {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 200
-        Headers = @{ 
-            'Access-Control-Allow-Origin' = '*'
-            'Access-Control-Allow-Methods' = 'GET, POST, OPTIONS'
-            'Access-Control-Allow-Headers' = 'Content-Type, Authorization'
-        }
     })
     return
 }
@@ -37,7 +32,6 @@ if (-not $authHeader -or -not $authHeader.StartsWith('Bearer ')) {
         Body = '{"error":"Token mancante"}'
         Headers = @{ 
             'Content-Type' = 'application/json'
-            'Access-Control-Allow-Origin' = '*'
         }
     })
     return
@@ -163,7 +157,6 @@ try {
             Body = $jsonContent
             Headers = @{ 
                 'Content-Type' = 'application/json'
-                'Access-Control-Allow-Origin' = '*'
             }
         })
     } else {

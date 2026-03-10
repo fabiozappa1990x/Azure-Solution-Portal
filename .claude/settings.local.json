@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch origin)",
+      "Bash(git pull origin main --no-rebase)",
+      "Bash(git add \"Azure Solution Portal/\")",
+      "Bash(git push origin main)",
+      "Bash(gh run view 22465573242 --repo fabiozappa1990x/Azure-Solution-Portal --log-failed)",
+      "Bash(az account show --query \"name\" -o tsv)",
+      "Bash(gh secret set AZURE_FUNCTIONAPP_PUBLISH_PROFILE --repo fabiozappa1990x/Azure-Solution-Portal)",
+      "Bash(gh workflow run deploy-functionapp.yml --repo fabiozappa1990x/Azure-Solution-Portal --ref main)",
+      "Bash(gh run view 22466386448 --repo fabiozappa1990x/Azure-Solution-Portal)",
+      "Bash(gh run view 22466544543 --repo fabiozappa1990x/Azure-Solution-Portal)",
+      "Bash(gh run view 22467185913 --repo fabiozappa1990x/Azure-Solution-Portal)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://func-azsolportal-089fb2a1.azurewebsites.net/api/precheck\")"
+    ]
+  }
+}

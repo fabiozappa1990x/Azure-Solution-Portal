@@ -7,18 +7,12 @@ Write-Host "=== START precheck-defender ==="
 if ($Request.Method -eq 'OPTIONS') {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 200
-        Headers = @{
-            'Access-Control-Allow-Origin'  = '*'
-            'Access-Control-Allow-Methods' = 'GET, POST, OPTIONS'
-            'Access-Control-Allow-Headers' = 'Content-Type, Authorization'
-        }
     })
     return
 }
 
 $corsHeaders = @{
     'Content-Type'                 = 'application/json'
-    'Access-Control-Allow-Origin'  = '*'
 }
 
 $authHeader = $Request.Headers['Authorization']
