@@ -11,8 +11,14 @@ param(
     [Parameter(Mandatory=$false)] [string]$OutputPath = ".\Defender-Report.html"
 )
 
-$apiKey = "9KpLBHsBIK9gn9rEI7cssnC8sVBLVsmIXr8nWDlUrfxUZUNVGDePJQQJ99CBAC5RqLJXJ3w3AAABACOG7Did"
-$endpoint = "https://westeurope.api.cognitive.microsoft.com/openai/deployments/AVM/chat/completions?api-version=2025-01-01-preview"
+$apiKey          = $env:AZURE_OPENAI_API_KEY
+$endpointBase    = $env:AZURE_OPENAI_ENDPOINT
+$deploymentName  = $env:AZURE_OPENAI_DEPLOYMENT
+$openAiApiVer    = if ($env:AZURE_OPENAI_API_VERSION) { $env:AZURE_OPENAI_API_VERSION } else { "2025-01-01-preview" }
+$endpoint        = $null
+if ($endpointBase -and $deploymentName) {
+    $endpoint = ($endpointBase.TrimEnd('/') + "/openai/deployments/$deploymentName/chat/completions?api-version=$openAiApiVer")
+}
 
 $accessToken = $env:AZURE_ACCESS_TOKEN
 if (-not $accessToken) { Write-Error "AZURE_ACCESS_TOKEN not found."; exit 1 }
@@ -22,7 +28,27 @@ function Invoke-AzureAPI {
     $headers = @{ 'Authorization' = "Bearer $accessToken"; 'Content-Type' = 'application/json' }
     $fullUri = if ($Uri -like "*api-version*") { $Uri } else { "${Uri}?api-version=$ApiVersion" }
     try {
-        return Invoke-RestMethod -Uri $fullUri -Headers $headers -Method $Method -ErrorAction Stop
+        $response = Invoke-RestMethod -Uri $fullUri -Headers $headers -Method $Method -ErrorAction Stop
+
+        if ($Method -eq "GET" -and $response -and ($response.PSObject.Properties.Name -contains 'nextLink') -and $response.nextLink -and
+            ($response.PSObject.Properties.Name -contains 'value') -and ($response.value -is [System.Collections.IEnumerable])) {
+            $all = @()
+            $all += @($response.value)
+            $next = $response.nextLink
+            $pageCount = 0
+            while ($next -and $pageCount -lt 200) {
+                $pageCount++
+                $page = Invoke-RestMethod -Uri $next -Headers $headers -Method $Method -ErrorAction Stop
+                if ($page -and ($page.PSObject.Properties.Name -contains 'value') -and $page.value) {
+                    $all += @($page.value)
+                }
+                $next = if ($page -and ($page.PSObject.Properties.Name -contains 'nextLink')) { $page.nextLink } else { $null }
+            }
+            $response.value = $all
+            $response.nextLink = $null
+        }
+
+        return $response
     } catch {
         Write-Warning "API failed: $fullUri - $($_.Exception.Message)"
         return $null
@@ -188,13 +214,16 @@ $body = @{
     max_completion_tokens = 4000
 } | ConvertTo-Json -Depth 5
 
-try {
-    $aiResp  = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $aiHeaders -Body $body -ContentType "application/json" -TimeoutSec 120
-    $aiReport = $aiResp.choices[0].message.content
-    Write-Host "AI report generated."
-} catch {
-    Write-Warning "AI error: $($_.Exception.Message)"
-    $aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>$($_.Exception.Message)</p></div>"
+$aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>Configura AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT / AZURE_OPENAI_API_KEY.</p></div>"
+if ($apiKey -and $endpoint) {
+    try {
+        $aiResp  = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $aiHeaders -Body $body -ContentType "application/json" -TimeoutSec 120
+        $aiReport = $aiResp.choices[0].message.content
+        Write-Host "AI report generated."
+    } catch {
+        Write-Warning "AI error: $($_.Exception.Message)"
+        $aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>$($_.Exception.Message)</p></div>"
+    }
 }
 
 # === HTML ===

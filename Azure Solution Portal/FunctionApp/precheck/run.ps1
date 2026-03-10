@@ -99,6 +99,10 @@ try {
 
 $scriptPath = $null
 $paths = @(
+    (Join-Path $PSScriptRoot '..\scripts\precheck-monitor.ps1'),
+    'D:\home\site\wwwroot\scripts\precheck-monitor.ps1',
+    '/home/site/wwwroot/scripts/precheck-monitor.ps1',
+    # Backward compatibility
     (Join-Path $PSScriptRoot '..\scripts\testluca.ps1'),
     'D:\home\site\wwwroot\scripts\testluca.ps1',
     '/home/site/wwwroot/scripts/testluca.ps1'
@@ -121,7 +125,7 @@ if (-not $scriptPath) {
     }
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 500
-        Body = '{"error":"Script testluca.ps1 non trovato"}'
+        Body = '{"error":"Script precheck-monitor.ps1 non trovato"}'
         Headers = @{ 
             'Content-Type' = 'application/json'
             'Access-Control-Allow-Origin' = '*'

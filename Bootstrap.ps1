@@ -477,34 +477,22 @@ $workflow = $workflow -replace 'app-name: [^\n]+', "app-name: $functionAppName"
 Set-Content -Path $workflowPath -Value $workflow -Encoding UTF8 -NoNewline
 Write-OK "deploy-functionapp.yml aggiornato"
 
-# ── Precheck scripts (OpenAI credentials) ─────────────────────
+# ── Precheck (Azure OpenAI) ───────────────────────────────────
+# Le credenziali non vengono più salvate nei .ps1: sono lette da env/app settings.
 if ($openAiEndpoint -and $openAiKey) {
-    Write-Step "Aggiornamento credenziali Azure OpenAI nei precheck scripts..."
-    $precheckScripts = @(
-        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\testluca.ps1"
-        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-avd.ps1"
-        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-backup.ps1"
-        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-defender.ps1"
-        Join-Path $scriptDir "Azure Solution Portal\FunctionApp\scripts\precheck-updates.ps1"
-    )
-
-    # Costruisci il nuovo endpoint URL (stesso formato, deployment 'AVM')
-    $newEndpoint = "$($openAiEndpoint.TrimEnd('/'))openai/deployments/$openAiDeployment/chat/completions?api-version=2025-01-01-preview"
-
-    foreach ($scriptPath in $precheckScripts) {
-        if (Test-Path $scriptPath) {
-            $content = Get-Content $scriptPath -Raw -Encoding UTF8
-            # Sostituisci endpoint (pattern: $endpoint = "https://...cognitiveservices.azure.com/...")
-            $content = $content -replace '\$endpoint\s*=\s*"https://[^"]+cognitiveservices\.azure\.com[^"]*"', "`$endpoint = `"$newEndpoint`""
-            # Sostituisci API key (pattern: $apiKey = "...")
-            $content = $content -replace '\$apiKey\s*=\s*"[^"]{30,}"', "`$apiKey = `"$openAiKey`""
-            Set-Content -Path $scriptPath -Value $content -Encoding UTF8 -NoNewline
-            Write-OK "  $(Split-Path $scriptPath -Leaf) aggiornato"
-        }
-    }
+    Write-Step "Impostazione App Settings Azure OpenAI sulla Function App..."
+    $openAiEndpointBase = "$($openAiEndpoint.TrimEnd('/'))/"
+    az functionapp config appsettings set `
+        --name $functionAppName `
+        --resource-group $ResourceGroupName `
+        --settings `
+            "AZURE_OPENAI_ENDPOINT=$openAiEndpointBase" `
+            "AZURE_OPENAI_DEPLOYMENT=$openAiDeployment" `
+            "AZURE_OPENAI_API_KEY=$openAiKey" `
+        -o none
+    Write-OK "App Settings AZURE_OPENAI_* impostate sulla Function App"
 } else {
-    Write-Warn "OpenAI non configurato — i precheck scripts usano ancora le credenziali originali."
-    Write-Info "Aggiorna manualmente \$endpoint e \$apiKey nei file FunctionApp/scripts/*.ps1"
+    Write-Warn "OpenAI non configurato — imposta AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT / AZURE_OPENAI_API_KEY nella Function App."
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

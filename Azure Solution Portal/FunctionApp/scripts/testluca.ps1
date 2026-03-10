@@ -18,9 +18,15 @@ param(
     [switch]$SkipDCRAssociations
 )
 
-# API Configuration
-$apiKey = "9KpLBHsBIK9gn9rEI7cssnC8sVBLVsmIXr8nWDlUrfxUZUNVGDePJQQJ99CBAC5RqLJXJ3w3AAABACOG7Did"
-$endpoint = "https://westeurope.api.cognitive.microsoft.com/openai/deployments/AVM/chat/completions?api-version=2025-01-01-preview"
+# Azure OpenAI configuration (from env / Function App settings)
+$apiKey          = $env:AZURE_OPENAI_API_KEY
+$endpointBase    = $env:AZURE_OPENAI_ENDPOINT
+$deploymentName  = $env:AZURE_OPENAI_DEPLOYMENT
+$openAiApiVer    = if ($env:AZURE_OPENAI_API_VERSION) { $env:AZURE_OPENAI_API_VERSION } else { "2025-01-01-preview" }
+$endpoint        = $null
+if ($endpointBase -and $deploymentName) {
+    $endpoint = ($endpointBase.TrimEnd('/') + "/openai/deployments/$deploymentName/chat/completions?api-version=$openAiApiVer")
+}
 
 # Get access token from environment (set by run.ps1)
 $accessToken = $env:AZURE_ACCESS_TOKEN
@@ -54,6 +60,26 @@ function Invoke-AzureAPI {
     
     try {
         $response = Invoke-RestMethod -Uri $fullUri -Headers $headers -Method $Method -ErrorAction Stop
+
+        # Auto-pagination for list endpoints
+        if ($Method -eq "GET" -and $response -and ($response.PSObject.Properties.Name -contains 'nextLink') -and $response.nextLink -and
+            ($response.PSObject.Properties.Name -contains 'value') -and ($response.value -is [System.Collections.IEnumerable])) {
+            $all = @()
+            $all += @($response.value)
+            $next = $response.nextLink
+            $pageCount = 0
+            while ($next -and $pageCount -lt 200) {
+                $pageCount++
+                $page = Invoke-RestMethod -Uri $next -Headers $headers -Method $Method -ErrorAction Stop
+                if ($page -and ($page.PSObject.Properties.Name -contains 'value') -and $page.value) {
+                    $all += @($page.value)
+                }
+                $next = if ($page -and ($page.PSObject.Properties.Name -contains 'nextLink')) { $page.nextLink } else { $null }
+            }
+            $response.value = $all
+            $response.nextLink = $null
+        }
+
         return $response
     } catch {
         Write-Warning "API call failed: $fullUri - $($_.Exception.Message)"
@@ -674,20 +700,23 @@ $requestBody = @{
     max_completion_tokens = 4000
 } | ConvertTo-Json -Depth 5
 
-try {
-    Write-ColorOutput "  Invio richiesta AI..." "Yellow"
-    $response = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $headers -Body $requestBody -ContentType "application/json" -TimeoutSec 180
-    
-    if ($response.choices -and $response.choices[0].message.content) {
-        $aiReport = $response.choices[0].message.content
-        Write-ColorOutput "✓ Report AI generato!" "Green"
-        Write-ColorOutput "  Token: $($response.usage.total_tokens)" "DarkGray"
-    } else {
-        throw "Risposta AI non valida"
+$aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>Configura AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT / AZURE_OPENAI_API_KEY.</p></div>"
+if ($apiKey -and $endpoint) {
+    try {
+        Write-ColorOutput "  Invio richiesta AI..." "Yellow"
+        $response = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $headers -Body $requestBody -ContentType "application/json" -TimeoutSec 180
+
+        if ($response.choices -and $response.choices[0].message.content) {
+            $aiReport = $response.choices[0].message.content
+            Write-ColorOutput "✓ Report AI generato!" "Green"
+            Write-ColorOutput "  Token: $($response.usage.total_tokens)" "DarkGray"
+        } else {
+            throw "Risposta AI non valida"
+        }
+    } catch {
+        Write-ColorOutput "⚠ ERRORE AI: $($_.Exception.Message)" "Red"
+        $aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>$($_.Exception.Message)</p></div>"
     }
-} catch {
-    Write-ColorOutput "⚠ ERRORE AI: $($_.Exception.Message)" "Red"
-    $aiReport = "<div class='section'><h2>Report Semplificato</h2><p>Analisi AI non disponibile.</p></div>"
 }
 
 # ============================================================================
