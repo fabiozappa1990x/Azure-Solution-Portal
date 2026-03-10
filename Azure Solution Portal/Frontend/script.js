@@ -326,7 +326,135 @@ document.addEventListener('DOMContentLoaded', function() {
     // POPOLA RISULTATI PRECHECK
     // ========================================
 
-    function populatePrecheckResults(data) {
+    function setTabVisible(tabId, visible) {
+        const btn = document.querySelector(`.tab-button[data-tab="${tabId}"]`);
+        const pane = document.getElementById(tabId);
+        if (btn) btn.style.display = visible ? '' : 'none';
+        if (pane) pane.style.display = visible ? '' : 'none';
+    }
+
+    function setTabText(tabId, text) {
+        const btn = document.querySelector(`.tab-button[data-tab="${tabId}"]`);
+        if (btn) btn.textContent = text;
+    }
+
+    function setPaneTitle(tabId, text) {
+        const h = document.querySelector(`#${CSS.escape(tabId)} h4`);
+        if (h) h.textContent = text;
+    }
+
+    function setTableHeaders(tableId, headers) {
+        const theadRow = document.querySelector(`#${CSS.escape(tableId)} thead tr`);
+        if (!theadRow) return;
+        theadRow.innerHTML = headers.map(h => `<th>${h}</th>`).join('');
+    }
+
+    function setSummaryLabels(vmLabel, wsLabel) {
+        const items = document.querySelectorAll('.report-summary .summary-item .summary-label');
+        if (items.length >= 3) {
+            items[1].textContent = vmLabel;
+            items[2].textContent = wsLabel;
+        }
+    }
+
+    function setOverviewLabels(labels) {
+        const cards = document.querySelectorAll('#overview .overview-stats .stat-card .stat-label');
+        for (let i = 0; i < Math.min(cards.length, labels.length); i++) {
+            cards[i].textContent = labels[i];
+        }
+    }
+
+    function setOverallStatus(text, level) {
+        const statusEl = document.getElementById('overall-status');
+        if (!statusEl) return;
+        statusEl.textContent = text;
+        if (level === 'success') statusEl.className = 'status-badge status-success';
+        else if (level === 'warning') statusEl.className = 'status-badge status-warning';
+        else if (level === 'danger') statusEl.className = 'status-badge status-danger';
+        else statusEl.className = 'status-badge';
+    }
+
+    function renderReportHtmlInRecommendations(data) {
+        const recContainer = document.getElementById('recommendations-content');
+        if (!recContainer) return;
+        recContainer.innerHTML = '';
+
+        if (!data?.ReportHTML) {
+            recContainer.innerHTML = '<p>Report HTML non disponibile per questa esecuzione.</p>';
+            return;
+        }
+
+        const iframe = document.createElement('iframe');
+        iframe.style.width = '100%';
+        iframe.style.height = '720px';
+        iframe.style.border = '1px solid #e1e1e1';
+        iframe.style.borderRadius = '8px';
+        iframe.setAttribute('sandbox', 'allow-same-origin');
+        iframe.srcdoc = data.ReportHTML;
+        recContainer.appendChild(iframe);
+    }
+
+    function applyPrecheckUiForSolution(solution) {
+        if (solution === 'azure-monitor') {
+            setSummaryLabels('VM Analizzate:', 'Workspace Esistenti:');
+            setTabText('overview', 'Panoramica');
+            setTabText('virtual-machines', 'Macchine Virtuali');
+            setTabText('workspaces', 'Log Analytics');
+            setTabText('dcr', 'Data Collection Rules');
+            setTabText('recommendations', 'Raccomandazioni');
+            setPaneTitle('overview', "Analisi dell'ambiente");
+            setPaneTitle('virtual-machines', 'Dettaglio Macchine Virtuali');
+            setPaneTitle('workspaces', 'Dettaglio Log Analytics Workspace');
+            setPaneTitle('dcr', 'Dettaglio Data Collection Rules');
+            setPaneTitle('recommendations', 'Raccomandazioni');
+            setOverviewLabels(['VM Totali', 'VM Monitorate', 'Workspace', 'DCR']);
+            setTableHeaders('vm-table', ['Nome VM', 'Gruppo di Risorse', 'Stato', 'Agente Monitor', 'Sistema Operativo']);
+            setTableHeaders('workspace-table', ['Nome Workspace', 'Gruppo di Risorse', 'Regione', 'VM Insights', 'Retention (giorni)']);
+            setTableHeaders('dcr-table', ['Nome DCR', 'Gruppo di Risorse', 'Tipo', 'Destinazione', 'VM Associate']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', true);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'avd') {
+            setSummaryLabels('Session Hosts:', 'Workspaces:');
+            setTabText('overview', 'Panoramica');
+            setTabText('virtual-machines', 'Session Hosts');
+            setTabText('workspaces', 'AVD Workspaces');
+            setTabText('dcr', 'Rete');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', "Analisi dell'ambiente AVD");
+            setPaneTitle('virtual-machines', 'Dettaglio Session Hosts');
+            setPaneTitle('workspaces', 'Dettaglio Workspaces AVD');
+            setPaneTitle('dcr', 'Dettaglio Virtual Network');
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['Host Pool', 'Session Hosts', 'Workspaces', 'Scaling Plans']);
+            setTableHeaders('vm-table', ['Host Pool', 'Session Host', 'Stato', 'Sessioni', 'Agent/OS']);
+            setTableHeaders('workspace-table', ['Workspace', 'Gruppo di Risorse', 'Regione', 'App Groups', 'Note']);
+            setTableHeaders('dcr-table', ['VNet', 'Gruppo di Risorse', 'Regione', 'Address Space', 'Subnet']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', true);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        // Fallback: UI generica (mostra solo Overview + Report)
+        setSummaryLabels('Risorse analizzate:', 'Metriche:');
+        setTabText('overview', 'Panoramica');
+        setTabText('recommendations', 'Report');
+        setPaneTitle('overview', "Analisi dell'ambiente");
+        setPaneTitle('recommendations', 'Report');
+        setOverviewLabels(['KPI 1', 'KPI 2', 'KPI 3', 'KPI 4']);
+        setTabVisible('virtual-machines', false);
+        setTabVisible('workspaces', false);
+        setTabVisible('dcr', false);
+        setTabVisible('recommendations', true);
+    }
+
+    function renderMonitorPrecheck(data) {
         if (data.Summary) {
             document.getElementById('overview-vm-total').textContent   = data.Summary.TotalMachines || 0;
             document.getElementById('overview-vm-monitored').textContent = data.Summary.MachinesWithAMA || 0;
@@ -336,10 +464,9 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('workspace-count').textContent      = data.Summary.TotalWorkspaces || 0;
 
             const pct = data.Summary.AMA_Coverage_Percent || 0;
-            const statusEl = document.getElementById('overall-status');
-            if (pct >= 80) { statusEl.textContent = 'Pronto per il deployment'; statusEl.className = 'status-badge status-success'; }
-            else if (pct >= 50) { statusEl.textContent = 'Richiede configurazione'; statusEl.className = 'status-badge status-warning'; }
-            else { statusEl.textContent = 'Configurazione incompleta'; statusEl.className = 'status-badge status-danger'; }
+            if (pct >= 80) setOverallStatus('Pronto per il deployment', 'success');
+            else if (pct >= 50) setOverallStatus('Richiede configurazione', 'warning');
+            else setOverallStatus('Configurazione incompleta', 'danger');
         }
 
         if (Array.isArray(data.AzureVMs)) {
@@ -394,7 +521,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
-        // Raccomandazioni
+        // Raccomandazioni (solo Monitor)
         const recContainer = document.getElementById('recommendations-content');
         recContainer.innerHTML = '';
         const recs = [];
@@ -425,6 +552,127 @@ document.addEventListener('DOMContentLoaded', function() {
                 recContainer.appendChild(div);
             });
         }
+    }
+
+    function renderAvdPrecheck(data) {
+        const summary = data?.Summary || {};
+        const totalHostPools = summary.TotalHostPools ?? (Array.isArray(data.HostPools) ? data.HostPools.length : 0);
+        const totalSessionHosts = summary.TotalSessionHosts ?? (Array.isArray(data.SessionHosts) ? data.SessionHosts.length : 0);
+        const totalWorkspaces = summary.TotalWorkspaces ?? (Array.isArray(data.Workspaces) ? data.Workspaces.length : 0);
+        const totalScalingPlans = summary.TotalScalingPlans ?? (Array.isArray(data.ScalingPlans) ? data.ScalingPlans.length : 0);
+        const totalVNets = summary.TotalVNets ?? (Array.isArray(data.VirtualNetworks) ? data.VirtualNetworks.length : 0);
+
+        document.getElementById('overview-vm-total').textContent = totalHostPools || 0;
+        document.getElementById('overview-vm-monitored').textContent = totalSessionHosts || 0;
+        document.getElementById('overview-workspaces').textContent = totalWorkspaces || 0;
+        document.getElementById('overview-dcr').textContent = totalScalingPlans || 0;
+        document.getElementById('vm-count').textContent = totalSessionHosts || 0;
+        document.getElementById('workspace-count').textContent = totalWorkspaces || 0;
+
+        const alreadyDeployed = Boolean(summary.AlreadyDeployed ?? (totalHostPools > 0));
+        const readyForDeploy = Boolean(summary.ReadyForDeploy ?? (totalVNets > 0));
+        if (alreadyDeployed) setOverallStatus('AVD già presente nella subscription', 'success');
+        else if (readyForDeploy) setOverallStatus('Prerequisiti base OK (rete presente)', 'warning');
+        else setOverallStatus('Prerequisiti mancanti (rete/risorse)', 'danger');
+
+        // Session Hosts (tab "virtual-machines")
+        {
+            const tbody = document.querySelector('#vm-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.SessionHosts) ? data.SessionHosts : [];
+            if (rows.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="5">Nessun Session Host trovato.</td>`;
+                tbody.appendChild(tr);
+            } else {
+                rows.forEach(sh => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${sh.HostPool || 'N/A'}</td>
+                        <td>${sh.Name || 'N/A'}</td>
+                        <td>${sh.Status || 'N/A'}</td>
+                        <td>${(sh.Sessions ?? 'N/A')}</td>
+                        <td>${sh.AgentVersion || sh.OSVersion || 'N/A'}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // AVD Workspaces
+        {
+            const tbody = document.querySelector('#workspace-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.Workspaces) ? data.Workspaces : [];
+            if (rows.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="5">Nessun Workspace AVD trovato.</td>`;
+                tbody.appendChild(tr);
+            } else {
+                rows.forEach(ws => {
+                    const appGroups = Array.isArray(ws.AppGroupRefs) ? ws.AppGroupRefs.length : 0;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${ws.Name || 'N/A'}</td>
+                        <td>${ws.ResourceGroup || 'N/A'}</td>
+                        <td>${ws.Location || 'N/A'}</td>
+                        <td>${appGroups}</td>
+                        <td>${appGroups > 0 ? 'Collegato' : 'Non collegato'}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // VNets
+        {
+            const tbody = document.querySelector('#dcr-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.VirtualNetworks) ? data.VirtualNetworks : [];
+            if (rows.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="5">Nessuna Virtual Network trovata.</td>`;
+                tbody.appendChild(tr);
+            } else {
+                rows.forEach(vnet => {
+                    const addr = Array.isArray(vnet.AddressSpace) ? vnet.AddressSpace.join(', ') : (vnet.AddressSpace || 'N/A');
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${vnet.Name || 'N/A'}</td>
+                        <td>${vnet.ResourceGroup || 'N/A'}</td>
+                        <td>${vnet.Location || 'N/A'}</td>
+                        <td>${addr}</td>
+                        <td>${vnet.SubnetCount ?? 'N/A'}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Per AVD mostriamo direttamente il report HTML generato dal precheck.
+        renderReportHtmlInRecommendations(data);
+    }
+
+    function populatePrecheckResults(data) {
+        applyPrecheckUiForSolution(currentSolution);
+
+        if (currentSolution === 'azure-monitor') {
+            renderMonitorPrecheck(data);
+            return;
+        }
+
+        if (currentSolution === 'avd') {
+            renderAvdPrecheck(data);
+            return;
+        }
+
+        // Fallback: mostra report HTML e tenta di mettere qualche KPI
+        const summary = data?.Summary || {};
+        document.getElementById('overview-vm-total').textContent = summary.TotalVMs ?? summary.TotalVaults ?? summary.TotalPlans ?? summary.TotalMaintenanceConfigs ?? 0;
+        document.getElementById('overview-vm-monitored').textContent = summary.ProtectedVMs ?? summary.EnabledPlans ?? summary.VMsWithAutoPatching ?? 0;
+        document.getElementById('overview-workspaces').textContent = summary.UnprotectedVMs ?? summary.HighSeverityRecs ?? summary.VMsWithManualPatching ?? 0;
+        document.getElementById('overview-dcr').textContent = summary.BackupCoverage_Pct ?? summary.SecureScorePercent ?? summary.CriticalUpdatesPending ?? 0;
+        document.getElementById('vm-count').textContent = summary.TotalVMs ?? 0;
+        document.getElementById('workspace-count').textContent = summary.TotalPolicies ?? summary.SecurityPoliciesCount ?? summary.TotalUpdatePolicies ?? 0;
+        setOverallStatus('Report disponibile nella tab "Report"', 'warning');
+        renderReportHtmlInRecommendations(data);
     }
 
     // ========================================
