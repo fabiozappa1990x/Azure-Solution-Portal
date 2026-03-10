@@ -1,0 +1,11 @@
+[submodule "Solution - Azure Monitor/Azure Monitor - Deploy to Azure"]
+	path = Solution - Azure Monitor/Azure Monitor - Deploy to Azure
+	url = https://github.com/soridsnake/azure-monitor-hub.git
+
+[submodule "Solution - Azure Monitor/Azure Monitor - Deploy to Azure - Backup/2/Azure Monitor - Deploy to Azure"]
+	path = Solution - Azure Monitor/Azure Monitor - Deploy to Azure - Backup/2/Azure Monitor - Deploy to Azure
+	url = https://github.com/soridsnake/azure-monitor-hub.git
+
+[submodule "Solution - Azure Monitor/Azure Monitor - Deploy to Azure - Backup/azure-monitor-hub"]
+	path = Solution - Azure Monitor/Azure Monitor - Deploy to Azure - Backup/azure-monitor-hub
+	url = https://github.com/soridsnake/azure-monitor-hub.git
