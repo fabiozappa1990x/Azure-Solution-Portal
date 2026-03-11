@@ -315,12 +315,12 @@
                 <div class="check-item" id="check-sub">
                     <div class="check-icon pending" id="icon-sub"><i class="fas fa-circle"></i></div>
                     <div class="check-content">
-                        <div class="check-title">Subscription selezionata</div>
-                        <div class="check-desc">Seleziona la subscription Azure dove sono (o saranno) create le risorse del portale</div>
+                        <div class="check-title">Portal subscription selezionata</div>
+                        <div class="check-desc">Subscription dove risiedono le risorse del portale (RG, Function App, Static Web App, OpenAI)</div>
                         <div class="check-detail" id="detail-sub"></div>
                         <div id="instr-sub" style="display:none">
                             <div class="instructions-box">
-                                <strong>Seleziona la subscription Azure:</strong>
+                                <strong>Seleziona la Portal subscription:</strong>
                                 <div class="sub-selector">
                                     <select id="sub-select">
                                         <option value="">— In caricamento... —</option>
@@ -328,6 +328,31 @@
                                     <button class="btn-sub-confirm" onclick="onSubSelected()">
                                         <i class="fas fa-check"></i> Conferma
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="check-item" id="check-worksubs">
+                    <div class="check-icon pending" id="icon-worksubs"><i class="fas fa-circle"></i></div>
+                    <div class="check-content">
+                        <div class="check-title">Workload subscriptions (multi)</div>
+                        <div class="check-desc">Seleziona una o più subscription dove risiedono i workload (landing zones). Usate dai precheck cross-subscription.</div>
+                        <div class="check-detail" id="detail-worksubs"></div>
+                        <div id="instr-worksubs" style="display:none">
+                            <div class="instructions-box">
+                                <strong>Seleziona una o più workload subscription:</strong>
+                                <div style="margin-top:10px">
+                                    <select id="worksubs-select" multiple size="7" style="width:100%">
+                                        <option value="">— In caricamento... —</option>
+                                    </select>
+                                    <div style="margin-top:6px; font-size:0.85rem; color:#666">Tip: CTRL/SHIFT per selezione multipla. La scelta viene salvata e riusata nel portale.</div>
+                                    <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap">
+                                        <button class="btn-sub-confirm" onclick="selectAllWorkSubs(true)"><i class="fas fa-check-double"></i> Seleziona tutte</button>
+                                        <button class="btn-sub-confirm" onclick="selectAllWorkSubs(false)"><i class="fas fa-ban"></i> Deseleziona</button>
+                                        <button class="btn-sub-confirm" onclick="saveWorkSubs()"><i class="fas fa-save"></i> Salva</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

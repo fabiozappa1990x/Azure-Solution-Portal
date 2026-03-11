@@ -1110,6 +1110,15 @@ function showPrecheckModal(solution) {
     document.getElementById('precheck-results').style.display = 'none';
     document.getElementById('subscription-id').value = '';
 
+    // Prefill from setup "workload subscriptions" if available
+    try {
+        const saved = localStorage.getItem('asp.workloadSubIds');
+        const arr = saved ? JSON.parse(saved) : [];
+        if (Array.isArray(arr) && arr.length > 0) {
+            document.getElementById('subscription-id').value = arr.join('\n');
+        }
+    } catch {}
+
     // Reset multi-subscription UI
     const pickerWrap = document.getElementById('subscription-picker-wrap');
     const picker = document.getElementById('subscription-picker');

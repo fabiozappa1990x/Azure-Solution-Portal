@@ -26,12 +26,17 @@ const MGMT_API    = 'https://management.azure.com';
 
 let msalInstance       = null;
 let currentAccount     = null;
-let selectedSubId      = null;
+let portalSubId        = null;
+let workloadSubIds     = [];
+let cachedSubs         = [];
 let mgmtToken          = null;
 let checkResults       = {};
 
-// Checks: msal, login, sub, funcexist, cors, funcs, ai  → 7
-const TOTAL_CHECKS     = 7;
+// Checks: msal, login, sub, worksubs, funcexist, cors, funcs, ai  → 8
+const TOTAL_CHECKS     = 8;
+
+const LS_PORTAL_SUB    = 'asp.portalSubId';
+const LS_WORKLOAD_SUBS = 'asp.workloadSubIds';
 
 // ============================================================
 // HELPER: UI
@@ -190,7 +195,12 @@ async function doLogout() {
         await msalInstance.logoutPopup({ account: currentAccount });
         currentAccount = null;
         mgmtToken      = null;
-        selectedSubId  = null;
+        portalSubId    = null;
+        workloadSubIds = [];
+        try {
+            localStorage.removeItem(LS_PORTAL_SUB);
+            localStorage.removeItem(LS_WORKLOAD_SUBS);
+        } catch {}
         updateAuthHeader(false);
         runAllChecks();
     } catch {}
@@ -224,10 +234,12 @@ async function getManagementToken() {
 
 async function checkSubscription() {
     setCheckState('sub', 'checking');
+    setCheckState('worksubs', 'checking');
 
     mgmtToken = await getManagementToken();
     if (!mgmtToken) {
         setCheckState('sub', 'error', 'Impossibile ottenere token Azure Management — rieffettua il login');
+        setCheckState('worksubs', 'warning', 'Verificabile dopo login');
         return false;
     }
 
@@ -238,28 +250,46 @@ async function checkSubscription() {
         });
         const data = await resp.json();
         subs = data.value || [];
+        cachedSubs = subs;
     } catch (e) {
         setCheckState('sub', 'error', `Errore Management API: ${e.message}`);
+        setCheckState('worksubs', 'warning', 'Impossibile caricare subscriptions');
         return false;
     }
 
     if (subs.length === 0) {
         setCheckState('sub', 'error', 'Nessuna subscription Azure trovata per questo account');
+        setCheckState('worksubs', 'error', 'Nessuna subscription disponibile');
         return false;
     }
 
-    // Restore previously selected
-    if (selectedSubId && subs.find(s => s.subscriptionId === selectedSubId)) {
-        const sub = subs.find(s => s.subscriptionId === selectedSubId);
-        setCheckState('sub', 'ok', `Subscription: ${sub.displayName} (${sub.subscriptionId})`);
-        showBox('sub', false);
-        return true;
+    // Restore from localStorage (portal + workload)
+    try {
+        const savedPortal = localStorage.getItem(LS_PORTAL_SUB);
+        if (savedPortal) portalSubId = savedPortal;
+        const savedWork = localStorage.getItem(LS_WORKLOAD_SUBS);
+        if (savedWork) workloadSubIds = JSON.parse(savedWork) || [];
+    } catch {}
+
+    // Normalize workload selection to current subscription list
+    const subSet = new Set(subs.map(s => s.subscriptionId));
+    workloadSubIds = Array.isArray(workloadSubIds) ? workloadSubIds.filter(id => subSet.has(id)) : [];
+
+    // Populate workload picker (always available)
+    populateWorkloadPicker(subs, workloadSubIds);
+    if (workloadSubIds.length > 0) {
+        setCheckState('worksubs', 'ok', `${workloadSubIds.length} workload subscription selezionate`);
+        showBox('worksubs', false);
+    } else {
+        setCheckState('worksubs', 'warning', 'Seleziona almeno 1 workload subscription (consigliato per precheck cross-sub)');
+        showBox('worksubs', true);
     }
 
     if (subs.length === 1) {
-        selectedSubId = subs[0].subscriptionId;
-        setCheckState('sub', 'ok', `Subscription: ${subs[0].displayName} (${subs[0].subscriptionId})`);
+        portalSubId = subs[0].subscriptionId;
+        setCheckState('sub', 'ok', `Portal subscription: ${subs[0].displayName} (${subs[0].subscriptionId})`);
         showBox('sub', false);
+        persistSelections();
         return true;
     }
 
@@ -269,22 +299,37 @@ async function checkSubscription() {
         select.innerHTML = '<option value="">— Seleziona —</option>' +
             subs.map(s => `<option value="${s.subscriptionId}">${s.displayName} (${s.subscriptionId})</option>`).join('');
         showBox('sub', true);
-        setCheckState('sub', 'warning', `${subs.length} subscription disponibili — selezionane una`);
-        return false;  // wait for user selection
+        if (portalSubId && subs.find(s => s.subscriptionId === portalSubId)) {
+            select.value = portalSubId;
+            const sub = subs.find(s => s.subscriptionId === portalSubId);
+            setCheckState('sub', 'ok', `Portal subscription: ${sub.displayName} (${sub.subscriptionId})`);
+            showBox('sub', false);
+            persistSelections();
+            return true;
+        }
+        setCheckState('sub', 'warning', `${subs.length} subscription disponibili — seleziona la Portal subscription`);
+        return false;  // wait for user selection (portal)
     }
 
     // Fallback: pick first
-    selectedSubId = subs[0].subscriptionId;
-    setCheckState('sub', 'ok', `Subscription: ${subs[0].displayName}`);
+    portalSubId = subs[0].subscriptionId;
+    setCheckState('sub', 'ok', `Portal subscription: ${subs[0].displayName}`);
+    persistSelections();
     return true;
 }
 
 async function onSubSelected() {
     const select = document.getElementById('sub-select');
     if (!select || !select.value) return;
-    selectedSubId = select.value;
+    portalSubId = select.value;
     showBox('sub', false);
-    setCheckState('sub', 'ok', `Subscription selezionata: ${select.value}`);
+    const sub = cachedSubs.find(s => s.subscriptionId === portalSubId);
+    setCheckState('sub', 'ok', sub ? `Portal subscription: ${sub.displayName} (${sub.subscriptionId})` : `Portal subscription: ${portalSubId}`);
+
+    // Persist + refresh workload status
+    saveWorkSubs();
+    persistSelections();
+
     // Continue with the remaining checks
     await checkFunctionApp();
     await checkAI();
@@ -301,10 +346,10 @@ async function checkFunctionApp() {
 
     // ── 4: Check Function App exists via Management API ──────────
     let funcAppFound = false;
-    if (mgmtToken && selectedSubId) {
+    if (mgmtToken && portalSubId) {
         try {
             const r = await fetch(
-                `${MGMT_API}/subscriptions/${selectedSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}?api-version=2022-03-01`,
+                `${MGMT_API}/subscriptions/${portalSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}?api-version=2022-03-01`,
                 { headers: { Authorization: `Bearer ${mgmtToken}` } }
             );
             if (r.ok) {
@@ -412,12 +457,12 @@ async function checkAI() {
     try {
         // Enterprise-friendly check: read Function App settings via ARM (no dependency on function execution/cold start).
         const token = await getManagementToken();
-        if (!token || !selectedSubId) {
+        if (!token || !portalSubId) {
             setCheckState('ai', 'warning', 'Verificabile dopo login + selezione subscription');
             return;
         }
 
-        const uri = `${MGMT_API}/subscriptions/${selectedSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}/config/appsettings/list?api-version=2022-03-01`;
+        const uri = `${MGMT_API}/subscriptions/${portalSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}/config/appsettings/list?api-version=2022-03-01`;
         const resp = await fetch(uri, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` }
@@ -469,7 +514,14 @@ async function continueAfterLogin() {
 async function runAllChecks() {
     checkResults  = {};
     mgmtToken     = null;
-    selectedSubId = null;
+
+    // Keep persisted selection between rechecks (landing-zone friendly)
+    try {
+        const savedPortal = localStorage.getItem(LS_PORTAL_SUB);
+        portalSubId = savedPortal || portalSubId;
+        const savedWork = localStorage.getItem(LS_WORKLOAD_SUBS);
+        workloadSubIds = savedWork ? (JSON.parse(savedWork) || []) : workloadSubIds;
+    } catch {}
 
     document.getElementById('btn-portal').style.display         = 'none';
     document.getElementById('btn-portal-disabled').style.display = 'inline-flex';
@@ -479,7 +531,7 @@ async function runAllChecks() {
     sum.className = 'status-summary checking';
     sum.innerHTML = '<i class="fas fa-sync fa-spin"></i> <span>Verifica prerequisiti in corso...</span>';
 
-    ['msal','login','sub','funcexist','cors','funcs','ai'].forEach(id => setCheckState(id, 'pending'));
+    ['msal','login','sub','worksubs','funcexist','cors','funcs','ai'].forEach(id => setCheckState(id, 'pending'));
 
     await checkMSAL();
     await checkLogin();
@@ -488,9 +540,46 @@ async function runAllChecks() {
         await continueAfterLogin();
     } else {
         // Set remaining checks to pending (waiting for login)
-        ['sub','funcexist','cors','funcs','ai'].forEach(id =>
+        ['sub','worksubs','funcexist','cors','funcs','ai'].forEach(id =>
             setCheckState(id, 'warning', 'In attesa del login Microsoft')
         );
+    }
+}
+
+function persistSelections() {
+    try {
+        if (portalSubId) localStorage.setItem(LS_PORTAL_SUB, portalSubId);
+        localStorage.setItem(LS_WORKLOAD_SUBS, JSON.stringify(workloadSubIds || []));
+    } catch {}
+}
+
+function populateWorkloadPicker(subs, selectedIds) {
+    const select = document.getElementById('worksubs-select');
+    if (!select) return;
+    select.innerHTML = subs
+        .map(s => `<option value="${s.subscriptionId}">${s.displayName} (${s.subscriptionId})</option>`)
+        .join('');
+    const set = new Set(selectedIds || []);
+    Array.from(select.options).forEach(o => { o.selected = set.has(o.value); });
+}
+
+function selectAllWorkSubs(selectAll) {
+    const select = document.getElementById('worksubs-select');
+    if (!select) return;
+    Array.from(select.options).forEach(o => { o.selected = !!selectAll; });
+}
+
+function saveWorkSubs() {
+    const select = document.getElementById('worksubs-select');
+    if (!select) return;
+    workloadSubIds = Array.from(select.selectedOptions).map(o => o.value).filter(Boolean);
+    persistSelections();
+    if (workloadSubIds.length > 0) {
+        setCheckState('worksubs', 'ok', `${workloadSubIds.length} workload subscription selezionate`);
+        showBox('worksubs', false);
+    } else {
+        setCheckState('worksubs', 'warning', 'Nessuna workload subscription selezionata');
+        showBox('worksubs', true);
     }
 }
 
