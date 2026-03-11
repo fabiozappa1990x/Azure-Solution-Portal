@@ -4,16 +4,31 @@ param($Request, $TriggerMetadata)
 
 Write-Host "=== START precheck-backup ==="
 
+function Get-CorsHeaders {
+    param($Request)
+
+    $origin = $Request.Headers['Origin']
+    if ($origin -is [array]) { $origin = $origin[0] }
+    if (-not $origin) { $origin = '*' }
+
+    return @{
+        'Content-Type'                 = 'application/json'
+        'Access-Control-Allow-Origin'  = $origin
+        'Access-Control-Allow-Methods' = 'GET,OPTIONS'
+        'Access-Control-Allow-Headers' = 'Authorization,Content-Type'
+        'Vary'                         = 'Origin'
+    }
+}
+
 if ($Request.Method -eq 'OPTIONS') {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 200
+        Headers    = (Get-CorsHeaders $Request)
     })
     return
 }
 
-$corsHeaders = @{
-    'Content-Type'                 = 'application/json'
-}
+$corsHeaders = Get-CorsHeaders $Request
 
 $authHeader = $Request.Headers['Authorization']
 if ($authHeader -is [array]) { $authHeader = $authHeader[0] }

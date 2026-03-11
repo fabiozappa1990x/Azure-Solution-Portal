@@ -1,9 +1,11 @@
 /* Stili generali */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 :root {
@@ -12,38 +14,79 @@
     --success-color: #107c10;
     --warning-color: #ff8c00;
     --danger-color: #d13438;
-    --light-bg: #f9f9f9;
-    --border-color: #ddd;
-    --text-color: #333;
-    --text-secondary: #666;
-    --hover-color: #f0f0f0;
+
+    /* Brand (Lutech SoftJam) */
+    --brand-dark: #0b1220;
+    --brand-surface: #0f172a;
+    --brand-accent: #1d4ed8;
+    --brand-accent-2: #06b6d4;
+
+    --light-bg: #f7f8fb;
+    --border-color: rgba(15, 23, 42, 0.10);
+    --text-color: #0f172a;
+    --text-secondary: rgba(15, 23, 42, 0.70);
+    --hover-color: rgba(15, 23, 42, 0.05);
+
+    --radius: 14px;
+    --shadow-sm: 0 6px 18px rgba(2, 6, 23, 0.08);
+    --shadow-md: 0 14px 40px rgba(2, 6, 23, 0.14);
 }
 
 body {
-    background-color: #f5f5f5;
-    color: #333;
+    background:
+        radial-gradient(900px 420px at 15% 0%, rgba(29, 78, 216, 0.16), rgba(255, 255, 255, 0) 60%),
+        radial-gradient(700px 380px at 85% 10%, rgba(6, 182, 212, 0.14), rgba(255, 255, 255, 0) 60%),
+        var(--light-bg);
+    color: var(--text-color);
     line-height: 1.6;
 }
 
 /* Header */
 header {
-    background-color: #0078d4;
+    background: linear-gradient(90deg, var(--brand-dark), #0b2a4a);
     color: white;
-    padding: 1rem 2rem;
+    padding: 1.05rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .logo {
     display: flex;
     align-items: center;
+    gap: 0.9rem;
 }
 
 .logo img {
     height: 40px;
     margin-right: 1rem;
+}
+
+.brand-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, var(--brand-accent), var(--brand-accent-2));
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.22);
+}
+
+.brand-text h1 {
+    font-size: 1.15rem;
+    line-height: 1.1;
+    margin: 0;
+}
+
+.brand-sub {
+    font-size: 0.82rem;
+    opacity: 0.85;
+    font-weight: 500;
+    margin-top: 2px;
 }
 
 nav ul {
@@ -60,7 +103,7 @@ nav ul li a {
     text-decoration: none;
     font-weight: 500;
     padding: 0.5rem;
-    border-radius: 4px;
+    border-radius: 10px;
     transition: background-color 0.3s;
 }
 
@@ -70,10 +113,10 @@ nav ul li a:hover, nav ul li a.active {
 
 /* Hero section */
 .hero {
-    background: linear-gradient(135deg, #0078d4, #00bcf2);
+    background: linear-gradient(135deg, rgba(29, 78, 216, 0.95), rgba(6, 182, 212, 0.9));
     color: white;
     text-align: center;
-    padding: 3rem 1rem;
+    padding: 3.4rem 1rem;
 }
 
 .hero h2 {
@@ -95,7 +138,7 @@ nav ul li a:hover, nav ul li a.active {
 .solutions h2 {
     text-align: center;
     margin-bottom: 2rem;
-    color: #0078d4;
+    color: var(--brand-dark);
 }
 
 .solution-grid {
@@ -108,17 +151,19 @@ nav ul li a:hover, nav ul li a.active {
 
 .solution-card {
     background-color: white;
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 2rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: transform 0.3s, box-shadow 0.3s;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
     display: flex;
     flex-direction: column;
 }
 
 .solution-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
+    border-color: rgba(29, 78, 216, 0.18);
 }
 
 .solution-icon {
@@ -148,7 +193,7 @@ nav ul li a:hover, nav ul li a.active {
 .btn-details, .btn-deploy, .btn-precheck {
     padding: 0.5rem 1rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 12px;
     cursor: pointer;
     font-weight: 500;
     transition: background-color 0.3s;
@@ -165,7 +210,7 @@ nav ul li a:hover, nav ul li a.active {
 }
 
 .btn-deploy {
-    background-color: #0078d4;
+    background: linear-gradient(135deg, var(--brand-accent), var(--primary-color));
     color: white;
 }
 
@@ -174,7 +219,7 @@ nav ul li a:hover, nav ul li a.active {
 }
 
 .btn-precheck {
-    background-color: #00bcf2;
+    background: linear-gradient(135deg, var(--brand-accent-2), var(--secondary-color));
     color: white;
 }
 
@@ -200,9 +245,9 @@ nav ul li a:hover, nav ul li a.active {
     background-color: white;
     margin: 5% auto;
     padding: 2rem;
-    border-radius: 8px;
+    border-radius: var(--radius);
     max-width: 900px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-md);
     max-height: 85vh;
     overflow-y: auto;
 }

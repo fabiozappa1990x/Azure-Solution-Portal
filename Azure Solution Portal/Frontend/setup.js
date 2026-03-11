@@ -410,26 +410,29 @@ async function checkAI() {
         return;
     }
 
-    // Try a quick precheck call to see if AI analysis works
     try {
-        const token = await getManagementToken();
-        const resp = await fetch(`${FUNCTION_APP_URL}/api/precheck?subscriptionId=${encodeURIComponent(selectedSubId || 'test')}`, {
-            headers: { Authorization: `Bearer ${token || 'test'}` },
-            signal:  AbortSignal.timeout(20000)
+        // Use a lightweight endpoint (no Azure calls) to verify env/config.
+        const resp = await fetch(`${FUNCTION_APP_URL}/api/health`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(8000)
         });
-        const text = await resp.text();
 
-        // If response contains AI-generated HTML or JSON with ReportHTML → AI is working
-        if (text.includes('ReportHTML') || text.includes('Analisi') || text.includes('GPT') ||
-            text.includes('gpt') || text.includes('openai') || resp.status === 200) {
-            setCheckState('ai', 'ok', 'Azure OpenAI funzionante — analisi AI disponibile nei precheck');
-            showBox('ai', false);
-        } else if (resp.status === 401 || resp.status === 400) {
-            // Needs real subscriptionId — function app is live, assume AI is configured
-            setCheckState('ai', 'ok', 'Function App attiva — Azure OpenAI configurato (richede subscription valida per test completo)');
+        if (!resp.ok) {
+            setCheckState('ai', 'warning', `Health endpoint non risponde (HTTP ${resp.status}) — verifica deploy Function App`);
+            showBox('ai', true);
+            return;
+        }
+
+        const data = await resp.json();
+        const configured = !!data?.openAi?.configured;
+        const missing = Array.isArray(data?.openAi?.missing) ? data.openAi.missing : [];
+
+        if (configured) {
+            setCheckState('ai', 'ok', 'Azure OpenAI configurato — analisi AI disponibile nei precheck');
             showBox('ai', false);
         } else {
-            setCheckState('ai', 'warning', 'Risposta inattesa dalla Function App — verifica le credenziali OpenAI nei precheck scripts');
+            const msg = missing.length ? `Variabili mancanti: ${missing.join(', ')}` : 'Azure OpenAI non configurato';
+            setCheckState('ai', 'warning', msg);
             showBox('ai', true);
         }
     } catch (e) {

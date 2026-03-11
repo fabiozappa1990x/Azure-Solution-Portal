@@ -4,9 +4,28 @@ param($Request, $TriggerMetadata)
 
 Write-Host "=== START ==="
 
+function Get-CorsHeaders {
+    param($Request)
+
+    $origin = $Request.Headers['Origin']
+    if ($origin -is [array]) { $origin = $origin[0] }
+    if (-not $origin) { $origin = '*' }
+
+    return @{
+        'Content-Type'                 = 'application/json'
+        'Access-Control-Allow-Origin'  = $origin
+        'Access-Control-Allow-Methods' = 'GET,OPTIONS'
+        'Access-Control-Allow-Headers' = 'Authorization,Content-Type'
+        'Vary'                         = 'Origin'
+    }
+}
+
+$corsHeaders = Get-CorsHeaders $Request
+
 if ($Request.Method -eq 'OPTIONS') {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 200
+        Headers    = $corsHeaders
     })
     return
 }
@@ -30,9 +49,7 @@ if (-not $authHeader -or -not $authHeader.StartsWith('Bearer ')) {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 401
         Body = '{"error":"Token mancante"}'
-        Headers = @{ 
-            'Content-Type' = 'application/json'
-        }
+        Headers = $corsHeaders
     })
     return
 }
@@ -45,10 +62,7 @@ if ($accessToken.Length -lt 100) {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 401
         Body = '{"error":"Token troppo corto"}'
-        Headers = @{ 
-            'Content-Type' = 'application/json'
-            'Access-Control-Allow-Origin' = '*'
-        }
+        Headers = $corsHeaders
     })
     return
 }
@@ -63,10 +77,7 @@ if (-not $subscriptionId) {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 400
         Body = '{"error":"SubscriptionId mancante"}'
-        Headers = @{ 
-            'Content-Type' = 'application/json'
-            'Access-Control-Allow-Origin' = '*'
-        }
+        Headers = $corsHeaders
     })
     return
 }
@@ -89,10 +100,7 @@ try {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 401
         Body = '{"error":"Token non valido"}'
-        Headers = @{ 
-            'Content-Type' = 'application/json'
-            'Access-Control-Allow-Origin' = '*'
-        }
+        Headers = $corsHeaders
     })
     return
 }
@@ -126,10 +134,7 @@ if (-not $scriptPath) {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 500
         Body = '{"error":"Script precheck-monitor.ps1 non trovato"}'
-        Headers = @{ 
-            'Content-Type' = 'application/json'
-            'Access-Control-Allow-Origin' = '*'
-        }
+        Headers = $corsHeaders
     })
     return
 }
@@ -159,19 +164,14 @@ try {
         Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
             StatusCode = 200
             Body = $jsonContent
-            Headers = @{ 
-                'Content-Type' = 'application/json'
-            }
+            Headers = $corsHeaders
         })
     } else {
         Write-Host "ERROR: JSON not generated"
         Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
             StatusCode = 500
             Body = '{"error":"Report JSON non generato"}'
-            Headers = @{ 
-                'Content-Type' = 'application/json'
-                'Access-Control-Allow-Origin' = '*'
-            }
+            Headers = $corsHeaders
         })
     }
     
@@ -182,10 +182,7 @@ try {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 500
         Body = "{`"error`":`"$($_.Exception.Message)`"}"
-        Headers = @{ 
-            'Content-Type' = 'application/json'
-            'Access-Control-Allow-Origin' = '*'
-        }
+        Headers = $corsHeaders
     })
 } finally {
     Remove-Item Env:AZURE_ACCESS_TOKEN -ErrorAction SilentlyContinue
