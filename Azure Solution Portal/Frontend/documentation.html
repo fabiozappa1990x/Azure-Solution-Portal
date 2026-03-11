@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portale Soluzioni Azure — Documentazione</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <img src="https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/Azure.png" alt="Azure Logo">
+            <h1>Portale Soluzioni Azure</h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="setup.html">Setup</a></li>
+                <li><a href="index.html">Soluzioni</a></li>
+                <li><a href="documentation.html" class="active">Documentazione</a></li>
+                <li><a href="#">Supporto</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h2>Documentazione</h2>
+            <p>Panoramica, guide e riferimenti ufficiali per ogni solution.</p>
+        </section>
+
+        <section class="solutions" style="padding-top: 20px;">
+            <div class="solution-grid" style="grid-template-columns: 1fr; max-width: 980px; margin: 0 auto;">
+
+                <div class="solution-card" id="howto">
+                    <h3>Come usare il portale</h3>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> <b>Dettagli</b>: overview del servizio e cosa abilita l’accelerator.</li>
+                        <li><i class="fas fa-check"></i> <b>Precheck</b>: analisi della subscription (stato, gap, raccomandazioni).</li>
+                        <li><i class="fas fa-check"></i> <b>Deploy</b>: wizard “Deploy to Azure” (ARM generato da Bicep) o script PowerShell.</li>
+                    </ul>
+                </div>
+
+                <div class="solution-card" id="azure-monitor">
+                    <h3>Azure Monitor Hub</h3>
+                    <p>Accelerator per standardizzare monitoraggio VM (AMA + DCR), alerting e dashboard/workbook.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Documentazione: <a target="_blank" href="https://learn.microsoft.com/azure/azure-monitor/">Microsoft Learn — Azure Monitor</a></li>
+                        <li><i class="fas fa-link"></i> AMA/DCR: <a target="_blank" href="https://learn.microsoft.com/azure/azure-monitor/agents/azure-monitor-agent-overview">Azure Monitor Agent</a></li>
+                        <li><i class="fas fa-link"></i> Workbook: <a target="_blank" href="https://learn.microsoft.com/azure/azure-monitor/visualize/workbooks-overview">Azure Monitor Workbooks</a></li>
+                        <li><i class="fas fa-code"></i> Repository: <a target="_blank" href="https://github.com/fabiozappa1990x/Azure-Solution-Portal/tree/main/Solution%20-%20Azure%20Monitor">Solution - Azure Monitor</a></li>
+                    </ul>
+                </div>
+
+                <div class="solution-card" id="avd">
+                    <h3>Azure Virtual Desktop (AVD)</h3>
+                    <p>Accelerator per pubblicare desktop/app con host pool, session host e integrazione identità.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Documentazione: <a target="_blank" href="https://learn.microsoft.com/azure/virtual-desktop/">Microsoft Learn — Azure Virtual Desktop</a></li>
+                        <li><i class="fas fa-link"></i> FSLogix: <a target="_blank" href="https://learn.microsoft.com/fslogix/">Microsoft Learn — FSLogix</a></li>
+                        <li><i class="fas fa-code"></i> Repository: <a target="_blank" href="https://github.com/fabiozappa1990x/Azure-Solution-Portal/tree/main/Solution%20-%20Azure%20Virtual%20Desktop">Solution - Azure Virtual Desktop</a></li>
+                        <li><i class="fas fa-star"></i> Reference: <a target="_blank" href="https://github.com/Azure/avdaccelerator">Azure/avdaccelerator</a></li>
+                    </ul>
+                </div>
+
+                <div class="solution-card" id="backup">
+                    <h3>Azure Backup</h3>
+                    <p>Accelerator basato su Recovery Services Vault: policy, protezione workload e auto-protection.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Recovery Services Vault: <a target="_blank" href="https://learn.microsoft.com/azure/backup/backup-overview">Microsoft Learn — Azure Backup overview</a></li>
+                        <li><i class="fas fa-link"></i> Backup VM: <a target="_blank" href="https://learn.microsoft.com/azure/backup/backup-azure-vms-introduction">Backup di VM Azure</a></li>
+                        <li><i class="fas fa-link"></i> Backup File Share: <a target="_blank" href="https://learn.microsoft.com/azure/backup/backup-afs">Backup di Azure Files</a></li>
+                        <li><i class="fas fa-link"></i> Backup SQL in VM: <a target="_blank" href="https://learn.microsoft.com/azure/backup/backup-sql-server-azure-vm">Backup SQL Server in Azure VM</a></li>
+                        <li><i class="fas fa-code"></i> Repository: <a target="_blank" href="https://github.com/fabiozappa1990x/Azure-Solution-Portal/tree/main/Solution%20-%20Azure%20Backup">Solution - Azure Backup</a></li>
+                    </ul>
+                </div>
+
+                <div class="solution-card" id="defender">
+                    <h3>Microsoft Defender for Cloud</h3>
+                    <p>Accelerator per abilitare piani Defender, contatti di sicurezza e baseline (benchmark/initiative).</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Panoramica: <a target="_blank" href="https://learn.microsoft.com/azure/defender-for-cloud/defender-for-cloud-introduction">Microsoft Learn — Defender for Cloud</a></li>
+                        <li><i class="fas fa-link"></i> Piani Defender: <a target="_blank" href="https://learn.microsoft.com/azure/defender-for-cloud/enable-enhanced-security">Abilitare i piani Defender</a></li>
+                        <li><i class="fas fa-link"></i> Security Benchmark: <a target="_blank" href="https://learn.microsoft.com/azure/governance/policy/samples/microsoft-cloud-security-benchmark">Microsoft Cloud Security Benchmark</a></li>
+                        <li><i class="fas fa-code"></i> Repository: <a target="_blank" href="https://github.com/fabiozappa1990x/Azure-Solution-Portal/tree/main/Solution%20-%20Microsoft%20Defender">Solution - Microsoft Defender</a></li>
+                        <li><i class="fas fa-star"></i> Reference: <a target="_blank" href="https://github.com/microsoft/Data-and-Agent-Governance-and-Security-Accelerator">Data-and-Agent-Governance-and-Security-Accelerator</a></li>
+                    </ul>
+                </div>
+
+                <div class="solution-card" id="update-manager">
+                    <h3>Azure Update Manager</h3>
+                    <p>Accelerator per Maintenance Configuration, compliance patching e automazione assessment/patch.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Documentazione: <a target="_blank" href="https://learn.microsoft.com/azure/update-manager/overview">Microsoft Learn — Azure Update Manager</a></li>
+                        <li><i class="fas fa-link"></i> Maintenance Config: <a target="_blank" href="https://learn.microsoft.com/azure/update-manager/manage-maintenance-configurations">Gestione maintenance configurations</a></li>
+                        <li><i class="fas fa-code"></i> Repository: <a target="_blank" href="https://github.com/fabiozappa1990x/Azure-Solution-Portal/tree/main/Solution%20-%20Azure%20Update%20Manager">Solution - Azure Update Manager</a></li>
+                    </ul>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2024 Portale Soluzioni Azure. Tutti i diritti riservati.</p>
+    </footer>
+</body>
+</html>
+

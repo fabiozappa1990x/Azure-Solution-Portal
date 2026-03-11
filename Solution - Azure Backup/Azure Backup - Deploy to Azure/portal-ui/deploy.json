@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.41.2.15936",
-      "templateHash": "16965784897241104354"
+      "version": "0.40.2.10011",
+      "templateHash": "10512589518786378049"
     }
   },
   "parameters": {
@@ -34,6 +34,20 @@
       "defaultValue": "",
       "metadata": {
         "description": "Existing Resource Group name"
+      }
+    },
+    "useExistingVault": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Use an existing Recovery Services Vault"
+      }
+    },
+    "existingVaultResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Recovery Services Vault resource ID (required if useExistingVault = true)"
       }
     },
     "storageType": {
@@ -129,6 +143,27 @@
         "description": "VM Resource IDs to protect with backup"
       }
     },
+    "enableAzureFileShareBackup": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable backup for Azure File Shares (single Storage Account)"
+      }
+    },
+    "fileShareStorageAccountId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Storage Account resource ID hosting the file shares (required if enableAzureFileShareBackup = true)"
+      }
+    },
+    "fileShareNames": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "File share names to protect (comma-separated in UI, array in template)"
+      }
+    },
     "enableBackupPolicy": {
       "type": "bool",
       "defaultValue": true,
@@ -174,7 +209,8 @@
   },
   "variables": {
     "resourceGroupName": "[if(parameters('useExistingResourceGroup'), parameters('existingResourceGroupName'), format('rg-{0}', parameters('deploymentName')))]",
-    "vaultName": "[format('rsv-{0}', parameters('deploymentName'))]",
+    "vaultName": "[if(parameters('useExistingVault'), last(split(parameters('existingVaultResourceId'), '/')), format('rsv-{0}', parameters('deploymentName')))]",
+    "vaultResourceGroupName": "[if(parameters('useExistingVault'), split(parameters('existingVaultResourceId'), '/')[4], variables('resourceGroupName'))]",
     "baseTags": {
       "DeployedBy": "Azure-Solution-Portal",
       "Solution": "Azure-Backup",
@@ -183,7 +219,7 @@
   },
   "resources": [
     {
-      "condition": "[not(parameters('useExistingResourceGroup'))]",
+      "condition": "[and(not(parameters('useExistingVault')), not(parameters('useExistingResourceGroup')))]",
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2024-03-01",
       "name": "[variables('resourceGroupName')]",
@@ -191,6 +227,7 @@
       "tags": "[union(variables('baseTags'), if(contains(parameters('tagsByResource'), 'Microsoft.Resources/resourceGroups'), parameters('tagsByResource')['Microsoft.Resources/resourceGroups'], createObject()))]"
     },
     {
+      "condition": "[not(parameters('useExistingVault'))]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deploy-rsv",
@@ -232,8 +269,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "11256132041602976522"
+              "version": "0.40.2.10011",
+              "templateHash": "7803178648942605419"
             }
           },
           "parameters": {
@@ -460,7 +497,7 @@
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deploy-backup-policies",
-      "resourceGroup": "[variables('resourceGroupName')]",
+      "resourceGroup": "[variables('vaultResourceGroupName')]",
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
@@ -493,6 +530,9 @@
           },
           "deploySqlPolicy": {
             "value": "[parameters('deploySqlPolicy')]"
+          },
+          "deployFileSharePolicy": {
+            "value": "[parameters('enableAzureFileShareBackup')]"
           }
         },
         "template": {
@@ -501,8 +541,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "17808289924067775802"
+              "version": "0.40.2.10011",
+              "templateHash": "17979360841240533755"
             }
           },
           "parameters": {
@@ -602,6 +642,13 @@
               "defaultValue": false,
               "metadata": {
                 "description": "Deploy SQL Server in VM backup policy"
+              }
+            },
+            "deployFileSharePolicy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Deploy Azure File Share backup policy"
               }
             }
           },
@@ -839,6 +886,36 @@
                   "issqlcompression": false
                 }
               }
+            },
+            {
+              "condition": "[parameters('deployFileSharePolicy')]",
+              "type": "Microsoft.RecoveryServices/vaults/backupPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('vaultName'), format('{0}-afs', parameters('policyNamePrefix')))]",
+              "properties": {
+                "backupManagementType": "AzureStorage",
+                "workLoadType": "AzureFileShare",
+                "timeZone": "UTC",
+                "schedulePolicy": {
+                  "schedulePolicyType": "SimpleSchedulePolicy",
+                  "scheduleRunFrequency": "Daily",
+                  "scheduleRunTimes": [
+                    "[format('2024-01-01T{0}:{1}:00Z', padLeft(string(variables('backupHour')), 2, '0'), padLeft(string(variables('backupMinute')), 2, '0'))]"
+                  ]
+                },
+                "retentionPolicy": {
+                  "retentionPolicyType": "LongTermRetentionPolicy",
+                  "dailySchedule": {
+                    "retentionTimes": [
+                      "[format('2024-01-01T{0}:{1}:00Z', padLeft(string(variables('backupHour')), 2, '0'), padLeft(string(variables('backupMinute')), 2, '0'))]"
+                    ],
+                    "retentionDuration": {
+                      "count": "[parameters('dailyRetentionDays')]",
+                      "durationType": "Days"
+                    }
+                  }
+                }
+              }
             }
           ],
           "outputs": {
@@ -853,6 +930,10 @@
             "sqlPolicyId": {
               "type": "string",
               "value": "[if(parameters('deploySqlPolicy'), resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', parameters('vaultName'), format('{0}-sql', parameters('policyNamePrefix'))), '')]"
+            },
+            "fileSharePolicyId": {
+              "type": "string",
+              "value": "[if(parameters('deployFileSharePolicy'), resourceId('Microsoft.RecoveryServices/vaults/backupPolicies', parameters('vaultName'), format('{0}-afs', parameters('policyNamePrefix'))), '')]"
             }
           }
         }
@@ -866,7 +947,7 @@
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deploy-vm-protection",
-      "resourceGroup": "[variables('resourceGroupName')]",
+      "resourceGroup": "[variables('vaultResourceGroupName')]",
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
@@ -877,7 +958,7 @@
             "value": "[variables('vaultName')]"
           },
           "backupPolicyId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
           },
           "vmIds": {
             "value": "[parameters('vmIdsToProtect')]"
@@ -889,8 +970,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "1012893695781115634"
+              "version": "0.40.2.10011",
+              "templateHash": "7505124761559845239"
             }
           },
           "parameters": {
@@ -940,7 +1021,114 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies')]"
+      ]
+    },
+    {
+      "condition": "[and(and(parameters('enableAzureFileShareBackup'), not(empty(parameters('fileShareStorageAccountId')))), greater(length(parameters('fileShareNames')), 0))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-file-share-protection",
+      "resourceGroup": "[variables('vaultResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "vaultName": {
+            "value": "[variables('vaultName')]"
+          },
+          "backupPolicyId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.fileSharePolicyId.value]"
+          },
+          "storageAccountId": {
+            "value": "[parameters('fileShareStorageAccountId')]"
+          },
+          "fileShareNames": {
+            "value": "[parameters('fileShareNames')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "18029868877228058169"
+            }
+          },
+          "parameters": {
+            "vaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Recovery Services Vault name"
+              }
+            },
+            "backupPolicyId": {
+              "type": "string",
+              "metadata": {
+                "description": "Backup Policy Resource ID for Azure File Shares"
+              }
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage Account resource ID hosting the file shares"
+              }
+            },
+            "fileShareNames": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "File share names to protect"
+              }
+            }
+          },
+          "variables": {
+            "storageAccountName": "[last(split(parameters('storageAccountId'), '/'))]",
+            "storageAccountRgName": "[split(parameters('storageAccountId'), '/')[4]]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/Azure/storagecontainer;Storage;{1};{2}', parameters('vaultName'), variables('storageAccountRgName'), variables('storageAccountName'))]",
+              "properties": {
+                "backupManagementType": "AzureStorage",
+                "containerType": "StorageContainer",
+                "sourceResourceId": "[parameters('storageAccountId')]"
+              }
+            },
+            {
+              "copy": {
+                "name": "fileShareProtectedItems",
+                "count": "[length(parameters('fileShareNames'))]"
+              },
+              "type": "Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}/{2}/{3}', split(format('{0}/Azure/storagecontainer;Storage;{1};{2}', parameters('vaultName'), variables('storageAccountRgName'), variables('storageAccountName')), '/')[0], split(format('{0}/Azure/storagecontainer;Storage;{1};{2}', parameters('vaultName'), variables('storageAccountRgName'), variables('storageAccountName')), '/')[1], split(format('{0}/Azure/storagecontainer;Storage;{1};{2}', parameters('vaultName'), variables('storageAccountRgName'), variables('storageAccountName')), '/')[2], format('AzureFileShare;{0}', parameters('fileShareNames')[copyIndex()]))]",
+              "properties": {
+                "protectedItemType": "AzureFileShareProtectedItem",
+                "sourceResourceId": "[parameters('storageAccountId')]",
+                "policyId": "[parameters('backupPolicyId')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers', split(format('{0}/Azure/storagecontainer;Storage;{1};{2}', parameters('vaultName'), variables('storageAccountRgName'), variables('storageAccountName')), '/')[0], split(format('{0}/Azure/storagecontainer;Storage;{1};{2}', parameters('vaultName'), variables('storageAccountRgName'), variables('storageAccountName')), '/')[1], split(format('{0}/Azure/storagecontainer;Storage;{1};{2}', parameters('vaultName'), variables('storageAccountRgName'), variables('storageAccountName')), '/')[2])]"
+              ]
+            }
+          ],
+          "outputs": {
+            "protectedItemCount": {
+              "type": "int",
+              "value": "[length(parameters('fileShareNames'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies')]"
       ]
     },
     {
@@ -958,11 +1146,8 @@
           "policyName": {
             "value": "[format('policy-{0}-backup-auto', parameters('deploymentName'))]"
           },
-          "vaultId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv'), '2025-04-01').outputs.vaultId.value]"
-          },
           "backupPolicyId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
           },
           "tagKey": {
             "value": "[parameters('autoProtectTagKey')]"
@@ -980,8 +1165,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "275782021543138084"
+              "version": "0.40.2.10011",
+              "templateHash": "16502951983055638527"
             }
           },
           "parameters": {
@@ -989,12 +1174,6 @@
               "type": "string",
               "metadata": {
                 "description": "Policy assignment name"
-              }
-            },
-            "vaultId": {
-              "type": "string",
-              "metadata": {
-                "description": "Recovery Services Vault Resource ID"
               }
             },
             "backupPolicyId": {
@@ -1082,31 +1261,30 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv')]"
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies')]"
       ]
     }
   ],
   "outputs": {
     "resourceGroupName": {
       "type": "string",
-      "value": "[variables('resourceGroupName')]"
+      "value": "[variables('vaultResourceGroupName')]"
     },
     "vaultId": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv'), '2025-04-01').outputs.vaultId.value]"
+      "value": "[if(parameters('useExistingVault'), parameters('existingVaultResourceId'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv'), '2025-04-01').outputs.vaultId.value)]"
     },
     "vaultName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-rsv'), '2025-04-01').outputs.vaultName.value]"
+      "value": "[variables('vaultName')]"
     },
     "vmPolicyId": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmPolicyId.value]"
     },
     "enhancedPolicyId": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmEnhancedPolicyId.value]"
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vaultResourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-backup-policies'), '2025-04-01').outputs.vmEnhancedPolicyId.value]"
     },
     "backupCenterUrl": {
       "type": "string",

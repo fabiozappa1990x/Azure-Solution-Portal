@@ -6,7 +6,7 @@
     "config": {
       "isWizard": true,
       "basics": {
-        "description": "Deploy Azure Update Manager accelerator: Maintenance Configuration e policy per assessment/auto-patching.",
+        "description": "Azure Update Manager accelerator: Maintenance Configuration (nuova o esistente), policy assessment/auto-patching e assegnazione a VM target.",
         "resourceGroup": { "allowExisting": true },
         "location": { "visible": true }
       }
@@ -27,12 +27,12 @@
     "steps": [
       {
         "name": "resourceGroup",
-        "label": "Resource Group",
+        "label": "Resource Group (solo per nuova Maintenance Configuration)",
         "elements": [
           {
             "name": "useExistingResourceGroup",
             "type": "Microsoft.Common.CheckBox",
-            "label": "Usa un Resource Group esistente",
+            "label": "Usa un Resource Group esistente (se creo una nuova config)",
             "defaultValue": false
           },
           {
@@ -46,29 +46,132 @@
         ]
       },
       {
-        "name": "window",
-        "label": "Maintenance Window",
+        "name": "maintenanceConfig",
+        "label": "Maintenance Configuration",
         "elements": [
+          {
+            "name": "useExistingMaintenanceConfiguration",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Usa una Maintenance Configuration esistente",
+            "defaultValue": false
+          },
+          {
+            "name": "existingMaintenanceConfiguration",
+            "type": "Microsoft.Solutions.ResourceSelector",
+            "label": "Seleziona Maintenance Configuration",
+            "resourceType": "Microsoft.Maintenance/maintenanceConfigurations",
+            "options": {
+              "filter": {
+                "subscription": "onBasics"
+              }
+            },
+            "visible": "[steps('maintenanceConfig').useExistingMaintenanceConfiguration]"
+          },
+          {
+            "name": "maintenanceStartDateTime",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Start date-time (UTC)",
+            "defaultValue": "2024-01-01 23:00",
+            "toolTip": "Formato: YYYY-MM-DD HH:mm (UTC).",
+            "visible": "[not(steps('maintenanceConfig').useExistingMaintenanceConfiguration)]",
+            "constraints": { "required": true }
+          },
+          {
+            "name": "maintenanceDuration",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Duration (ISO 8601)",
+            "defaultValue": "PT2H",
+            "toolTip": "Esempio: PT2H (2 ore).",
+            "visible": "[not(steps('maintenanceConfig').useExistingMaintenanceConfiguration)]",
+            "constraints": { "required": true }
+          },
+          {
+            "name": "maintenanceTimeZone",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Time zone",
+            "defaultValue": "W. Europe Standard Time",
+            "visible": "[not(steps('maintenanceConfig').useExistingMaintenanceConfiguration)]",
+            "constraints": { "required": true }
+          },
           {
             "name": "recurEvery",
             "type": "Microsoft.Common.DropDown",
             "label": "Recurrence",
             "defaultValue": "Weekly",
-            "constraints": { "allowedValues": [ { "label": "Weekly", "value": "Weekly" }, { "label": "Monthly", "value": "Monthly" } ], "required": true }
+            "visible": "[not(steps('maintenanceConfig').useExistingMaintenanceConfiguration)]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Weekly", "value": "Weekly" },
+                { "label": "Monthly", "value": "Monthly" }
+              ],
+              "required": true
+            }
           },
           {
             "name": "dayOfWeek",
             "type": "Microsoft.Common.DropDown",
             "label": "Day of week",
             "defaultValue": "Sunday",
-            "visible": "[equals(steps('window').recurEvery, 'Weekly')]",
-            "constraints": { "allowedValues": [ { "label": "Sunday", "value": "Sunday" }, { "label": "Monday", "value": "Monday" }, { "label": "Tuesday", "value": "Tuesday" }, { "label": "Wednesday", "value": "Wednesday" }, { "label": "Thursday", "value": "Thursday" }, { "label": "Friday", "value": "Friday" }, { "label": "Saturday", "value": "Saturday" } ], "required": true }
+            "visible": "[and(not(steps('maintenanceConfig').useExistingMaintenanceConfiguration), equals(steps('maintenanceConfig').recurEvery, 'Weekly'))]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Sunday", "value": "Sunday" },
+                { "label": "Monday", "value": "Monday" },
+                { "label": "Tuesday", "value": "Tuesday" },
+                { "label": "Wednesday", "value": "Wednesday" },
+                { "label": "Thursday", "value": "Thursday" },
+                { "label": "Friday", "value": "Friday" },
+                { "label": "Saturday", "value": "Saturday" }
+              ],
+              "required": true
+            }
+          }
+        ]
+      },
+      {
+        "name": "targets",
+        "label": "Target VM (opzionale)",
+        "elements": [
+          {
+            "name": "assignToVMs",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Assegnazione Maintenance Configuration",
+            "defaultValue": "none",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Non assegnare VM ora", "value": "none" },
+                { "label": "Seleziona VM (Resource ID)", "value": "selected" }
+              ],
+              "required": true
+            }
           },
           {
-            "name": "maintenanceTimeZone",
+            "name": "vmResourceIds",
             "type": "Microsoft.Common.TextBox",
-            "label": "Time zone",
-            "defaultValue": "W. Europe Standard Time"
+            "label": "VM Resource IDs",
+            "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm2",
+            "toolTip": "Inserisci i Resource ID completi delle VM, separati da virgola.",
+            "multiLine": true,
+            "visible": "[equals(steps('targets').assignToVMs, 'selected')]",
+            "constraints": { "required": true }
+          }
+        ]
+      },
+      {
+        "name": "automation",
+        "label": "Policy (opzionale)",
+        "elements": [
+          {
+            "name": "enablePeriodicAssessmentPolicy",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Abilita periodic assessment (policy)",
+            "defaultValue": true
+          },
+          {
+            "name": "enableAutoPatchingPolicy",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Abilita auto-patching con Maintenance Configuration (policy)",
+            "defaultValue": true
           }
         ]
       }
@@ -76,11 +179,24 @@
     "outputs": {
       "deploymentName": "[basics('deploymentName')]",
       "location": "[location()]",
+
       "useExistingResourceGroup": "[steps('resourceGroup').useExistingResourceGroup]",
       "existingResourceGroupName": "[steps('resourceGroup').existingResourceGroupName]",
-      "recurEvery": "[steps('window').recurEvery]",
-      "dayOfWeek": "[steps('window').dayOfWeek]",
-      "maintenanceTimeZone": "[steps('window').maintenanceTimeZone]",
+
+      "useExistingMaintenanceConfiguration": "[steps('maintenanceConfig').useExistingMaintenanceConfiguration]",
+      "existingMaintenanceConfigurationId": "[if(steps('maintenanceConfig').useExistingMaintenanceConfiguration, steps('maintenanceConfig').existingMaintenanceConfiguration.id, '')]",
+
+      "maintenanceStartDateTime": "[steps('maintenanceConfig').maintenanceStartDateTime]",
+      "maintenanceDuration": "[steps('maintenanceConfig').maintenanceDuration]",
+      "maintenanceTimeZone": "[steps('maintenanceConfig').maintenanceTimeZone]",
+      "recurEvery": "[steps('maintenanceConfig').recurEvery]",
+      "dayOfWeek": "[steps('maintenanceConfig').dayOfWeek]",
+
+      "vmIdsToAssign": "[if(equals(steps('targets').assignToVMs, 'selected'), split(replace(steps('targets').vmResourceIds, ' ', ''), ','), parse('[]'))]",
+
+      "enablePeriodicAssessmentPolicy": "[steps('automation').enablePeriodicAssessmentPolicy]",
+      "enableAutoPatchingPolicy": "[steps('automation').enableAutoPatchingPolicy]",
+
       "tagsByResource": {}
     }
   }

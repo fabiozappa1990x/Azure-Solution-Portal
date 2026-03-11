@@ -12,6 +12,14 @@ param useExistingResourceGroup bool = false
 @description('Existing Resource Group name')
 param existingResourceGroupName string = ''
 
+// ── Vault selection ───────────────────────────────────────────────────────────
+
+@description('Use an existing Recovery Services Vault')
+param useExistingVault bool = false
+
+@description('Existing Recovery Services Vault resource ID (required if useExistingVault = true)')
+param existingVaultResourceId string = ''
+
 // ── Vault ─────────────────────────────────────────────────────────────────────
 
 @description('Vault storage replication type')
@@ -59,6 +67,17 @@ param deploySqlPolicy bool = false
 @description('VM Resource IDs to protect with backup')
 param vmIdsToProtect array = []
 
+// ── Azure Files Protection ────────────────────────────────────────────────────
+
+@description('Enable backup for Azure File Shares (single Storage Account)')
+param enableAzureFileShareBackup bool = false
+
+@description('Storage Account resource ID hosting the file shares (required if enableAzureFileShareBackup = true)')
+param fileShareStorageAccountId string = ''
+
+@description('File share names to protect (comma-separated in UI, array in template)')
+param fileShareNames array = []
+
 @description('Enable Azure Policy for auto-protection of tagged VMs')
 param enableBackupPolicy bool = true
 
@@ -84,7 +103,8 @@ param tagsByResource object = {}
 // ─────────────────────────────────────────────────────────────────────────────
 
 var resourceGroupName = useExistingResourceGroup ? existingResourceGroupName : 'rg-${deploymentName}'
-var vaultName = 'rsv-${deploymentName}'
+var vaultName = useExistingVault ? last(split(existingVaultResourceId, '/')) : 'rsv-${deploymentName}'
+var vaultResourceGroupName = useExistingVault ? split(existingVaultResourceId, '/')[4] : resourceGroupName
 
 var baseTags = {
   DeployedBy: 'Azure-Solution-Portal'
@@ -92,13 +112,13 @@ var baseTags = {
   ManagedBy: 'Bicep'
 }
 
-resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingResourceGroup) {
+resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingVault && !useExistingResourceGroup) {
   name: resourceGroupName
   location: location
   tags: union(baseTags, contains(tagsByResource, 'Microsoft.Resources/resourceGroups') ? tagsByResource['Microsoft.Resources/resourceGroups'] : {})
 }
 
-module vault 'modules/recovery-services-vault.bicep' = {
+module vault 'modules/recovery-services-vault.bicep' = if (!useExistingVault) {
   name: 'deploy-rsv'
   scope: resourceGroup(resourceGroupName)
   params: {
@@ -115,7 +135,7 @@ module vault 'modules/recovery-services-vault.bicep' = {
 
 module backupPolicies 'modules/backup-policies.bicep' = {
   name: 'deploy-backup-policies'
-  scope: resourceGroup(resourceGroupName)
+  scope: resourceGroup(vaultResourceGroupName)
   params: {
     vaultName: vaultName
     policyNamePrefix: 'policy-${deploymentName}'
@@ -126,17 +146,32 @@ module backupPolicies 'modules/backup-policies.bicep' = {
     yearlyRetentionYears: yearlyRetentionYears
     deployEnhancedPolicy: deployEnhancedPolicy
     deploySqlPolicy: deploySqlPolicy
+    deployFileSharePolicy: enableAzureFileShareBackup
   }
-  dependsOn: [vault]
+  dependsOn: [
+    vault
+  ]
 }
 
 module vmProtection 'modules/vm-protection.bicep' = if (length(vmIdsToProtect) > 0) {
   name: 'deploy-vm-protection'
-  scope: resourceGroup(resourceGroupName)
+  scope: resourceGroup(vaultResourceGroupName)
   params: {
     vaultName: vaultName
     backupPolicyId: backupPolicies.outputs.vmPolicyId
     vmIds: vmIdsToProtect
+  }
+  dependsOn: [backupPolicies]
+}
+
+module fileShareProtection 'modules/file-share-protection.bicep' = if (enableAzureFileShareBackup && !empty(fileShareStorageAccountId) && length(fileShareNames) > 0) {
+  name: 'deploy-file-share-protection'
+  scope: resourceGroup(vaultResourceGroupName)
+  params: {
+    vaultName: vaultName
+    backupPolicyId: backupPolicies.outputs.fileSharePolicyId
+    storageAccountId: fileShareStorageAccountId
+    fileShareNames: fileShareNames
   }
   dependsOn: [backupPolicies]
 }
@@ -147,7 +182,6 @@ module autoProtectPolicy 'modules/backup-auto-policy.bicep' = if (enableBackupPo
   scope: subscription()
   params: {
     policyName: 'policy-${deploymentName}-backup-auto'
-    vaultId: vault.outputs.vaultId
     backupPolicyId: backupPolicies.outputs.vmPolicyId
     tagKey: autoProtectTagKey
     tagValue: autoProtectTagValue
@@ -158,9 +192,9 @@ module autoProtectPolicy 'modules/backup-auto-policy.bicep' = if (enableBackupPo
 
 // ── Outputs ───────────────────────────────────────────────────────────────────
 
-output resourceGroupName string = resourceGroupName
-output vaultId string = vault.outputs.vaultId
-output vaultName string = vault.outputs.vaultName
+output resourceGroupName string = vaultResourceGroupName
+output vaultId string = useExistingVault ? existingVaultResourceId : vault.outputs.vaultId
+output vaultName string = vaultName
 output vmPolicyId string = backupPolicies.outputs.vmPolicyId
 output enhancedPolicyId string = backupPolicies.outputs.vmEnhancedPolicyId
 output backupCenterUrl string = 'https://portal.azure.com/#blade/Microsoft_Azure_DataProtection/BackupCenterMenuBlade/overview'

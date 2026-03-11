@@ -6,7 +6,7 @@
     "config": {
       "isWizard": true,
       "basics": {
-        "description": "Deploy Microsoft Defender for Cloud accelerator: piani Defender, security contact e policy benchmark (MCSB).",
+        "description": "Microsoft Defender for Cloud accelerator: piani Defender, security contact, auto-provisioning e baseline (MCSB).",
         "location": { "visible": true }
       }
     },
@@ -26,7 +26,7 @@
     "steps": [
       {
         "name": "contacts",
-        "label": "Security Contact",
+        "label": "Security Contact & Notifiche",
         "elements": [
           {
             "name": "emailRecipients",
@@ -35,6 +35,18 @@
             "placeholder": "security@contoso.com;secops@contoso.com",
             "toolTip": "Lista separata da ';' usata per i contatti di sicurezza.",
             "constraints": { "required": true }
+          },
+          {
+            "name": "phone",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Phone (opzionale)",
+            "defaultValue": ""
+          },
+          {
+            "name": "alertNotificationsMediumSeverity",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Notifica anche severità Medium (oltre High)",
+            "defaultValue": true
           },
           {
             "name": "notifySubscriptionOwners",
@@ -48,27 +60,136 @@
         "name": "plans",
         "label": "Defender Plans",
         "elements": [
-          { "name": "enableDefenderForServers", "type": "Microsoft.Common.CheckBox", "label": "Defender for Servers", "defaultValue": true },
+          {
+            "name": "enableCSPM",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Defender CSPM (posture management)",
+            "defaultValue": true
+          },
+          {
+            "name": "enableDefenderForServers",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Defender for Servers",
+            "defaultValue": true
+          },
+          {
+            "name": "serversPlanTier",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Servers plan tier",
+            "defaultValue": "Standard",
+            "visible": "[steps('plans').enableDefenderForServers]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Standard (paid)", "value": "Standard" },
+                { "label": "Free", "value": "Free" }
+              ],
+              "required": true
+            }
+          },
           {
             "name": "serversSubPlan",
             "type": "Microsoft.Common.DropDown",
-            "label": "Servers Sub-Plan",
+            "label": "Servers sub-plan",
             "defaultValue": "P2",
-            "visible": "[steps('plans').enableDefenderForServers]",
-            "constraints": { "allowedValues": [ { "label": "P1", "value": "P1" }, { "label": "P2 (MDE)", "value": "P2" } ], "required": true }
+            "visible": "[and(steps('plans').enableDefenderForServers, equals(steps('plans').serversPlanTier, 'Standard'))]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "P1", "value": "P1" },
+                { "label": "P2 (MDE)", "value": "P2" }
+              ],
+              "required": true
+            }
           },
-          { "name": "enableCSPM", "type": "Microsoft.Common.CheckBox", "label": "Enable CSPM", "defaultValue": true }
+          { "name": "enableDefenderForSqlVm", "type": "Microsoft.Common.CheckBox", "label": "Defender for SQL on VMs", "defaultValue": true },
+          { "name": "enableDefenderForStorage", "type": "Microsoft.Common.CheckBox", "label": "Defender for Storage", "defaultValue": true },
+          { "name": "enableDefenderForKeyVault", "type": "Microsoft.Common.CheckBox", "label": "Defender for Key Vault", "defaultValue": true },
+          { "name": "enableDefenderForARM", "type": "Microsoft.Common.CheckBox", "label": "Defender for Resource Manager", "defaultValue": true },
+          { "name": "enableDefenderForDns", "type": "Microsoft.Common.CheckBox", "label": "Defender for DNS", "defaultValue": false },
+          { "name": "enableDefenderForAppService", "type": "Microsoft.Common.CheckBox", "label": "Defender for App Service", "defaultValue": false },
+          { "name": "enableDefenderForContainers", "type": "Microsoft.Common.CheckBox", "label": "Defender for Containers", "defaultValue": false }
+        ]
+      },
+      {
+        "name": "autoprovisioning",
+        "label": "Auto-Provisioning (opzionale)",
+        "elements": [
+          {
+            "name": "enableMDEAutoProvisioning",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Auto-provision Microsoft Defender for Endpoint (MDE)",
+            "defaultValue": true
+          },
+          {
+            "name": "enableAMAAutoProvisioning",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Auto-provision Azure Monitor Agent (via Defender)",
+            "defaultValue": true
+          }
+        ]
+      },
+      {
+        "name": "governance",
+        "label": "Governance / Baseline",
+        "elements": [
+          {
+            "name": "assignSecurityBenchmark",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Assegna Microsoft Cloud Security Benchmark (MCSB)",
+            "defaultValue": true
+          },
+          {
+            "name": "securityBenchmarkEnforcementMode",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Enforcement mode",
+            "defaultValue": "DoNotEnforce",
+            "visible": "[steps('governance').assignSecurityBenchmark]",
+            "constraints": {
+              "allowedValues": [
+                { "label": "DoNotEnforce (audit only)", "value": "DoNotEnforce" },
+                { "label": "Default (enforce)", "value": "Default" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "referenceInfo",
+            "type": "Microsoft.Common.InfoBox",
+            "visible": true,
+            "options": {
+              "icon": "Info",
+              "text": "Per un baseline più esteso (governance/agent/security), vedi la reference: Data-and-Agent-Governance-and-Security-Accelerator (GitHub)."
+            }
+          }
         ]
       }
     ],
     "outputs": {
       "deploymentName": "[basics('deploymentName')]",
       "location": "[location()]",
+
       "emailRecipients": "[steps('contacts').emailRecipients]",
+      "phone": "[steps('contacts').phone]",
+      "alertNotificationsMediumSeverity": "[steps('contacts').alertNotificationsMediumSeverity]",
       "notifySubscriptionOwners": "[steps('contacts').notifySubscriptionOwners]",
-      "enableDefenderForServers": "[steps('plans').enableDefenderForServers]",
-      "serversSubPlan": "[steps('plans').serversSubPlan]",
+
       "enableCSPM": "[steps('plans').enableCSPM]",
+      "enableDefenderForServers": "[steps('plans').enableDefenderForServers]",
+      "serversPlanTier": "[steps('plans').serversPlanTier]",
+      "serversSubPlan": "[steps('plans').serversSubPlan]",
+      "enableDefenderForSqlVm": "[steps('plans').enableDefenderForSqlVm]",
+      "enableDefenderForStorage": "[steps('plans').enableDefenderForStorage]",
+      "enableDefenderForKeyVault": "[steps('plans').enableDefenderForKeyVault]",
+      "enableDefenderForARM": "[steps('plans').enableDefenderForARM]",
+      "enableDefenderForDns": "[steps('plans').enableDefenderForDns]",
+      "enableDefenderForAppService": "[steps('plans').enableDefenderForAppService]",
+      "enableDefenderForContainers": "[steps('plans').enableDefenderForContainers]",
+
+      "enableMDEAutoProvisioning": "[steps('autoprovisioning').enableMDEAutoProvisioning]",
+      "enableAMAAutoProvisioning": "[steps('autoprovisioning').enableAMAAutoProvisioning]",
+
+      "assignSecurityBenchmark": "[steps('governance').assignSecurityBenchmark]",
+      "securityBenchmarkEnforcementMode": "[steps('governance').securityBenchmarkEnforcementMode]",
+
       "tagsByResource": {}
     }
   }

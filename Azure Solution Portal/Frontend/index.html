@@ -17,7 +17,7 @@
             <ul>
                 <li><a href="setup.html">Setup</a></li>
                 <li><a href="index.html" class="active">Soluzioni</a></li>
-                <li><a href="#">Documentazione</a></li>
+                <li><a href="documentation.html">Documentazione</a></li>
                 <li><a href="#">Supporto</a></li>
             </ul>
         </nav>
@@ -335,6 +335,18 @@
                     <pre id="deploy-ps-command"><code>.\Deploy-MonitorHub.ps1 -SubscriptionId "YOUR-SUB-ID"</code></pre>
                     <div id="deploy-ps-download-area" style="margin-top: 10px;"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODAL DETTAGLI (overview + link documentazione) ===== -->
+    <div id="details-modal" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close-modal">&times;</span>
+            <h2 id="details-modal-title">Dettagli</h2>
+            <div id="details-modal-body"></div>
+            <div class="report-actions" style="justify-content: flex-end;">
+                <a id="details-doc-link" class="btn-secondary" href="documentation.html">Apri documentazione</a>
             </div>
         </div>
     </div>

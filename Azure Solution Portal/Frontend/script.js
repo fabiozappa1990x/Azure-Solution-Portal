@@ -28,6 +28,20 @@ function psDownloadUrl(folderEncoded, scriptName) {
 const SOLUTIONS = {
     'azure-monitor': {
         name: 'Azure Monitor Hub',
+        detailsTitle: 'Azure Monitor Hub — Dettagli',
+        details: {
+            whatIs: 'Azure Monitor è la piattaforma di monitoraggio nativa di Azure per metriche, log (Log Analytics) e alert. Questo accelerator standardizza la raccolta dati (AMA + DCR), l’alerting e la visualizzazione per le VM.',
+            features: [
+                'Log Analytics Workspace e Data Collection Rules (DCR) per centralizzare i log',
+                'Alert CPU/Memoria/Disco/Heartbeat con Action Group',
+                'Workbook/Dashboard per overview e troubleshooting',
+                'Policy per auto-enrollment delle nuove VM'
+            ],
+            notes: [
+                'Il precheck evidenzia VM non monitorate, workspace/DCR esistenti e gap di configurazione.'
+            ],
+            docsAnchor: 'azure-monitor'
+        },
         precheckTitle: 'Precheck Azure Monitor Hub',
         precheckDesc: 'Analizza VM, Log Analytics Workspace, DCR e agenti di monitoraggio nella sottoscrizione.',
         deployTitle: 'Deploy Azure Monitor Hub',
@@ -39,6 +53,20 @@ const SOLUTIONS = {
     },
     'avd': {
         name: 'Azure Virtual Desktop',
+        detailsTitle: 'Azure Virtual Desktop — Dettagli',
+        details: {
+            whatIs: 'Azure Virtual Desktop (AVD) è il servizio Microsoft per pubblicare desktop e applicazioni virtuali (Windows 10/11 multi-session, Windows Server) con gestione centralizzata e accesso sicuro.',
+            features: [
+                'Host Pool (pooled/personal), Workspace e Application Group',
+                'Session Hosts Windows 11 multi-session',
+                'FSLogix per profili utente su Azure Files',
+                'Scaling Plan per ottimizzare i costi'
+            ],
+            notes: [
+                'Il precheck verifica prerequisiti rete, quote, identità e naming per un deploy “enterprise ready”.'
+            ],
+            docsAnchor: 'avd'
+        },
         precheckTitle: 'Precheck Azure Virtual Desktop',
         precheckDesc: 'Verifica VNet, subnet, quote VM, join AD/AzureAD e tutti i prerequisiti per il deployment AVD.',
         deployTitle: 'Deploy Azure Virtual Desktop',
@@ -50,6 +78,20 @@ const SOLUTIONS = {
     },
     'backup': {
         name: 'Azure Backup',
+        detailsTitle: 'Azure Backup — Dettagli',
+        details: {
+            whatIs: 'Azure Backup è il servizio per protezione e ripristino di workload (VM, file share, SQL in VM, ecc.) tramite Recovery Services Vault e policy di retention.',
+            features: [
+                'Creazione o utilizzo di un Recovery Services Vault (RSV)',
+                'Policy di backup e retention (GFS) per VM (e policy workload opzionali)',
+                'Protezione di workload selezionati (es. VM) e auto-protection via Azure Policy (opzionale)',
+                'Soft delete per protezione da cancellazioni accidentali'
+            ],
+            notes: [
+                'Per guida completa e prerequisiti dei workload, vedi la sezione Documentazione.'
+            ],
+            docsAnchor: 'backup'
+        },
         precheckTitle: 'Precheck Azure Backup',
         precheckDesc: 'Analizza VM non protette, vault esistenti e policy di backup configurate nella sottoscrizione.',
         deployTitle: 'Deploy Azure Backup',
@@ -61,6 +103,20 @@ const SOLUTIONS = {
     },
     'defender': {
         name: 'Microsoft Defender for Cloud',
+        detailsTitle: 'Microsoft Defender for Cloud — Dettagli',
+        details: {
+            whatIs: 'Defender for Cloud combina posture management (CSPM) e protezioni avanzate (Defender Plans) per rilevare rischi e minacce su risorse Azure.',
+            features: [
+                'Abilitazione selettiva dei Defender Plans (Servers, Storage, Key Vault, ARM, ecc.)',
+                'Security contact (email/ruoli) per notifiche e ownership',
+                'Auto-provisioning (MDE/AMA) dove abilitato',
+                'Assegnazione baseline (Microsoft Cloud Security Benchmark) per governance'
+            ],
+            notes: [
+                'Per dettagli su piani, licenze e governance, vedi Documentazione (con reference accelerator Microsoft).'
+            ],
+            docsAnchor: 'defender'
+        },
         precheckTitle: 'Precheck Microsoft Defender for Cloud',
         precheckDesc: 'Analizza piani Defender attivi, secure score, raccomandazioni critiche e copertura degli endpoint.',
         deployTitle: 'Deploy Microsoft Defender for Cloud',
@@ -72,6 +128,20 @@ const SOLUTIONS = {
     },
     'update-manager': {
         name: 'Azure Update Manager',
+        detailsTitle: 'Azure Update Manager — Dettagli',
+        details: {
+            whatIs: 'Azure Update Manager gestisce assessment e patching di VM (Windows/Linux) con finestre di manutenzione controllate, compliance e automazione.',
+            features: [
+                'Maintenance Configuration (finestra/ricorrenza/timezone)',
+                'Classificazioni update (Windows/Linux) e reboot policy',
+                'Policy per periodic assessment e auto-patching (opzionali)',
+                'Assegnazione della maintenance configuration a VM target'
+            ],
+            notes: [
+                'Per setup consigliato e troubleshooting, vedi la sezione Documentazione.'
+            ],
+            docsAnchor: 'update-manager'
+        },
         precheckTitle: 'Precheck Azure Update Manager',
         precheckDesc: 'Analizza VM con aggiornamenti in sospeso, Maintenance Configuration esistenti e compliance di patching.',
         deployTitle: 'Deploy Azure Update Manager',
@@ -265,7 +335,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.btn-details').forEach(btn => {
         btn.addEventListener('click', function() {
             const sol = this.getAttribute('data-solution');
-            alert(`ℹ️ ${SOLUTIONS[sol]?.name || sol}\n\nDocumentazione completa disponibile nella cartella docs/ della soluzione.`);
+            showDetailsModal(sol);
         });
     });
 
@@ -816,6 +886,41 @@ function showDeployModal(solution) {
                     Script disponibile dopo il push su GitHub
                 </span>`;
         }
+    }
+
+    modal.style.display = 'block';
+}
+
+function showDetailsModal(solution) {
+    const modal = document.getElementById('details-modal');
+    const solConfig = SOLUTIONS[solution] || SOLUTIONS['azure-monitor'];
+
+    const titleEl = document.getElementById('details-modal-title');
+    const bodyEl = document.getElementById('details-modal-body');
+    const docLink = document.getElementById('details-doc-link');
+
+    if (titleEl) titleEl.textContent = solConfig.detailsTitle || `Dettagli — ${solConfig.name}`;
+
+    const details = solConfig.details || {};
+    const features = Array.isArray(details.features) ? details.features : [];
+    const notes = Array.isArray(details.notes) ? details.notes : [];
+
+    bodyEl.innerHTML = `
+        <p style="margin-top: 0;">${escapeHtml(details.whatIs || '')}</p>
+        ${features.length ? `<h4 style="margin: 18px 0 10px;">Funzionalità incluse</h4>
+        <ul class="solution-features" style="margin: 0;">
+            ${features.map(f => `<li><i class="fas fa-check"></i> ${escapeHtml(f)}</li>`).join('')}
+        </ul>` : ''}
+        ${notes.length ? `<h4 style="margin: 18px 0 10px;">Note</h4>
+        <ul class="solution-features" style="margin: 0;">
+            ${notes.map(n => `<li><i class="fas fa-info-circle"></i> ${escapeHtml(n)}</li>`).join('')}
+        </ul>` : ''}
+        <p style="margin: 18px 0 0;">Per guide operative, prerequisiti e riferimenti ufficiali, consulta la sezione <b>Documentazione</b>.</p>
+    `;
+
+    if (docLink) {
+        const anchor = details.docsAnchor ? `#${details.docsAnchor}` : '';
+        docLink.href = `documentation.html${anchor}`;
     }
 
     modal.style.display = 'block';

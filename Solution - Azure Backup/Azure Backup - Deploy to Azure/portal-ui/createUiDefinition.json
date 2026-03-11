@@ -6,7 +6,7 @@
     "config": {
       "isWizard": true,
       "basics": {
-        "description": "Deploy Azure Backup accelerator: Recovery Services Vault, policy GFS e auto-protection via Azure Policy.",
+        "description": "Azure Backup accelerator: Recovery Services Vault (nuovo o esistente), policy e protezione workload selezionati (es. VM).",
         "resourceGroup": {
           "allowExisting": true
         },
@@ -24,7 +24,7 @@
         "type": "Microsoft.Common.TextBox",
         "label": "Deployment Name",
         "placeholder": "backup-prod",
-        "toolTip": "Prefisso usato per nominare le risorse (es: rsv-<deploymentName>).",
+        "toolTip": "Prefisso usato per nominare risorse/policy quando vengono create nuove (es: rsv-<deploymentName>).",
         "constraints": {
           "required": true,
           "regex": "^[a-z0-9-]{3,24}$",
@@ -35,12 +35,12 @@
     "steps": [
       {
         "name": "resourceGroup",
-        "label": "Resource Group",
+        "label": "Resource Group (solo per nuovo vault)",
         "elements": [
           {
             "name": "useExistingResourceGroup",
             "type": "Microsoft.Common.CheckBox",
-            "label": "Usa un Resource Group esistente",
+            "label": "Usa un Resource Group esistente (se creo un nuovo RSV)",
             "defaultValue": false
           },
           {
@@ -49,21 +49,38 @@
             "label": "Nome Resource Group esistente",
             "placeholder": "rg-backup-prod",
             "visible": "[steps('resourceGroup').useExistingResourceGroup]",
-            "constraints": {
-              "required": true
-            }
+            "constraints": { "required": true }
           }
         ]
       },
       {
         "name": "vault",
-        "label": "Vault & Policy",
+        "label": "Recovery Services Vault",
         "elements": [
+          {
+            "name": "useExistingVault",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Usa un Recovery Services Vault esistente",
+            "defaultValue": false
+          },
+          {
+            "name": "existingVault",
+            "type": "Microsoft.Solutions.ResourceSelector",
+            "label": "Seleziona Recovery Services Vault",
+            "resourceType": "Microsoft.RecoveryServices/vaults",
+            "options": {
+              "filter": {
+                "subscription": "onBasics"
+              }
+            },
+            "visible": "[steps('vault').useExistingVault]"
+          },
           {
             "name": "storageType",
             "type": "Microsoft.Common.DropDown",
-            "label": "Replication type",
+            "label": "Replication type (nuovo vault)",
             "defaultValue": "GeoRedundant",
+            "visible": "[not(steps('vault').useExistingVault)]",
             "constraints": {
               "allowedValues": [
                 { "label": "Geo-Redundant (GRS)", "value": "GeoRedundant" },
@@ -76,29 +93,91 @@
           {
             "name": "enableSoftDelete",
             "type": "Microsoft.Common.CheckBox",
-            "label": "Enable Soft Delete",
-            "defaultValue": true
+            "label": "Enable Soft Delete (nuovo vault)",
+            "defaultValue": true,
+            "visible": "[not(steps('vault').useExistingVault)]"
+          }
+        ]
+      },
+      {
+        "name": "workloads",
+        "label": "Workload da proteggere",
+        "elements": [
+          {
+            "name": "protectVMs",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Proteggi VM Azure",
+            "defaultValue": "none",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Non proteggere VM ora", "value": "none" },
+                { "label": "Seleziona VM (Resource ID)", "value": "selected" }
+              ],
+              "required": true
+            }
           },
+          {
+            "name": "vmResourceIds",
+            "type": "Microsoft.Common.TextBox",
+            "label": "VM Resource IDs",
+            "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm2",
+            "toolTip": "Inserisci i Resource ID completi delle VM, separati da virgola. Nota: il wizard non può filtrare automaticamente le VM già protette (se RSV esistente).",
+            "multiLine": true,
+            "visible": "[equals(steps('workloads').protectVMs, 'selected')]",
+            "constraints": { "required": true }
+          },
+          {
+            "name": "enableAzureFileShareBackup",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Proteggi Azure File Share (singolo Storage Account)",
+            "defaultValue": false
+          },
+          {
+            "name": "fileShareStorageAccount",
+            "type": "Microsoft.Solutions.ResourceSelector",
+            "label": "Seleziona Storage Account",
+            "resourceType": "Microsoft.Storage/storageAccounts",
+            "options": {
+              "filter": {
+                "subscription": "onBasics"
+              }
+            },
+            "visible": "[steps('workloads').enableAzureFileShareBackup]"
+          },
+          {
+            "name": "fileShareNamesCsv",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Nomi File Share",
+            "placeholder": "share1,share2",
+            "toolTip": "Inserisci i nomi delle file share (senza path), separati da virgola. Il backup Azure Files richiede che RSV e Storage Account siano nella stessa regione.",
+            "visible": "[steps('workloads').enableAzureFileShareBackup]",
+            "constraints": { "required": true }
+          }
+        ]
+      },
+      {
+        "name": "automation",
+        "label": "Automazione (opzionale)",
+        "elements": [
           {
             "name": "enableBackupPolicy",
             "type": "Microsoft.Common.CheckBox",
-            "label": "Abilita auto-protection (Azure Policy)",
-            "defaultValue": true,
-            "toolTip": "Protegge automaticamente le VM taggate."
+            "label": "Abilita auto-protection VM via Azure Policy (tag)",
+            "defaultValue": true
           },
           {
             "name": "autoProtectTagKey",
             "type": "Microsoft.Common.TextBox",
-            "label": "Auto-protect tag key",
+            "label": "Tag key",
             "defaultValue": "BackupEnabled",
-            "visible": "[steps('vault').enableBackupPolicy]"
+            "visible": "[steps('automation').enableBackupPolicy]"
           },
           {
             "name": "autoProtectTagValue",
             "type": "Microsoft.Common.TextBox",
-            "label": "Auto-protect tag value",
+            "label": "Tag value",
             "defaultValue": "true",
-            "visible": "[steps('vault').enableBackupPolicy]"
+            "visible": "[steps('automation').enableBackupPolicy]"
           }
         ]
       }
@@ -106,15 +185,27 @@
     "outputs": {
       "deploymentName": "[basics('deploymentName')]",
       "location": "[location()]",
+
       "useExistingResourceGroup": "[steps('resourceGroup').useExistingResourceGroup]",
       "existingResourceGroupName": "[steps('resourceGroup').existingResourceGroupName]",
+
+      "useExistingVault": "[steps('vault').useExistingVault]",
+      "existingVaultResourceId": "[if(steps('vault').useExistingVault, steps('vault').existingVault.id, '')]",
+
       "storageType": "[steps('vault').storageType]",
       "enableSoftDelete": "[steps('vault').enableSoftDelete]",
-      "enableBackupPolicy": "[steps('vault').enableBackupPolicy]",
-      "autoProtectTagKey": "[steps('vault').autoProtectTagKey]",
-      "autoProtectTagValue": "[steps('vault').autoProtectTagValue]",
+
+      "vmIdsToProtect": "[if(equals(steps('workloads').protectVMs, 'selected'), split(replace(steps('workloads').vmResourceIds, ' ', ''), ','), parse('[]'))]",
+
+      "enableAzureFileShareBackup": "[steps('workloads').enableAzureFileShareBackup]",
+      "fileShareStorageAccountId": "[if(steps('workloads').enableAzureFileShareBackup, steps('workloads').fileShareStorageAccount.id, '')]",
+      "fileShareNames": "[if(steps('workloads').enableAzureFileShareBackup, split(replace(steps('workloads').fileShareNamesCsv, ' ', ''), ','), parse('[]'))]",
+
+      "enableBackupPolicy": "[steps('automation').enableBackupPolicy]",
+      "autoProtectTagKey": "[steps('automation').autoProtectTagKey]",
+      "autoProtectTagValue": "[steps('automation').autoProtectTagValue]",
+
       "tagsByResource": {}
     }
   }
 }
-

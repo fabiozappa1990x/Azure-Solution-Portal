@@ -7,10 +7,6 @@ param backupPolicyId string
 @description('Array of VM Resource IDs to protect')
 param vmIds array = []
 
-resource existingVault 'Microsoft.RecoveryServices/vaults@2024-04-01' existing = {
-  name: vaultName
-}
-
 // Protect each VM with the specified backup policy
 resource vmProtection 'Microsoft.RecoveryServices/vaults/backupFabrics/protectionContainers/protectedItems@2023-04-01' = [for vmId in vmIds: {
   name: '${vaultName}/Azure/iaasvmcontainer;iaasvmcontainerv2;${split(vmId, '/')[4]};${last(split(vmId, '/'))}/vm;iaasvmcontainerv2;${split(vmId, '/')[4]};${last(split(vmId, '/'))}'

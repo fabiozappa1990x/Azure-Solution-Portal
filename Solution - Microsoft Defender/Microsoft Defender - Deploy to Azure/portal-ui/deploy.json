@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.41.2.15936",
-      "templateHash": "8147123431213282821"
+      "version": "0.40.2.10011",
+      "templateHash": "13977938100398155930"
     }
   },
   "parameters": {
@@ -27,6 +27,17 @@
       "defaultValue": true,
       "metadata": {
         "description": "Enable Defender for Servers"
+      }
+    },
+    "serversPlanTier": {
+      "type": "string",
+      "defaultValue": "Standard",
+      "allowedValues": [
+        "Standard",
+        "Free"
+      ],
+      "metadata": {
+        "description": "Servers plan tier: Standard (paid) or Free"
       }
     },
     "serversSubPlan": {
@@ -68,6 +79,13 @@
         "description": "Enable Defender for Resource Manager"
       }
     },
+    "enableDefenderForDns": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Defender for DNS"
+      }
+    },
     "enableDefenderForAppService": {
       "type": "bool",
       "defaultValue": false,
@@ -102,6 +120,13 @@
         "description": "Security contact phone number"
       }
     },
+    "alertNotificationsMediumSeverity": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Notify on medium severity alerts (in addition to high)"
+      }
+    },
     "notifySubscriptionOwners": {
       "type": "bool",
       "defaultValue": true,
@@ -129,6 +154,17 @@
       "metadata": {
         "description": "Assign built-in Azure Security Benchmark initiative"
       }
+    },
+    "securityBenchmarkEnforcementMode": {
+      "type": "string",
+      "defaultValue": "DoNotEnforce",
+      "allowedValues": [
+        "Default",
+        "DoNotEnforce"
+      ],
+      "metadata": {
+        "description": "Enforcement mode for benchmark initiative"
+      }
     }
   },
   "resources": [
@@ -145,7 +181,7 @@
         "displayName": "Microsoft Cloud Security Benchmark",
         "description": "Iniziativa di sicurezza Microsoft Cloud Security Benchmark per compliance e postura",
         "policyDefinitionId": "/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8",
-        "enforcementMode": "DoNotEnforce",
+        "enforcementMode": "[parameters('securityBenchmarkEnforcementMode')]",
         "parameters": {}
       }
     },
@@ -163,6 +199,9 @@
           "enableDefenderForServers": {
             "value": "[parameters('enableDefenderForServers')]"
           },
+          "serversPlanTier": {
+            "value": "[parameters('serversPlanTier')]"
+          },
           "serversSubPlan": {
             "value": "[parameters('serversSubPlan')]"
           },
@@ -177,6 +216,9 @@
           },
           "enableDefenderForARM": {
             "value": "[parameters('enableDefenderForARM')]"
+          },
+          "enableDefenderForDns": {
+            "value": "[parameters('enableDefenderForDns')]"
           },
           "enableDefenderForAppService": {
             "value": "[parameters('enableDefenderForAppService')]"
@@ -194,8 +236,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "14172668877859012314"
+              "version": "0.40.2.10011",
+              "templateHash": "4890451921441665982"
             }
           },
           "parameters": {
@@ -399,6 +441,9 @@
           "notifySubscriptionOwners": {
             "value": "[parameters('notifySubscriptionOwners')]"
           },
+          "alertNotificationsMediumSeverity": {
+            "value": "[parameters('alertNotificationsMediumSeverity')]"
+          },
           "enableMDEAutoProvisioning": {
             "value": "[parameters('enableMDEAutoProvisioning')]"
           },
@@ -412,8 +457,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "17503556577456866656"
+              "version": "0.40.2.10011",
+              "templateHash": "8979799826447250965"
             }
           },
           "parameters": {

@@ -45,6 +45,9 @@ param deployEnhancedPolicy bool = true
 @description('Deploy SQL Server in VM backup policy')
 param deploySqlPolicy bool = false
 
+@description('Deploy Azure File Share backup policy')
+param deployFileSharePolicy bool = false
+
 resource existingVault 'Microsoft.RecoveryServices/vaults@2024-04-01' existing = {
   name: vaultName
 }
@@ -244,6 +247,37 @@ resource sqlBackupPolicy 'Microsoft.RecoveryServices/vaults/backupPolicies@2024-
   }
 }
 
+// Azure File Share backup policy (AzureStorage)
+resource fileShareBackupPolicy 'Microsoft.RecoveryServices/vaults/backupPolicies@2024-04-01' = if (deployFileSharePolicy) {
+  parent: existingVault
+  name: '${policyNamePrefix}-afs'
+  properties: {
+    backupManagementType: 'AzureStorage'
+    workLoadType: 'AzureFileShare'
+    timeZone: 'UTC'
+    schedulePolicy: {
+      schedulePolicyType: 'SimpleSchedulePolicy'
+      scheduleRunFrequency: 'Daily'
+      scheduleRunTimes: [
+        '2024-01-01T${padLeft(string(backupHour), 2, '0')}:${padLeft(string(backupMinute), 2, '0')}:00Z'
+      ]
+    }
+    retentionPolicy: {
+      retentionPolicyType: 'LongTermRetentionPolicy'
+      dailySchedule: {
+        retentionTimes: [
+          '2024-01-01T${padLeft(string(backupHour), 2, '0')}:${padLeft(string(backupMinute), 2, '0')}:00Z'
+        ]
+        retentionDuration: {
+          count: dailyRetentionDays
+          durationType: 'Days'
+        }
+      }
+    }
+  }
+}
+
 output vmPolicyId string = vmBackupPolicy.id
 output vmEnhancedPolicyId string = deployEnhancedPolicy ? vmEnhancedPolicy.id : ''
 output sqlPolicyId string = deploySqlPolicy ? sqlBackupPolicy.id : ''
+output fileSharePolicyId string = deployFileSharePolicy ? fileShareBackupPolicy.id : ''

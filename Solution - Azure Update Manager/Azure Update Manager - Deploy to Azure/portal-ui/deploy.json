@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.41.2.15936",
-      "templateHash": "394165762485767263"
+      "version": "0.40.2.10011",
+      "templateHash": "13558093220828624277"
     }
   },
   "parameters": {
@@ -34,6 +34,20 @@
       "defaultValue": "",
       "metadata": {
         "description": "Existing Resource Group name"
+      }
+    },
+    "useExistingMaintenanceConfiguration": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Use an existing Maintenance Configuration"
+      }
+    },
+    "existingMaintenanceConfigurationId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Maintenance Configuration resource ID (required if useExistingMaintenanceConfiguration = true)"
       }
     },
     "maintenanceStartDateTime": {
@@ -143,6 +157,13 @@
         "description": "Assign policy to auto-patch VMs with the maintenance config"
       }
     },
+    "vmIdsToAssign": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "VM Resource IDs to explicitly assign the Maintenance Configuration to"
+      }
+    },
     "logAnalyticsWorkspaceId": {
       "type": "string",
       "defaultValue": "",
@@ -160,7 +181,8 @@
   },
   "variables": {
     "resourceGroupName": "[if(parameters('useExistingResourceGroup'), parameters('existingResourceGroupName'), format('rg-{0}', parameters('deploymentName')))]",
-    "maintenanceConfigName": "[format('mc-{0}', parameters('deploymentName'))]",
+    "maintenanceConfigName": "[if(parameters('useExistingMaintenanceConfiguration'), last(split(parameters('existingMaintenanceConfigurationId'), '/')), format('mc-{0}', parameters('deploymentName')))]",
+    "maintenanceConfigResourceGroupName": "[if(parameters('useExistingMaintenanceConfiguration'), split(parameters('existingMaintenanceConfigurationId'), '/')[4], variables('resourceGroupName'))]",
     "baseTags": {
       "DeployedBy": "Azure-Solution-Portal",
       "Solution": "Azure-Update-Manager",
@@ -169,7 +191,7 @@
   },
   "resources": [
     {
-      "condition": "[not(parameters('useExistingResourceGroup'))]",
+      "condition": "[and(not(parameters('useExistingMaintenanceConfiguration')), not(parameters('useExistingResourceGroup')))]",
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2024-03-01",
       "name": "[variables('resourceGroupName')]",
@@ -177,6 +199,7 @@
       "tags": "[union(variables('baseTags'), if(contains(parameters('tagsByResource'), 'Microsoft.Resources/resourceGroups'), parameters('tagsByResource')['Microsoft.Resources/resourceGroups'], createObject()))]"
     },
     {
+      "condition": "[not(parameters('useExistingMaintenanceConfiguration'))]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "deploy-maintenance-config",
@@ -230,8 +253,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "16447461209303014162"
+              "version": "0.40.2.10011",
+              "templateHash": "4505414926573536301"
             }
           },
           "parameters": {
@@ -441,9 +464,7 @@
           "location": {
             "value": "[parameters('location')]"
           },
-          "maintenanceConfigId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value]"
-          },
+          "maintenanceConfigId": "[if(parameters('useExistingMaintenanceConfiguration'), createObject('value', parameters('existingMaintenanceConfigurationId')), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value))]",
           "enablePeriodicAssessment": {
             "value": "[parameters('enablePeriodicAssessmentPolicy')]"
           },
@@ -457,8 +478,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.41.2.15936",
-              "templateHash": "5084066435511235458"
+              "version": "0.40.2.10011",
+              "templateHash": "1604994779217592015"
             }
           },
           "parameters": {
@@ -582,20 +603,111 @@
       "dependsOn": [
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config')]"
       ]
+    },
+    {
+      "copy": {
+        "name": "vmAssignments",
+        "count": "[length(parameters('vmIdsToAssign'))]"
+      },
+      "condition": "[not(empty(parameters('vmIdsToAssign')[copyIndex()]))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[take(format('assign-{0}-{1}', parameters('deploymentName'), uniqueString(parameters('vmIdsToAssign')[copyIndex()])), 64)]",
+      "resourceGroup": "[split(parameters('vmIdsToAssign')[copyIndex()], '/')[4]]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "maintenanceConfigurationId": "[if(parameters('useExistingMaintenanceConfiguration'), createObject('value', parameters('existingMaintenanceConfigurationId')), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value))]",
+          "vmId": {
+            "value": "[parameters('vmIdsToAssign')[copyIndex()]]"
+          },
+          "assignmentName": {
+            "value": "[guid(parameters('vmIdsToAssign')[copyIndex()], if(parameters('useExistingMaintenanceConfiguration'), parameters('existingMaintenanceConfigurationId'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.40.2.10011",
+              "templateHash": "15511696321110666021"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region (required by the configurationAssignments resource)"
+              }
+            },
+            "maintenanceConfigurationId": {
+              "type": "string",
+              "metadata": {
+                "description": "Maintenance Configuration resource ID"
+              }
+            },
+            "vmId": {
+              "type": "string",
+              "metadata": {
+                "description": "Target VM resource ID (must be in this resource group)"
+              }
+            },
+            "assignmentName": {
+              "type": "string",
+              "metadata": {
+                "description": "Configuration assignment name"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Maintenance/configurationAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[take(parameters('assignmentName'), 64)]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "maintenanceConfigurationId": "[parameters('maintenanceConfigurationId')]",
+                "resourceId": "[parameters('vmId')]"
+              }
+            }
+          ],
+          "outputs": {
+            "assignmentId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Maintenance/configurationAssignments', take(parameters('assignmentName'), 64))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config')]"
+      ]
     }
   ],
   "outputs": {
     "resourceGroupName": {
       "type": "string",
-      "value": "[variables('resourceGroupName')]"
+      "value": "[variables('maintenanceConfigResourceGroupName')]"
     },
     "maintenanceConfigId": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value]"
+      "value": "[if(parameters('useExistingMaintenanceConfiguration'), parameters('existingMaintenanceConfigurationId'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigId.value)]"
     },
     "maintenanceConfigName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-maintenance-config'), '2025-04-01').outputs.maintenanceConfigName.value]"
+      "value": "[variables('maintenanceConfigName')]"
+    },
+    "maintenanceConfigResourceGroupName": {
+      "type": "string",
+      "value": "[variables('maintenanceConfigResourceGroupName')]"
     },
     "updateManagerPortalUrl": {
       "type": "string",

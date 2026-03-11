@@ -11,6 +11,10 @@ param location string = deployment().location
 @description('Enable Defender for Servers')
 param enableDefenderForServers bool = true
 
+@description('Servers plan tier: Standard (paid) or Free')
+@allowed(['Standard', 'Free'])
+param serversPlanTier string = 'Standard'
+
 @description('Servers sub-plan: P1 (basic) or P2 (full with MDE)')
 @allowed(['P1', 'P2'])
 param serversSubPlan string = 'P2'
@@ -26,6 +30,9 @@ param enableDefenderForKeyVault bool = true
 
 @description('Enable Defender for Resource Manager')
 param enableDefenderForARM bool = true
+
+@description('Enable Defender for DNS')
+param enableDefenderForDns bool = false
 
 @description('Enable Defender for App Service')
 param enableDefenderForAppService bool = false
@@ -44,6 +51,9 @@ param emailRecipients string
 @description('Security contact phone number')
 param phone string = ''
 
+@description('Notify on medium severity alerts (in addition to high)')
+param alertNotificationsMediumSeverity bool = true
+
 @description('Notify subscription owners for high severity alerts')
 param notifySubscriptionOwners bool = true
 
@@ -60,17 +70,23 @@ param enableAMAAutoProvisioning bool = true
 @description('Assign built-in Azure Security Benchmark initiative')
 param assignSecurityBenchmark bool = true
 
+@description('Enforcement mode for benchmark initiative')
+@allowed(['Default', 'DoNotEnforce'])
+param securityBenchmarkEnforcementMode string = 'DoNotEnforce'
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 module defenderPlans 'modules/defender-plans.bicep' = {
   name: 'deploy-defender-plans'
   params: {
     enableDefenderForServers: enableDefenderForServers
+    serversPlanTier: serversPlanTier
     serversSubPlan: serversSubPlan
     enableDefenderForSqlVm: enableDefenderForSqlVm
     enableDefenderForStorage: enableDefenderForStorage
     enableDefenderForKeyVault: enableDefenderForKeyVault
     enableDefenderForARM: enableDefenderForARM
+    enableDefenderForDns: enableDefenderForDns
     enableDefenderForAppService: enableDefenderForAppService
     enableDefenderForContainers: enableDefenderForContainers
     enableCSPM: enableCSPM
@@ -83,6 +99,7 @@ module securityContacts 'modules/security-contacts.bicep' = {
     emailRecipients: emailRecipients
     phone: phone
     notifySubscriptionOwners: notifySubscriptionOwners
+    alertNotificationsMediumSeverity: alertNotificationsMediumSeverity
     enableMDEAutoProvisioning: enableMDEAutoProvisioning
     enableAMAAutoProvisioning: enableAMAAutoProvisioning
   }
@@ -100,7 +117,7 @@ resource securityBenchmarkAssignment 'Microsoft.Authorization/policyAssignments@
     description: 'Iniziativa di sicurezza Microsoft Cloud Security Benchmark per compliance e postura'
     // Microsoft Cloud Security Benchmark initiative
     policyDefinitionId: '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
-    enforcementMode: 'DoNotEnforce'
+    enforcementMode: securityBenchmarkEnforcementMode
     parameters: {}
   }
 }

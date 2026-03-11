@@ -12,6 +12,14 @@ param useExistingResourceGroup bool = false
 @description('Existing Resource Group name')
 param existingResourceGroupName string = ''
 
+// ── Maintenance Configuration selection ───────────────────────────────────────
+
+@description('Use an existing Maintenance Configuration')
+param useExistingMaintenanceConfiguration bool = false
+
+@description('Existing Maintenance Configuration resource ID (required if useExistingMaintenanceConfiguration = true)')
+param existingMaintenanceConfigurationId string = ''
+
 // ── Maintenance Window ────────────────────────────────────────────────────────
 
 @description('Maintenance window start date-time (UTC, format: 2024-01-01 23:00)')
@@ -55,6 +63,11 @@ param enablePeriodicAssessmentPolicy bool = true
 @description('Assign policy to auto-patch VMs with the maintenance config')
 param enableAutoPatchingPolicy bool = true
 
+// ── VM Assignments ───────────────────────────────────────────────────────────
+
+@description('VM Resource IDs to explicitly assign the Maintenance Configuration to')
+param vmIdsToAssign array = []
+
 // ── Monitoring ────────────────────────────────────────────────────────────────
 
 @description('Log Analytics Workspace Resource ID for Update Manager diagnostics')
@@ -68,7 +81,9 @@ param tagsByResource object = {}
 // ─────────────────────────────────────────────────────────────────────────────
 
 var resourceGroupName = useExistingResourceGroup ? existingResourceGroupName : 'rg-${deploymentName}'
-var maintenanceConfigName = 'mc-${deploymentName}'
+var maintenanceConfigName = useExistingMaintenanceConfiguration ? last(split(existingMaintenanceConfigurationId, '/')) : 'mc-${deploymentName}'
+var maintenanceConfigId = useExistingMaintenanceConfiguration ? existingMaintenanceConfigurationId : maintenanceConfig.outputs.maintenanceConfigId
+var maintenanceConfigResourceGroupName = useExistingMaintenanceConfiguration ? split(existingMaintenanceConfigurationId, '/')[4] : resourceGroupName
 
 var baseTags = {
   DeployedBy: 'Azure-Solution-Portal'
@@ -76,13 +91,13 @@ var baseTags = {
   ManagedBy: 'Bicep'
 }
 
-resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingResourceGroup) {
+resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = if (!useExistingMaintenanceConfiguration && !useExistingResourceGroup) {
   name: resourceGroupName
   location: location
   tags: union(baseTags, contains(tagsByResource, 'Microsoft.Resources/resourceGroups') ? tagsByResource['Microsoft.Resources/resourceGroups'] : {})
 }
 
-module maintenanceConfig 'modules/maintenance-configuration.bicep' = {
+module maintenanceConfig 'modules/maintenance-configuration.bicep' = if (!useExistingMaintenanceConfiguration) {
   name: 'deploy-maintenance-config'
   scope: resourceGroup(resourceGroupName)
   params: {
@@ -106,16 +121,29 @@ module updatePolicies 'modules/update-policies.bicep' = {
   params: {
     policyNamePrefix: 'policy-${deploymentName}-update'
     location: location
-    maintenanceConfigId: maintenanceConfig.outputs.maintenanceConfigId
+    maintenanceConfigId: maintenanceConfigId
     enablePeriodicAssessment: enablePeriodicAssessmentPolicy
     enableAutoPatching: enableAutoPatchingPolicy
   }
   dependsOn: [maintenanceConfig]
 }
 
+module vmAssignments 'modules/vm-assignment.bicep' = [for vmId in vmIdsToAssign: if (!empty(vmId)) {
+  name: take('assign-${deploymentName}-${uniqueString(vmId)}', 64)
+  scope: resourceGroup(split(vmId, '/')[4])
+  params: {
+    location: location
+    maintenanceConfigurationId: maintenanceConfigId
+    vmId: vmId
+    assignmentName: guid(vmId, maintenanceConfigId)
+  }
+  dependsOn: [maintenanceConfig]
+}]
+
 // ── Outputs ───────────────────────────────────────────────────────────────────
 
-output resourceGroupName string = resourceGroupName
-output maintenanceConfigId string = maintenanceConfig.outputs.maintenanceConfigId
-output maintenanceConfigName string = maintenanceConfig.outputs.maintenanceConfigName
+output resourceGroupName string = maintenanceConfigResourceGroupName
+output maintenanceConfigId string = maintenanceConfigId
+output maintenanceConfigName string = maintenanceConfigName
+output maintenanceConfigResourceGroupName string = maintenanceConfigResourceGroupName
 output updateManagerPortalUrl string = 'https://portal.azure.com/#view/Microsoft_Azure_Automation/UpdateCenterMenuBlade/~/overview'

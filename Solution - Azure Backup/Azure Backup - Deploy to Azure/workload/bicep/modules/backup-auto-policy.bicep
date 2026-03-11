@@ -3,9 +3,6 @@ targetScope = 'subscription'
 @description('Policy assignment name')
 param policyName string
 
-@description('Recovery Services Vault Resource ID')
-param vaultId string
-
 @description('Backup Policy Resource ID')
 param backupPolicyId string
 
