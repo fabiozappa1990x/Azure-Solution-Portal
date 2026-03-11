@@ -25,13 +25,13 @@ if (-not $accessToken) { Write-Error "AZURE_ACCESS_TOKEN not found."; exit 1 }
 
 function Invoke-AzureAPI {
     param([string]$Uri, [string]$ApiVersion = "2022-12-01", [string]$Method = "GET")
-    $headers = @{ 'Authorization' = "Bearer $accessToken"; 'Content-Type' = 'application/json' }
+    $headers = @{ "Authorization" = "Bearer $accessToken"; "Content-Type" = "application/json" }
     $fullUri = if ($Uri -like "*api-version*") { $Uri } else { "${Uri}?api-version=$ApiVersion" }
     try {
         $response = Invoke-RestMethod -Uri $fullUri -Headers $headers -Method $Method -ErrorAction Stop
 
-        if ($Method -eq "GET" -and $response -and ($response.PSObject.Properties.Name -contains 'nextLink') -and $response.nextLink -and
-            ($response.PSObject.Properties.Name -contains 'value') -and ($response.value -is [System.Collections.IEnumerable])) {
+        if ($Method -eq "GET" -and $response -and ($response.PSObject.Properties.Name -contains "nextLink") -and $response.nextLink -and
+            ($response.PSObject.Properties.Name -contains "value") -and ($response.value -is [System.Collections.IEnumerable])) {
             $all = @()
             $all += @($response.value)
             $next = $response.nextLink
@@ -39,10 +39,10 @@ function Invoke-AzureAPI {
             while ($next -and $pageCount -lt 200) {
                 $pageCount++
                 $page = Invoke-RestMethod -Uri $next -Headers $headers -Method $Method -ErrorAction Stop
-                if ($page -and ($page.PSObject.Properties.Name -contains 'value') -and $page.value) {
+                if ($page -and ($page.PSObject.Properties.Name -contains "value") -and $page.value) {
                     $all += @($page.value)
                 }
-                $next = if ($page -and ($page.PSObject.Properties.Name -contains 'nextLink')) { $page.nextLink } else { $null }
+                $next = if ($page -and ($page.PSObject.Properties.Name -contains "nextLink")) { $page.nextLink } else { $null }
             }
             $response.value = $all
             $response.nextLink = $null
@@ -189,30 +189,30 @@ $data.Summary = @{
     AutoPoliciesCount   = $data.AutoBackupPolicies.Count
 }
 
-Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot "lib/EnterprisePrecheck.psm1") -Force
 
 # Enterprise checks
 $checks = @()
 $coverage = [double]$data.Summary.BackupCoverage_Pct
-$coverageStatus = if ($coverage -ge 90) { 'Pass' } elseif ($coverage -ge 60) { 'Warn' } else { 'Fail' }
-$checks += New-PrecheckCheck -Id 'backup.coverage' -Title 'Copertura backup VM' -Severity 'Critical' -Status $coverageStatus -Rationale "Copertura VM: $coverage% (protette: $($data.Summary.ProtectedVMs) / $($data.Summary.TotalVMs))." -Remediation 'Abilita backup per le VM non protette e verifica che esista una policy standard per l’ambiente.'
+$coverageStatus = if ($coverage -ge 90) { "Pass" } elseif ($coverage -ge 60) { "Warn" } else { "Fail" }
+$checks += New-PrecheckCheck -Id "backup.coverage" -Title "Copertura backup VM" -Severity "Critical" -Status $coverageStatus -Rationale "Copertura VM: $coverage% (protette: $($data.Summary.ProtectedVMs) / $($data.Summary.TotalVMs))." -Remediation "Abilita backup per le VM non protette e verifica che esista una policy standard per l’ambiente."
 
-$softDeleteStatus = if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithSoftDelete -eq $data.Summary.TotalVaults) { 'Pass' } else { 'Warn' }
-$checks += New-PrecheckCheck -Id 'backup.softdelete' -Title 'Soft delete su Recovery Services Vault' -Severity 'High' -Status $softDeleteStatus -Rationale "Vault: $($data.Summary.TotalVaults), Soft Delete abilitato: $($data.Summary.VaultsWithSoftDelete)." -Remediation 'Abilita Soft Delete (AlwaysOn/Enabled) su tutti i vault.'
+$softDeleteStatus = if ($data.Summary.TotalVaults -eq 0) { "Warn" } elseif ($data.Summary.VaultsWithSoftDelete -eq $data.Summary.TotalVaults) { "Pass" } else { "Warn" }
+$checks += New-PrecheckCheck -Id "backup.softdelete" -Title "Soft delete su Recovery Services Vault" -Severity "High" -Status $softDeleteStatus -Rationale "Vault: $($data.Summary.TotalVaults), Soft Delete abilitato: $($data.Summary.VaultsWithSoftDelete)." -Remediation "Abilita Soft Delete (AlwaysOn/Enabled) su tutti i vault."
 
-$redundancyStatus = if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithGRS -gt 0) { 'Pass' } else { 'Warn' }
-$checks += New-PrecheckCheck -Id 'backup.redundancy' -Title 'Ridondanza dei vault (GRS)' -Severity 'Medium' -Status $redundancyStatus -Rationale "Vault con GRS: $($data.Summary.VaultsWithGRS)." -Remediation 'Valuta GRS per carichi critici e requisiti BCDR.'
+$redundancyStatus = if ($data.Summary.TotalVaults -eq 0) { "Warn" } elseif ($data.Summary.VaultsWithGRS -gt 0) { "Pass" } else { "Warn" }
+$checks += New-PrecheckCheck -Id "backup.redundancy" -Title "Ridondanza dei vault (GRS)" -Severity "Medium" -Status $redundancyStatus -Rationale "Vault con GRS: $($data.Summary.VaultsWithGRS)." -Remediation "Valuta GRS per carichi critici e requisiti BCDR."
 
-$policiesStatus = if ($data.Summary.TotalPolicies -gt 0) { 'Pass' } else { 'Fail' }
-$checks += New-PrecheckCheck -Id 'backup.policies' -Title 'Policy di backup disponibili' -Severity 'Medium' -Status $policiesStatus -Rationale "Policy totali: $($data.Summary.TotalPolicies)." -Remediation 'Crea policy standard (VM/Azure Files/Workload) con retention e schedule coerenti.'
+$policiesStatus = if ($data.Summary.TotalPolicies -gt 0) { "Pass" } else { "Fail" }
+$checks += New-PrecheckCheck -Id "backup.policies" -Title "Policy di backup disponibili" -Severity "Medium" -Status $policiesStatus -Rationale "Policy totali: $($data.Summary.TotalPolicies)." -Remediation "Crea policy standard (VM/Azure Files/Workload) con retention e schedule coerenti."
 
 $readiness = Get-PrecheckReadiness -Checks $checks
 $data.Readiness = $readiness
 $data.Checks = $checks
 if ($data.Summary -is [hashtable]) {
-    $data.Summary['ReadinessScore'] = $readiness.score
+    $data.Summary["ReadinessScore"] = $readiness.score
 } else {
-    $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
+    $data.Summary | Add-Member -NotePropertyName "ReadinessScore" -NotePropertyValue $readiness.score -Force
 }
 
 # Build a technical appendix (no AI required)
@@ -242,34 +242,36 @@ $appendix = @"
 "@
 
 $aiPayload = @{
-    solution = 'Azure Backup'
+    solution = "Azure Backup"
     summary  = $data.Summary
     checks   = $checks
     topUnprotectedVMs = $unprotected | Select-Object -First 20 Name, ResourceGroup, Location, OsType
     vaults   = $data.RecoveryServicesVaults | Select-Object -First 10 Name, Location, StorageType, SoftDeleteEnabled
 }
 
-$aiHtml = Invoke-EnterpriseOpenAIHtml -SolutionName 'Azure Backup' -Payload $aiPayload
+$aiHtml = Invoke-EnterpriseOpenAIHtml -SolutionName "Azure Backup" -Payload $aiPayload
 
 $kpis = @{
-    Kpi1Label = 'Vaults'
+    Kpi1Label = "Vaults"
     Kpi1Value = $data.Summary.TotalVaults
-    Kpi2Label = 'VM protette'
+    Kpi2Label = "VM protette"
     Kpi2Value = "$($data.Summary.ProtectedVMs)/$($data.Summary.TotalVMs)"
-    Kpi3Label = 'Copertura'
+    Kpi3Label = "Copertura"
     Kpi3Value = "$coverage%"
-    Kpi4Label = 'Policy'
+    Kpi4Label = "Policy"
     Kpi4Value = $data.Summary.TotalPolicies
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Backup' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+$context = @{
     SubscriptionName = $data.Subscription.Name
     SubscriptionId   = $SubscriptionId
     Timestamp        = $data.Timestamp
 }
 
+$htmlContent = New-EnterpriseHtmlReport -SolutionName "Azure Backup" -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context $context
+
 $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
-$data['ReportHTML'] = $htmlContent
+$data["ReportHTML"] = $htmlContent
 $jsonPath = $OutputPath -replace "\.html$", ".json"
 $data | ConvertTo-Json -Depth 15 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
 
