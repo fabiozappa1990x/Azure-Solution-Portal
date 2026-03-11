@@ -343,15 +343,17 @@ async function checkFunctionApp() {
 
     // ── 5: CORS check (direct HTTP ping) ─────────────────────────
     try {
-        const controller = new AbortController();
-        const timeout    = setTimeout(() => controller.abort(), 12000);
-        const resp = await fetch(`${FUNCTION_APP_URL}/api/precheck?subscriptionId=connectivity-test`, {
-            headers: { Authorization: 'Bearer connectivity-test' },
-            signal:  controller.signal
+        // Prefer OPTIONS: served by Functions host (fast) and validates CORS preflight.
+        const resp = await fetch(`${FUNCTION_APP_URL}/api/precheck`, {
+            method: 'OPTIONS',
+            signal: AbortSignal.timeout(12000)
         });
-        clearTimeout(timeout);
 
-        // Any HTTP response (even 4xx) means CORS is OK and app is reachable
+        if (!resp.ok && resp.status >= 500) {
+            setCheckState('cors', 'error', `HTTP ${resp.status} — Function App non disponibile`);
+            return;
+        }
+
         setCheckState('cors', 'ok', `CORS ok — HTTP ${resp.status} da ${window.location.origin}`);
         showBox('cors', false);
 
@@ -378,11 +380,8 @@ async function checkFunctionApp() {
 
     const results = await Promise.all(endpoints.map(async ep => {
         try {
-            const r = await fetch(`${FUNCTION_APP_URL}${ep.path}?subscriptionId=test`, {
-                method: 'OPTIONS',
-                signal: AbortSignal.timeout(8000)
-            });
-            return { name: ep.name, ok: r.status < 500 };
+            const r = await fetch(`${FUNCTION_APP_URL}${ep.path}`, { method: 'OPTIONS', signal: AbortSignal.timeout(8000) });
+            return { name: ep.name, ok: r.status > 0 && r.status < 500 };
         } catch {
             return { name: ep.name, ok: false };
         }
@@ -411,28 +410,34 @@ async function checkAI() {
     }
 
     try {
-        // Use a lightweight endpoint (no Azure calls) to verify env/config.
-        const resp = await fetch(`${FUNCTION_APP_URL}/api/health`, {
-            method: 'GET',
-            signal: AbortSignal.timeout(8000)
-        });
+        // Enterprise-friendly check: read Function App settings via ARM (no dependency on function execution/cold start).
+        const token = await getManagementToken();
+        if (!token || !selectedSubId) {
+            setCheckState('ai', 'warning', 'Verificabile dopo login + selezione subscription');
+            return;
+        }
 
+        const uri = `${MGMT_API}/subscriptions/${selectedSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}/config/appsettings/list?api-version=2022-03-01`;
+        const resp = await fetch(uri, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` }
+        });
         if (!resp.ok) {
-            setCheckState('ai', 'warning', `Health endpoint non risponde (HTTP ${resp.status}) — verifica deploy Function App`);
+            setCheckState('ai', 'warning', `Impossibile leggere App Settings (HTTP ${resp.status}) — verifica permessi Reader/Contributor`);
             showBox('ai', true);
             return;
         }
 
         const data = await resp.json();
-        const configured = !!data?.openAi?.configured;
-        const missing = Array.isArray(data?.openAi?.missing) ? data.openAi.missing : [];
+        const props = data?.properties || {};
+        const required = ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_DEPLOYMENT'];
+        const missing = required.filter(k => !props[k] || String(props[k]).trim() === '');
 
-        if (configured) {
+        if (missing.length === 0) {
             setCheckState('ai', 'ok', 'Azure OpenAI configurato — analisi AI disponibile nei precheck');
             showBox('ai', false);
         } else {
-            const msg = missing.length ? `Variabili mancanti: ${missing.join(', ')}` : 'Azure OpenAI non configurato';
-            setCheckState('ai', 'warning', msg);
+            setCheckState('ai', 'warning', `Variabili mancanti: ${missing.join(', ')}`);
             showBox('ai', true);
         }
     } catch (e) {
