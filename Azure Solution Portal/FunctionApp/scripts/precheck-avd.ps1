@@ -234,85 +234,85 @@ $data.Summary = @{
     AlreadyDeployed       = ($data.HostPools.Count -gt 0)
 }
 
-# === AI ANALYSIS ===
-Write-Host "=== AI ANALYSIS ==="
-$dataJson = $data | ConvertTo-Json -Depth 8 -Compress
+Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 
-$prompt = @"
-Analizza questi dati Azure Virtual Desktop e genera un report DETTAGLIATO in ITALIANO in formato HTML.
+$checks = @()
+$checks += New-PrecheckCheck -Id 'avd.deployed' -Title 'AVD già presente' -Severity 'Info' -Status (
+    if ($data.Summary.AlreadyDeployed) { 'Pass' } else { 'Warn' }
+) -Rationale (if ($data.Summary.AlreadyDeployed) { 'Sono presenti risorse AVD (host pool / app group / workspace).' } else { 'Nessuna risorsa AVD rilevata: scenario “greenfield”.' }) -Remediation 'Se greenfield, definire landing zone (network/identity) e standard di naming prima del deploy.'
 
-DATI:
-$dataJson
+$checks += New-PrecheckCheck -Id 'avd.network' -Title 'Rete disponibile per AVD' -Severity 'Critical' -Status (
+    if ($data.Summary.TotalVNets -gt 0) { 'Pass' } else { 'Fail' }
+) -Rationale "Virtual Networks rilevate: $($data.Summary.TotalVNets)." -Remediation 'Predisporre VNet/subnet dedicate per session host, con DNS/route/NSG coerenti.'
 
-GENERA SEZIONI HTML CON:
-1. EXECUTIVE SUMMARY (stato attuale AVD: già deployato / parziale / non presente, readiness score)
-2. INFRASTRUTTURA ESISTENTE (Host Pool, Session Hosts, Workspaces, App Groups, Scaling Plans)
-3. ANALISI RETE (VNet disponibili per AVD, subnet adeguate, latenza stimata)
-4. STORAGE & FSLOGIX (storage account compatibili AADKERB, profili utente FSLogix)
-5. GAP ANALYSIS (cosa manca per un deployment AVD completo e production-ready)
-6. RACCOMANDAZIONI PRIORITARIE (TOP 8 azioni, quick wins, configurazioni consigliate)
+$fsPct = if ($data.Summary.TotalStorageAccounts -gt 0) { [math]::Round(100 * ($data.Summary.StorageWithFSLogix / $data.Summary.TotalStorageAccounts), 0) } else { 0 }
+$checks += New-PrecheckCheck -Id 'avd.fslogix' -Title 'Storage compatibile FSLogix (AADKERB)' -Severity 'High' -Status (
+    if ($data.Summary.TotalStorageAccounts -eq 0) { 'Warn' } elseif ($data.Summary.StorageWithFSLogix -gt 0) { 'Pass' } else { 'Warn' }
+) -Rationale "Storage account con AADKERB: $($data.Summary.StorageWithFSLogix) / $($data.Summary.TotalStorageAccounts) ($fsPct%)." -Remediation 'Per profili FSLogix su Azure Files: abilitare AADKERB/Entra integration e validare RBAC/NTFS.'
 
-Usa HTML con <div class="section">, <h2>, <ul>, <table> per strutturare.
-Usa emoji per rendere visivo. Sii tecnico ma chiaro.
+$checks += New-PrecheckCheck -Id 'avd.scaling' -Title 'Scaling plan' -Severity 'Medium' -Status (
+    if ($data.Summary.TotalScalingPlans -gt 0) { 'Pass' } else { 'Warn' }
+) -Rationale "Scaling plans: $($data.Summary.TotalScalingPlans)." -Remediation 'Configurare scaling plan per ottimizzare i costi (schedule, cap, drain).'
+
+$readiness = Get-PrecheckReadiness -Checks $checks
+$data.Readiness = $readiness
+$data.Checks = $checks
+$data.Summary.ReadinessScore = $readiness.score
+
+$hpRows = ($data.HostPools | Select-Object -First 30 | ForEach-Object {
+    "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.Type)</td><td>$($_.MaxSessionLimit)</td></tr>"
+}) -join "`n"
+$shRows = ($data.SessionHosts | Select-Object -First 40 | ForEach-Object {
+    "<tr><td>$($_.HostPool)</td><td>$($_.Name)</td><td>$($_.Status)</td><td>$($_.Sessions)</td><td>$($_.AgentVersion)</td></tr>"
+}) -join "`n"
+$vnetRows = ($data.VirtualNetworks | Select-Object -First 30 | ForEach-Object {
+    $addr = if ($_.AddressSpace -is [array]) { ($_.AddressSpace -join ', ') } else { $_.AddressSpace }
+    "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$addr</td><td>$($_.SubnetCount)</td></tr>"
+}) -join "`n"
+
+$appendix = @"
+<div>
+  <h3>Appendice tecnica</h3>
+  <h4>Host Pools (top 30)</h4>
+  <table><thead><tr><th>Name</th><th>RG</th><th>Region</th><th>Type</th><th>MaxSessions</th></tr></thead><tbody>$hpRows</tbody></table>
+  <h4>Session Hosts (top 40)</h4>
+  <table><thead><tr><th>HostPool</th><th>Name</th><th>Status</th><th>Sessions</th><th>Agent</th></tr></thead><tbody>$shRows</tbody></table>
+  <h4>Virtual Networks (top 30)</h4>
+  <table><thead><tr><th>Name</th><th>RG</th><th>Region</th><th>AddressSpace</th><th>Subnets</th></tr></thead><tbody>$vnetRows</tbody></table>
+</div>
 "@
 
-$aiHeaders = @{ "Content-Type" = "application/json"; "api-key" = $apiKey }
-$body = @{
-    messages = @(
-        @{ role = "system"; content = "Sei un Azure Solutions Architect esperto in AVD. Rispondi in italiano con report HTML dettagliati." }
-        @{ role = "user";   content = $prompt }
-    )
-    max_completion_tokens = 4000
-} | ConvertTo-Json -Depth 5
+$aiPayload = @{
+    solution = 'Azure Virtual Desktop'
+    summary  = $data.Summary
+    checks   = $checks
+    hostPools = $data.HostPools | Select-Object -First 10 Name, Location, Type, MaxSessionLimit
+    sessionHosts = $data.SessionHosts | Select-Object -First 10 HostPool, Name, Status, Sessions, AgentVersion
+    networks = $data.VirtualNetworks | Select-Object -First 10 Name, Location, SubnetCount
+}
+$aiHtml = Invoke-EnterpriseOpenAIHtml -SolutionName 'Azure Virtual Desktop' -Payload $aiPayload
 
-$aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>Configura AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT / AZURE_OPENAI_API_KEY.</p></div>"
-if ($apiKey -and $endpoint) {
-    try {
-        $aiResp = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $aiHeaders -Body $body -ContentType "application/json" -TimeoutSec 120
-        $aiReport = $aiResp.choices[0].message.content
-        Write-Host "AI report generated."
-    } catch {
-        Write-Warning "AI error: $($_.Exception.Message)"
-        $aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>$($_.Exception.Message)</p></div>"
-    }
+$kpis = @{
+    Kpi1Label = 'Host Pools'
+    Kpi1Value = $data.Summary.TotalHostPools
+    Kpi2Label = 'Session Hosts'
+    Kpi2Value = $data.Summary.TotalSessionHosts
+    Kpi3Label = 'Workspaces'
+    Kpi3Value = $data.Summary.TotalWorkspaces
+    Kpi4Label = 'VNets'
+    Kpi4Value = $data.Summary.TotalVNets
 }
 
-# === HTML ===
-$htmlContent = @"
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AVD Precheck Report</title>
-<style>
-  body{font-family:'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:20px}
-  .container{max-width:1200px;margin:0 auto;background:white;border-radius:10px;padding:40px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-  h1{color:#7719aa;border-bottom:3px solid #7719aa;padding-bottom:10px} h2{color:#7719aa;margin-top:30px}
-  .section{margin:20px 0;padding:20px;background:#f8f9fa;border-left:4px solid #7719aa}
-  table{width:100%;border-collapse:collapse;margin:15px 0} th{background:#7719aa;color:white;padding:12px;text-align:left}
-  td{padding:10px;border-bottom:1px solid #ddd}
-  .badge-success{background:#28a745;color:white;padding:5px 10px;border-radius:5px}
-  .badge-warning{background:#ffc107;color:black;padding:5px 10px;border-radius:5px}
-  .badge-danger{background:#dc3545;color:white;padding:5px 10px;border-radius:5px}
-</style></head><body><div class="container">
-<h1>🖥️ Azure Virtual Desktop — Precheck Report</h1>
-<p><strong>Subscription:</strong> $($data.Subscription.Name)</p>
-<p><strong>Data:</strong> $($data.Timestamp)</p>
-$aiReport
-<div class="section"><h2>📊 Summary</h2>
-<table><tr><th>Metrica</th><th>Valore</th></tr>
-<tr><td>Host Pool</td><td>$($data.Summary.TotalHostPools)</td></tr>
-<tr><td>Session Hosts</td><td>$($data.Summary.TotalSessionHosts)</td></tr>
-<tr><td>Session Hosts Attivi</td><td>$($data.Summary.ActiveSessionHosts)</td></tr>
-<tr><td>Workspaces</td><td>$($data.Summary.TotalWorkspaces)</td></tr>
-<tr><td>Application Groups</td><td>$($data.Summary.TotalAppGroups)</td></tr>
-<tr><td>Scaling Plans</td><td>$($data.Summary.TotalScalingPlans)</td></tr>
-<tr><td>VNet disponibili</td><td>$($data.Summary.TotalVNets)</td></tr>
-<tr><td>Storage con AADKERB (FSLogix)</td><td>$($data.Summary.StorageWithFSLogix)/$($data.Summary.TotalStorageAccounts)</td></tr>
-</table></div>
-</div></body></html>
-"@
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Virtual Desktop' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+    SubscriptionName = $data.Subscription.Name
+    SubscriptionId   = $SubscriptionId
+    Timestamp        = $data.Timestamp
+}
 
 $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
 $data['ReportHTML'] = $htmlContent
 $jsonPath = $OutputPath -replace "\.html$", ".json"
-$data | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
+$data | ConvertTo-Json -Depth 15 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
 
-Write-Host "=== AVD PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s"
+Write-Host "=== AVD PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s Readiness: $($readiness.score)%"
 

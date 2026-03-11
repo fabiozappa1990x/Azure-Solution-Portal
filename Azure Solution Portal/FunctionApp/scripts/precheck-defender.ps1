@@ -183,85 +183,79 @@ $data.Summary = @{
     SecurityPoliciesCount  = $data.PolicyAssignments.Count
 }
 
-# === AI ANALYSIS ===
-Write-Host "=== AI ANALYSIS ==="
-$dataJson = $data | ConvertTo-Json -Depth 8 -Compress
+Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 
-$prompt = @"
-Analizza questi dati Microsoft Defender for Cloud e genera un report DETTAGLIATO in ITALIANO in formato HTML.
+$checks = @()
+$score = [double]$data.Summary.SecureScorePercent
+$checks += New-PrecheckCheck -Id 'defender.securescore' -Title 'Secure Score (posture)' -Severity 'Critical' -Status (
+    if ($score -ge 80) { 'Pass' } elseif ($score -ge 50) { 'Warn' } else { 'Fail' }
+) -Rationale "Secure Score: $score%." -Remediation 'Esegui remediation delle raccomandazioni High/Medium con ownership e scadenze (SLA).'
 
-DATI:
-$dataJson
+$checks += New-PrecheckCheck -Id 'defender.plans' -Title 'Defender plans attivi (Standard)' -Severity 'High' -Status (
+    if ($data.Summary.EnabledPlans -ge 3) { 'Pass' } elseif ($data.Summary.EnabledPlans -ge 1) { 'Warn' } else { 'Fail' }
+) -Rationale "Piani Standard: $($data.Summary.EnabledPlans) / $($data.Summary.TotalPlans)." -Remediation 'Abilita i piani necessari (Servers/Storage/KeyVault/ARM/CSPM) in base al perimetro.'
 
-GENERA SEZIONI HTML CON:
-1. EXECUTIVE SUMMARY (Secure Score, piani attivi, criticità TOP 3)
-2. DEFENDER PLANS STATUS (quali piani attivi/free con impatto sulla sicurezza)
-3. TOP RACCOMANDAZIONI (le più critiche da risolvere con priorità)
-4. CONTATTI DI SICUREZZA & AUTO-PROVISIONING (stato notifiche e MDE deployment)
-5. COMPLIANCE POLICIES (benchmark attivi, gap rispetto a MCSB/CIS)
-6. RACCOMANDAZIONI PRIORITARIE (TOP 8 azioni per migliorare la postura di sicurezza)
+$checks += New-PrecheckCheck -Id 'defender.contacts' -Title 'Security contact configurato' -Severity 'High' -Status (
+    if ($data.Summary.SecurityContactsCount -ge 1) { 'Pass' } else { 'Fail' }
+) -Rationale "Contatti: $($data.Summary.SecurityContactsCount)." -Remediation 'Configura security contact (email/ruoli) e flusso di notifica per incident response.'
 
-Usa HTML con <div class="section">, <h2>, <ul>, <table>.
-Usa emoji. Sii tecnico ma chiaro. Indica il rischio finanziario/reputazionale.
+$checks += New-PrecheckCheck -Id 'defender.recs' -Title 'Raccomandazioni High severity' -Severity 'Medium' -Status (
+    if ($data.Summary.HighSeverityRecs -eq 0) { 'Pass' } elseif ($data.Summary.HighSeverityRecs -le 10) { 'Warn' } else { 'Fail' }
+) -Rationale "High severity: $($data.Summary.HighSeverityRecs)." -Remediation 'Prioritizza le raccomandazioni High; abilita owner assignment e tracking.'
+
+$readiness = Get-PrecheckReadiness -Checks $checks
+$data.Readiness = $readiness
+$data.Checks = $checks
+$data.Summary.ReadinessScore = $readiness.score
+
+$plansRows = ($data.DefenderPlans | Select-Object -First 40 | ForEach-Object {
+    "<tr><td>$($_.Name)</td><td>$($_.PricingTier)</td><td>$($_.SubPlan)</td></tr>"
+}) -join "`n"
+
+$recRows = ($data.TopRecommendations | Select-Object -First 30 | ForEach-Object {
+    "<tr><td>$($_.Severity)</td><td>$($_.Title)</td><td>$($_.ResourceType)</td></tr>"
+}) -join "`n"
+
+$appendix = @"
+<div>
+  <h3>Appendice tecnica</h3>
+  <h4>Defender plans (top 40)</h4>
+  <table><thead><tr><th>Plan</th><th>Tier</th><th>SubPlan</th></tr></thead><tbody>$plansRows</tbody></table>
+  <h4>Top recommendations (top 30)</h4>
+  <table><thead><tr><th>Severity</th><th>Title</th><th>ResourceType</th></tr></thead><tbody>$recRows</tbody></table>
+</div>
 "@
 
-$aiHeaders = @{ "Content-Type" = "application/json"; "api-key" = $apiKey }
-$body = @{
-    messages = @(
-        @{ role = "system"; content = "Sei un Azure Security Architect esperto in Defender for Cloud e CSPM. Rispondi in italiano con report HTML." }
-        @{ role = "user";   content = $prompt }
-    )
-    max_completion_tokens = 4000
-} | ConvertTo-Json -Depth 5
+$aiPayload = @{
+    solution = 'Microsoft Defender for Cloud'
+    summary  = $data.Summary
+    checks   = $checks
+    topRecommendations = $data.TopRecommendations | Select-Object -First 15 Severity, Title, ResourceType
+    plans = $data.DefenderPlans | Select-Object -First 15 Name, PricingTier, SubPlan
+}
+$aiHtml = Invoke-EnterpriseOpenAIHtml -SolutionName 'Microsoft Defender for Cloud' -Payload $aiPayload
 
-$aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>Configura AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT / AZURE_OPENAI_API_KEY.</p></div>"
-if ($apiKey -and $endpoint) {
-    try {
-        $aiResp  = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $aiHeaders -Body $body -ContentType "application/json" -TimeoutSec 120
-        $aiReport = $aiResp.choices[0].message.content
-        Write-Host "AI report generated."
-    } catch {
-        Write-Warning "AI error: $($_.Exception.Message)"
-        $aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>$($_.Exception.Message)</p></div>"
-    }
+$kpis = @{
+    Kpi1Label = 'Secure Score'
+    Kpi1Value = "$score%"
+    Kpi2Label = 'Plans (Std)'
+    Kpi2Value = $data.Summary.EnabledPlans
+    Kpi3Label = 'Recs High'
+    Kpi3Value = $data.Summary.HighSeverityRecs
+    Kpi4Label = 'Contacts'
+    Kpi4Value = $data.Summary.SecurityContactsCount
 }
 
-# === HTML ===
-$htmlContent = @"
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Defender Precheck Report</title>
-<style>
-  body{font-family:'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:20px}
-  .container{max-width:1200px;margin:0 auto;background:white;border-radius:10px;padding:40px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-  h1{color:#d13438;border-bottom:3px solid #d13438;padding-bottom:10px} h2{color:#d13438;margin-top:30px}
-  .section{margin:20px 0;padding:20px;background:#f8f9fa;border-left:4px solid #d13438}
-  table{width:100%;border-collapse:collapse;margin:15px 0} th{background:#d13438;color:white;padding:12px;text-align:left}
-  td{padding:10px;border-bottom:1px solid #ddd}
-  .badge-success{background:#28a745;color:white;padding:5px 10px;border-radius:5px}
-  .badge-warning{background:#ffc107;color:black;padding:5px 10px;border-radius:5px}
-  .badge-danger{background:#dc3545;color:white;padding:5px 10px;border-radius:5px}
-</style></head><body><div class="container">
-<h1>🔐 Microsoft Defender for Cloud — Precheck Report</h1>
-<p><strong>Subscription:</strong> $($data.Subscription.Name)</p>
-<p><strong>Data:</strong> $($data.Timestamp)</p>
-$aiReport
-<div class="section"><h2>📊 Summary</h2>
-<table><tr><th>Metrica</th><th>Valore</th></tr>
-<tr><td>Secure Score</td><td>$($data.Summary.SecureScorePercent)%</td></tr>
-<tr><td>Piani Defender Totali</td><td>$($data.Summary.TotalPlans)</td></tr>
-<tr><td>Piani Attivi (Standard)</td><td>$($data.Summary.EnabledPlans)</td></tr>
-<tr><td>Piani Non Attivi (Free)</td><td>$($data.Summary.FreePlans)</td></tr>
-<tr><td>Raccomandazioni Critiche</td><td>$($data.Summary.HighSeverityRecs)</td></tr>
-<tr><td>Raccomandazioni Medie</td><td>$($data.Summary.MediumSeverityRecs)</td></tr>
-<tr><td>Contatti Sicurezza</td><td>$($data.Summary.SecurityContactsCount)</td></tr>
-<tr><td>Auto-Provisioning ON</td><td>$($data.Summary.AutoProvisionEnabled)</td></tr>
-</table></div>
-</div></body></html>
-"@
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Microsoft Defender for Cloud' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+    SubscriptionName = $data.Subscription.Name
+    SubscriptionId   = $SubscriptionId
+    Timestamp        = $data.Timestamp
+}
 
 $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
 $data['ReportHTML'] = $htmlContent
 $jsonPath = $OutputPath -replace "\.html$", ".json"
-$data | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
+$data | ConvertTo-Json -Depth 15 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
 
-Write-Host "=== DEFENDER PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s"
+Write-Host "=== DEFENDER PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s Readiness: $($readiness.score)%"
 

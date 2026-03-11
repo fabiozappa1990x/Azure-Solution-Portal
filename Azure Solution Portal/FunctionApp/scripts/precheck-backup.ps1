@@ -189,86 +189,89 @@ $data.Summary = @{
     AutoPoliciesCount   = $data.AutoBackupPolicies.Count
 }
 
-# === AI ANALYSIS ===
-Write-Host "=== AI ANALYSIS ==="
-$dataJson = $data | ConvertTo-Json -Depth 8 -Compress
+Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 
-$prompt = @"
-Analizza questi dati Azure Backup e genera un report DETTAGLIATO in ITALIANO in formato HTML.
+# Enterprise checks
+$checks = @()
+$coverage = [double]$data.Summary.BackupCoverage_Pct
+$checks += New-PrecheckCheck -Id 'backup.coverage' -Title 'Copertura backup VM' -Severity 'Critical' -Status (
+    if ($coverage -ge 90) { 'Pass' } elseif ($coverage -ge 60) { 'Warn' } else { 'Fail' }
+) -Rationale "Copertura VM: $coverage% (protette: $($data.Summary.ProtectedVMs) / $($data.Summary.TotalVMs))." -Remediation 'Abilita backup per le VM non protette e verifica che esista una policy standard per l’ambiente.'
 
-DATI:
-$dataJson
+$checks += New-PrecheckCheck -Id 'backup.softdelete' -Title 'Soft delete su Recovery Services Vault' -Severity 'High' -Status (
+    if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithSoftDelete -eq $data.Summary.TotalVaults) { 'Pass' } else { 'Warn' }
+) -Rationale "Vault: $($data.Summary.TotalVaults), Soft Delete abilitato: $($data.Summary.VaultsWithSoftDelete)." -Remediation 'Abilita Soft Delete (AlwaysOn/Enabled) su tutti i vault.'
 
-GENERA SEZIONI HTML CON:
-1. EXECUTIVE SUMMARY (copertura backup %, vault esistenti, criticità TOP 3)
-2. RECOVERY SERVICES VAULTS (ridondanza GRS/LRS, soft delete, stato)
-3. VM NON PROTETTE (elenco VM senza backup con risk assessment)
-4. POLICY DI BACKUP (GFS retention, RPO/RTO stimati, gap di configurazione)
-5. AUTOMAZIONE (Azure Policy auto-backup, scope coverage)
-6. RACCOMANDAZIONI PRIORITARIE (TOP 8 azioni per raggiungere 100% copertura)
+$checks += New-PrecheckCheck -Id 'backup.redundancy' -Title 'Ridondanza dei vault (GRS)' -Severity 'Medium' -Status (
+    if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithGRS -gt 0) { 'Pass' } else { 'Warn' }
+) -Rationale "Vault con GRS: $($data.Summary.VaultsWithGRS)." -Remediation 'Valuta GRS per carichi critici e requisiti BCDR.'
 
-Usa HTML con <div class="section">, <h2>, <ul>, <table>.
-Usa emoji. Sii tecnico ma chiaro.
+$checks += New-PrecheckCheck -Id 'backup.policies' -Title 'Policy di backup disponibili' -Severity 'Medium' -Status (
+    if ($data.Summary.TotalPolicies -gt 0) { 'Pass' } else { 'Fail' }
+) -Rationale "Policy totali: $($data.Summary.TotalPolicies)." -Remediation 'Crea policy standard (VM/Azure Files/Workload) con retention e schedule coerenti.'
+
+$readiness = Get-PrecheckReadiness -Checks $checks
+$data.Readiness = $readiness
+$data.Checks = $checks
+$data.Summary.ReadinessScore = $readiness.score
+
+# Build a technical appendix (no AI required)
+$vaultRows = ($data.RecoveryServicesVaults | Select-Object -First 50 | ForEach-Object {
+    "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.StorageType)</td><td>$($_.SoftDeleteEnabled)</td></tr>"
+}) -join "`n"
+
+$unprotected = $data.AzureVMs | Where-Object { -not $_.IsProtected } | Select-Object -First 80
+$unprotRows = ($unprotected | ForEach-Object {
+    "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.OsType)</td></tr>"
+}) -join "`n"
+
+$appendix = @"
+<div>
+  <h3>Appendice tecnica</h3>
+  <h4>Recovery Services Vault (top 50)</h4>
+  <table>
+    <thead><tr><th>Name</th><th>RG</th><th>Region</th><th>Redundancy</th><th>SoftDelete</th></tr></thead>
+    <tbody>$vaultRows</tbody>
+  </table>
+  <h4>VM non protette (top 80)</h4>
+  <table>
+    <thead><tr><th>Name</th><th>RG</th><th>Region</th><th>OS</th></tr></thead>
+    <tbody>$unprotRows</tbody>
+  </table>
+</div>
 "@
 
-$aiHeaders = @{ "Content-Type" = "application/json"; "api-key" = $apiKey }
-$body = @{
-    messages = @(
-        @{ role = "system"; content = "Sei un Azure Solutions Architect esperto in Backup e BCDR. Rispondi in italiano con report HTML." }
-        @{ role = "user";   content = $prompt }
-    )
-    max_completion_tokens = 4000
-} | ConvertTo-Json -Depth 5
-
-$aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>Configura AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT / AZURE_OPENAI_API_KEY.</p></div>"
-if ($apiKey -and $endpoint) {
-    try {
-        $aiResp  = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $aiHeaders -Body $body -ContentType "application/json" -TimeoutSec 120
-        $aiReport = $aiResp.choices[0].message.content
-        Write-Host "AI report generated."
-    } catch {
-        Write-Warning "AI error: $($_.Exception.Message)"
-        $aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>$($_.Exception.Message)</p></div>"
-    }
+$aiPayload = @{
+    solution = 'Azure Backup'
+    summary  = $data.Summary
+    checks   = $checks
+    topUnprotectedVMs = $unprotected | Select-Object -First 20 Name, ResourceGroup, Location, OsType
+    vaults   = $data.RecoveryServicesVaults | Select-Object -First 10 Name, Location, StorageType, SoftDeleteEnabled
 }
 
-# === HTML ===
-$htmlContent = @"
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Backup Precheck Report</title>
-<style>
-  body{font-family:'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:20px}
-  .container{max-width:1200px;margin:0 auto;background:white;border-radius:10px;padding:40px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-  h1{color:#107c10;border-bottom:3px solid #107c10;padding-bottom:10px} h2{color:#107c10;margin-top:30px}
-  .section{margin:20px 0;padding:20px;background:#f8f9fa;border-left:4px solid #107c10}
-  table{width:100%;border-collapse:collapse;margin:15px 0} th{background:#107c10;color:white;padding:12px;text-align:left}
-  td{padding:10px;border-bottom:1px solid #ddd}
-  .badge-success{background:#28a745;color:white;padding:5px 10px;border-radius:5px}
-  .badge-warning{background:#ffc107;color:black;padding:5px 10px;border-radius:5px}
-  .badge-danger{background:#dc3545;color:white;padding:5px 10px;border-radius:5px}
-</style></head><body><div class="container">
-<h1>🛡️ Azure Backup — Precheck Report</h1>
-<p><strong>Subscription:</strong> $($data.Subscription.Name)</p>
-<p><strong>Data:</strong> $($data.Timestamp)</p>
-$aiReport
-<div class="section"><h2>📊 Summary</h2>
-<table><tr><th>Metrica</th><th>Valore</th></tr>
-<tr><td>Recovery Services Vault</td><td>$($data.Summary.TotalVaults)</td></tr>
-<tr><td>Vault con GRS</td><td>$($data.Summary.VaultsWithGRS)</td></tr>
-<tr><td>Vault con Soft Delete</td><td>$($data.Summary.VaultsWithSoftDelete)</td></tr>
-<tr><td>Policy Backup Totali</td><td>$($data.Summary.TotalPolicies)</td></tr>
-<tr><td>Item Protetti</td><td>$($data.Summary.TotalProtectedItems)</td></tr>
-<tr><td>VM Totali</td><td>$($data.Summary.TotalVMs)</td></tr>
-<tr><td>VM Protette</td><td>$($data.Summary.ProtectedVMs)</td></tr>
-<tr><td>VM Non Protette</td><td>$($data.Summary.UnprotectedVMs)</td></tr>
-<tr><td>Copertura Backup</td><td>$($data.Summary.BackupCoverage_Pct)%</td></tr>
-</table></div>
-</div></body></html>
-"@
+$aiHtml = Invoke-EnterpriseOpenAIHtml -SolutionName 'Azure Backup' -Payload $aiPayload
+
+$kpis = @{
+    Kpi1Label = 'Vaults'
+    Kpi1Value = $data.Summary.TotalVaults
+    Kpi2Label = 'VM protette'
+    Kpi2Value = "$($data.Summary.ProtectedVMs)/$($data.Summary.TotalVMs)"
+    Kpi3Label = 'Copertura'
+    Kpi3Value = "$coverage%"
+    Kpi4Label = 'Policy'
+    Kpi4Value = $data.Summary.TotalPolicies
+}
+
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Backup' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+    SubscriptionName = $data.Subscription.Name
+    SubscriptionId   = $SubscriptionId
+    Timestamp        = $data.Timestamp
+}
 
 $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
 $data['ReportHTML'] = $htmlContent
 $jsonPath = $OutputPath -replace "\.html$", ".json"
-$data | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
+$data | ConvertTo-Json -Depth 15 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
 
-Write-Host "=== BACKUP PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s"
+Write-Host "=== BACKUP PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s Readiness: $($readiness.score)%"
 

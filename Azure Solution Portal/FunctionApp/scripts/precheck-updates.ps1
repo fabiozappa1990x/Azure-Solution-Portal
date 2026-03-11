@@ -191,86 +191,81 @@ $data.Summary = @{
     CriticalUpdatesPending    = $criticalPending
 }
 
-# === AI ANALYSIS ===
-Write-Host "=== AI ANALYSIS ==="
-$dataJson = $data | ConvertTo-Json -Depth 8 -Compress
+Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 
-$prompt = @"
-Analizza questi dati Azure Update Manager e genera un report DETTAGLIATO in ITALIANO in formato HTML.
+$checks = @()
+$checks += New-PrecheckCheck -Id 'updates.maintenanceconfigs' -Title 'Maintenance Configurations presenti' -Severity 'High' -Status (
+    if ($data.Summary.TotalMaintenanceConfigs -gt 0) { 'Pass' } else { 'Fail' }
+) -Rationale "Maintenance Config: $($data.Summary.TotalMaintenanceConfigs)." -Remediation 'Crea Maintenance Configuration per finestre di patching controllate (prod/non-prod).'
 
-DATI:
-$dataJson
+$autoPct = if ($data.Summary.TotalVMs -gt 0) { [math]::Round(100 * ($data.Summary.VMsWithAutoPatching / $data.Summary.TotalVMs), 1) } else { 0 }
+$checks += New-PrecheckCheck -Id 'updates.patchmode' -Title 'VM in patch mode automatico' -Severity 'Critical' -Status (
+    if ($autoPct -ge 70) { 'Pass' } elseif ($autoPct -ge 30) { 'Warn' } else { 'Fail' }
+) -Rationale "Auto patching: $autoPct% (auto: $($data.Summary.VMsWithAutoPatching) / $($data.Summary.TotalVMs))." -Remediation 'Standardizza patch mode (AutomaticByPlatform/OS) e assegna le VM a Maintenance Config.'
 
-GENERA SEZIONI HTML CON:
-1. EXECUTIVE SUMMARY (maturità patch management, finestre di manutenzione configurate, VM non gestite)
-2. MAINTENANCE CONFIGURATIONS (finestre configurate, schedule, VM assegnate)
-3. PATCH MODE VMs (AutomaticByPlatform vs Manual vs NotConfigured con risk assessment)
-4. AGGIORNAMENTI IN SOSPESO (VM con patch critiche non installate, security risk)
-5. POLICY DI AGGIORNAMENTO (assessment periodico, auto-patching scope)
-6. RACCOMANDAZIONI PRIORITARIE (TOP 8 azioni per centralizzare il patch management)
+$checks += New-PrecheckCheck -Id 'updates.policies' -Title 'Policy di assessment/auto-patch' -Severity 'Medium' -Status (
+    if ($data.Summary.HasAssessmentPolicy -and $data.Summary.HasAutoPatchPolicy) { 'Pass' }
+    elseif ($data.Summary.HasAssessmentPolicy -or $data.Summary.HasAutoPatchPolicy) { 'Warn' }
+    else { 'Fail' }
+) -Rationale "Assessment policy: $($data.Summary.HasAssessmentPolicy); Auto-patch policy: $($data.Summary.HasAutoPatchPolicy)." -Remediation 'Assegna le policy built-in per assessment periodico e patching tramite Maintenance Configuration.'
 
-Usa HTML con <div class="section">, <h2>, <ul>, <table>.
-Usa emoji. Evidenzia i rischi di sicurezza legati a patch non applicate.
+$checks += New-PrecheckCheck -Id 'updates.critical' -Title 'Update critici pendenti' -Severity 'High' -Status (
+    if ($data.Summary.CriticalUpdatesPending -eq 0) { 'Pass' } elseif ($data.Summary.CriticalUpdatesPending -le 20) { 'Warn' } else { 'Fail' }
+) -Rationale "Critical updates pendenti (somma): $($data.Summary.CriticalUpdatesPending)." -Remediation 'Pianifica remediation delle patch critiche e verifica che le VM siano valutate (assessment) regolarmente.'
+
+$readiness = Get-PrecheckReadiness -Checks $checks
+$data.Readiness = $readiness
+$data.Checks = $checks
+$data.Summary.ReadinessScore = $readiness.score
+
+$mcRows = ($data.MaintenanceConfigurations | Select-Object -First 40 | ForEach-Object {
+    "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.RecurEvery)</td><td>$($_.AssignedResourceCount)</td></tr>"
+}) -join "`n"
+
+$pendRows = ($data.PendingUpdates | Sort-Object CriticalUpdateCount -Descending | Select-Object -First 40 | ForEach-Object {
+    "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.PatchMode)</td><td>$($_.CriticalUpdateCount)</td><td>$($_.SecurityUpdateCount)</td></tr>"
+}) -join "`n"
+
+$appendix = @"
+<div>
+  <h3>Appendice tecnica</h3>
+  <h4>Maintenance Configurations (top 40)</h4>
+  <table><thead><tr><th>Name</th><th>RG</th><th>Region</th><th>Recurrence</th><th>Assigned</th></tr></thead><tbody>$mcRows</tbody></table>
+  <h4>Pending updates (top 40)</h4>
+  <table><thead><tr><th>VM</th><th>RG</th><th>PatchMode</th><th>Critical</th><th>Security</th></tr></thead><tbody>$pendRows</tbody></table>
+</div>
 "@
 
-$aiHeaders = @{ "Content-Type" = "application/json"; "api-key" = $apiKey }
-$body = @{
-    messages = @(
-        @{ role = "system"; content = "Sei un Azure Patch Management Architect esperto in Azure Update Manager. Rispondi in italiano con report HTML." }
-        @{ role = "user";   content = $prompt }
-    )
-    max_completion_tokens = 4000
-} | ConvertTo-Json -Depth 5
+$aiPayload = @{
+    solution = 'Azure Update Manager'
+    summary  = $data.Summary
+    checks   = $checks
+    maintenanceConfigurations = $data.MaintenanceConfigurations | Select-Object -First 10 Name, Location, RecurEvery, AssignedResourceCount
+    topPending = $data.PendingUpdates | Sort-Object CriticalUpdateCount -Descending | Select-Object -First 15 Name, ResourceGroup, PatchMode, CriticalUpdateCount, SecurityUpdateCount
+}
+$aiHtml = Invoke-EnterpriseOpenAIHtml -SolutionName 'Azure Update Manager' -Payload $aiPayload
 
-$aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>Configura AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT / AZURE_OPENAI_API_KEY.</p></div>"
-if ($apiKey -and $endpoint) {
-    try {
-        $aiResp  = Invoke-RestMethod -Uri $endpoint -Method POST -Headers $aiHeaders -Body $body -ContentType "application/json" -TimeoutSec 120
-        $aiReport = $aiResp.choices[0].message.content
-        Write-Host "AI report generated."
-    } catch {
-        Write-Warning "AI error: $($_.Exception.Message)"
-        $aiReport = "<div class='section'><h2>Analisi AI non disponibile</h2><p>$($_.Exception.Message)</p></div>"
-    }
+$kpis = @{
+    Kpi1Label = 'Maintenance Config'
+    Kpi1Value = $data.Summary.TotalMaintenanceConfigs
+    Kpi2Label = 'Auto patching'
+    Kpi2Value = "$autoPct%"
+    Kpi3Label = 'Critical pending'
+    Kpi3Value = $data.Summary.CriticalUpdatesPending
+    Kpi4Label = 'Policies'
+    Kpi4Value = $data.Summary.TotalUpdatePolicies
 }
 
-# === HTML ===
-$htmlContent = @"
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Update Manager Precheck Report</title>
-<style>
-  body{font-family:'Segoe UI',sans-serif;background:#f5f5f5;margin:0;padding:20px}
-  .container{max-width:1200px;margin:0 auto;background:white;border-radius:10px;padding:40px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-  h1{color:#ff8c00;border-bottom:3px solid #ff8c00;padding-bottom:10px} h2{color:#ff8c00;margin-top:30px}
-  .section{margin:20px 0;padding:20px;background:#f8f9fa;border-left:4px solid #ff8c00}
-  table{width:100%;border-collapse:collapse;margin:15px 0} th{background:#ff8c00;color:white;padding:12px;text-align:left}
-  td{padding:10px;border-bottom:1px solid #ddd}
-  .badge-success{background:#28a745;color:white;padding:5px 10px;border-radius:5px}
-  .badge-warning{background:#ffc107;color:black;padding:5px 10px;border-radius:5px}
-  .badge-danger{background:#dc3545;color:white;padding:5px 10px;border-radius:5px}
-</style></head><body><div class="container">
-<h1>🔄 Azure Update Manager — Precheck Report</h1>
-<p><strong>Subscription:</strong> $($data.Subscription.Name)</p>
-<p><strong>Data:</strong> $($data.Timestamp)</p>
-$aiReport
-<div class="section"><h2>📊 Summary</h2>
-<table><tr><th>Metrica</th><th>Valore</th></tr>
-<tr><td>Maintenance Configurations</td><td>$($data.Summary.TotalMaintenanceConfigs)</td></tr>
-<tr><td>VM Totali</td><td>$($data.Summary.TotalVMs)</td></tr>
-<tr><td>VM con Auto-Patching</td><td>$($data.Summary.VMsWithAutoPatching)</td></tr>
-<tr><td>VM con Patching Manuale</td><td>$($data.Summary.VMsWithManualPatching)</td></tr>
-<tr><td>VM Assegnate a MC</td><td>$($data.Summary.VMsAssignedToMC)</td></tr>
-<tr><td>Policy Update Assegnate</td><td>$($data.Summary.TotalUpdatePolicies)</td></tr>
-<tr><td>Policy Assessment Attiva</td><td>$(if($data.Summary.HasAssessmentPolicy){'Sì'}else{'No'})</td></tr>
-<tr><td>Policy Auto-Patch Attiva</td><td>$(if($data.Summary.HasAutoPatchPolicy){'Sì'}else{'No'})</td></tr>
-<tr><td>Update Critici In Sospeso</td><td>$($data.Summary.CriticalUpdatesPending)</td></tr>
-</table></div>
-</div></body></html>
-"@
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Update Manager' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+    SubscriptionName = $data.Subscription.Name
+    SubscriptionId   = $SubscriptionId
+    Timestamp        = $data.Timestamp
+}
 
 $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
 $data['ReportHTML'] = $htmlContent
 $jsonPath = $OutputPath -replace "\.html$", ".json"
-$data | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
+$data | ConvertTo-Json -Depth 15 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
 
-Write-Host "=== UPDATE MANAGER PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s"
+Write-Host "=== UPDATE MANAGER PRECHECK DONE === Time: $([math]::Round(((Get-Date)-$startTime).TotalSeconds))s Readiness: $($readiness.score)%"
 
