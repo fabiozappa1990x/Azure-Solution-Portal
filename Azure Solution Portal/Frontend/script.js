@@ -511,6 +511,48 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (solution === 'backup') {
+            setSummaryLabels('VM Totali:', 'Recovery Vaults:');
+            setTabText('overview', 'Panoramica');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', "Stato Azure Backup");
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['VM Totali', 'VM Protette', 'VM Non Protette', 'Copertura (%)']);
+            setTabVisible('virtual-machines', false);
+            setTabVisible('workspaces', false);
+            setTabVisible('dcr', false);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'defender') {
+            setSummaryLabels('Piani Standard:', 'Secure Score (%):');
+            setTabText('overview', 'Panoramica');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', "Stato Defender for Cloud");
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['Secure Score (%)', 'Piani Standard', 'High Recs', 'Security Contacts']);
+            setTabVisible('virtual-machines', false);
+            setTabVisible('workspaces', false);
+            setTabVisible('dcr', false);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'updates') {
+            setSummaryLabels('VM Totali:', 'Maintenance Config:');
+            setTabText('overview', 'Panoramica');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', "Stato Update Manager");
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['VM Totali', 'Auto patching', 'Manual patching', 'Critical pending']);
+            setTabVisible('virtual-machines', false);
+            setTabVisible('workspaces', false);
+            setTabVisible('dcr', false);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
         // Fallback: UI generica (mostra solo Overview + Report)
         setSummaryLabels('Risorse analizzate:', 'Metriche:');
         setTabText('overview', 'Panoramica');
@@ -720,6 +762,74 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
+    function setStatusFromReadiness(summary) {
+        const score = Number(summary?.ReadinessScore);
+        if (!Number.isFinite(score)) {
+            setOverallStatus('Report disponibile nella tab "Report"', 'warning');
+            return;
+        }
+
+        if (score >= 85) setOverallStatus(`Readiness ${score}% (Ready)`, 'success');
+        else if (score >= 60) setOverallStatus(`Readiness ${score}% (Needs work)`, 'warning');
+        else setOverallStatus(`Readiness ${score}% (Not ready)`, 'danger');
+    }
+
+    function renderBackupPrecheck(data) {
+        const summary = data?.Summary || {};
+        const totalVMs = summary.TotalVMs ?? 0;
+        const protectedVMs = summary.ProtectedVMs ?? 0;
+        const unprotectedVMs = summary.UnprotectedVMs ?? 0;
+        const coverage = Number(summary.BackupCoverage_Pct ?? 0);
+        const totalVaults = summary.TotalVaults ?? 0;
+
+        document.getElementById('overview-vm-total').textContent = totalVMs;
+        document.getElementById('overview-vm-monitored').textContent = protectedVMs;
+        document.getElementById('overview-workspaces').textContent = unprotectedVMs;
+        document.getElementById('overview-dcr').textContent = `${Number.isFinite(coverage) ? coverage : 0}%`;
+        document.getElementById('vm-count').textContent = totalVMs;
+        document.getElementById('workspace-count').textContent = totalVaults;
+
+        setStatusFromReadiness(summary);
+        renderReportHtmlInRecommendations(data);
+    }
+
+    function renderDefenderPrecheck(data) {
+        const summary = data?.Summary || {};
+        const secureScore = Number(summary.SecureScorePercent ?? 0);
+        const enabledPlans = summary.EnabledPlans ?? 0;
+        const highRecs = summary.HighSeverityRecs ?? 0;
+        const contacts = summary.SecurityContactsCount ?? 0;
+
+        document.getElementById('overview-vm-total').textContent = `${Number.isFinite(secureScore) ? secureScore : 0}%`;
+        document.getElementById('overview-vm-monitored').textContent = enabledPlans;
+        document.getElementById('overview-workspaces').textContent = highRecs;
+        document.getElementById('overview-dcr').textContent = contacts;
+        document.getElementById('vm-count').textContent = enabledPlans;
+        document.getElementById('workspace-count').textContent = Number.isFinite(secureScore) ? secureScore : 0;
+
+        setStatusFromReadiness(summary);
+        renderReportHtmlInRecommendations(data);
+    }
+
+    function renderUpdatesPrecheck(data) {
+        const summary = data?.Summary || {};
+        const totalVMs = summary.TotalVMs ?? 0;
+        const auto = summary.VMsWithAutoPatching ?? 0;
+        const manual = summary.VMsWithManualPatching ?? 0;
+        const critical = summary.CriticalUpdatesPending ?? 0;
+        const maintenance = summary.TotalMaintenanceConfigs ?? 0;
+
+        document.getElementById('overview-vm-total').textContent = totalVMs;
+        document.getElementById('overview-vm-monitored').textContent = auto;
+        document.getElementById('overview-workspaces').textContent = manual;
+        document.getElementById('overview-dcr').textContent = critical;
+        document.getElementById('vm-count').textContent = totalVMs;
+        document.getElementById('workspace-count').textContent = maintenance;
+
+        setStatusFromReadiness(summary);
+        renderReportHtmlInRecommendations(data);
+    }
+
     function populatePrecheckResults(data) {
         applyPrecheckUiForSolution(currentSolution);
 
@@ -730,6 +840,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (currentSolution === 'avd') {
             renderAvdPrecheck(data);
+            return;
+        }
+
+        if (currentSolution === 'backup') {
+            renderBackupPrecheck(data);
+            return;
+        }
+
+        if (currentSolution === 'defender') {
+            renderDefenderPrecheck(data);
+            return;
+        }
+
+        if (currentSolution === 'updates') {
+            renderUpdatesPrecheck(data);
             return;
         }
 
