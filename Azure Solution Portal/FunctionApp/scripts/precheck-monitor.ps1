@@ -35,27 +35,27 @@ $data = Get-Content $jsonPath -Raw | ConvertFrom-Json -Depth 20
 
 $checks = @()
 $ama = [double]($data.Summary.AMA_Coverage_Percent)
-$checks += New-PrecheckCheck -Id 'monitor.ama' -Title 'Copertura Azure Monitor Agent (AMA)' -Severity 'Critical' -Status (
-    if ($ama -ge 90) { 'Pass' } elseif ($ama -ge 60) { 'Warn' } else { 'Fail' }
-) -Rationale "AMA coverage: $ama% (VM totali: $($data.Summary.TotalMachines))." -Remediation 'Distribuire AMA sulle VM (policy/automation) e rimuovere MMA legacy dove possibile.'
+$amaStatus = if ($ama -ge 90) { 'Pass' } elseif ($ama -ge 60) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'monitor.ama' -Title 'Copertura Azure Monitor Agent (AMA)' -Severity 'Critical' -Status $amaStatus -Rationale "AMA coverage: $ama% (VM totali: $($data.Summary.TotalMachines))." -Remediation 'Distribuire AMA sulle VM (policy/automation) e rimuovere MMA legacy dove possibile.'
 
-$checks += New-PrecheckCheck -Id 'monitor.workspaces' -Title 'Log Analytics Workspace' -Severity 'High' -Status (
-    if ($data.Summary.TotalWorkspaces -gt 0) { 'Pass' } else { 'Fail' }
-) -Rationale "Workspaces: $($data.Summary.TotalWorkspaces)." -Remediation 'Creare/standardizzare un Log Analytics Workspace e retention in base a compliance.'
+$workspacesStatus = if ($data.Summary.TotalWorkspaces -gt 0) { 'Pass' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'monitor.workspaces' -Title 'Log Analytics Workspace' -Severity 'High' -Status $workspacesStatus -Rationale "Workspaces: $($data.Summary.TotalWorkspaces)." -Remediation 'Creare/standardizzare un Log Analytics Workspace e retention in base a compliance.'
 
-$checks += New-PrecheckCheck -Id 'monitor.dcr' -Title 'Data Collection Rules (DCR)' -Severity 'High' -Status (
-    if ($data.Summary.TotalDCRs -gt 0) { 'Pass' } else { 'Warn' }
-) -Rationale "DCR: $($data.Summary.TotalDCRs)." -Remediation 'Definire DCR standard (perf + logs) e associare le VM target.'
+$dcrStatus = if ($data.Summary.TotalDCRs -gt 0) { 'Pass' } else { 'Warn' }
+$checks += New-PrecheckCheck -Id 'monitor.dcr' -Title 'Data Collection Rules (DCR)' -Severity 'High' -Status $dcrStatus -Rationale "DCR: $($data.Summary.TotalDCRs)." -Remediation 'Definire DCR standard (perf + logs) e associare le VM target.'
 
 $totalAlerts = [int]($data.Summary.TotalMetricAlerts + $data.Summary.TotalLogAlerts)
-$checks += New-PrecheckCheck -Id 'monitor.alerts' -Title 'Alert rules configurati' -Severity 'Medium' -Status (
-    if ($totalAlerts -ge 4) { 'Pass' } elseif ($totalAlerts -ge 1) { 'Warn' } else { 'Warn' }
-) -Rationale "Alert totali (metric+log): $totalAlerts." -Remediation 'Definire alert CPU/Memoria/Disco/Heartbeat con action group e routing (ITSM).'
+$alertsStatus = if ($totalAlerts -ge 4) { 'Pass' } elseif ($totalAlerts -ge 1) { 'Warn' } else { 'Warn' }
+$checks += New-PrecheckCheck -Id 'monitor.alerts' -Title 'Alert rules configurati' -Severity 'Medium' -Status $alertsStatus -Rationale "Alert totali (metric+log): $totalAlerts." -Remediation 'Definire alert CPU/Memoria/Disco/Heartbeat con action group e routing (ITSM).'
 
 $readiness = Get-PrecheckReadiness -Checks $checks
 $data | Add-Member -NotePropertyName 'Readiness' -NotePropertyValue $readiness -Force
 $data | Add-Member -NotePropertyName 'Checks' -NotePropertyValue $checks -Force
-$data.Summary.ReadinessScore = $readiness.score
+if ($data.Summary -is [hashtable]) {
+    $data.Summary['ReadinessScore'] = $readiness.score
+} else {
+    $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
+}
 
 $legacyHtml = $data.ReportHTML
 $data | Add-Member -NotePropertyName 'LegacyReportHTML' -NotePropertyValue $legacyHtml -Force

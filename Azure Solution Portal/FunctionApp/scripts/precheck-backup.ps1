@@ -194,26 +194,26 @@ Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 # Enterprise checks
 $checks = @()
 $coverage = [double]$data.Summary.BackupCoverage_Pct
-$checks += New-PrecheckCheck -Id 'backup.coverage' -Title 'Copertura backup VM' -Severity 'Critical' -Status (
-    if ($coverage -ge 90) { 'Pass' } elseif ($coverage -ge 60) { 'Warn' } else { 'Fail' }
-) -Rationale "Copertura VM: $coverage% (protette: $($data.Summary.ProtectedVMs) / $($data.Summary.TotalVMs))." -Remediation 'Abilita backup per le VM non protette e verifica che esista una policy standard per l’ambiente.'
+$coverageStatus = if ($coverage -ge 90) { 'Pass' } elseif ($coverage -ge 60) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'backup.coverage' -Title 'Copertura backup VM' -Severity 'Critical' -Status $coverageStatus -Rationale "Copertura VM: $coverage% (protette: $($data.Summary.ProtectedVMs) / $($data.Summary.TotalVMs))." -Remediation 'Abilita backup per le VM non protette e verifica che esista una policy standard per l’ambiente.'
 
-$checks += New-PrecheckCheck -Id 'backup.softdelete' -Title 'Soft delete su Recovery Services Vault' -Severity 'High' -Status (
-    if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithSoftDelete -eq $data.Summary.TotalVaults) { 'Pass' } else { 'Warn' }
-) -Rationale "Vault: $($data.Summary.TotalVaults), Soft Delete abilitato: $($data.Summary.VaultsWithSoftDelete)." -Remediation 'Abilita Soft Delete (AlwaysOn/Enabled) su tutti i vault.'
+$softDeleteStatus = if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithSoftDelete -eq $data.Summary.TotalVaults) { 'Pass' } else { 'Warn' }
+$checks += New-PrecheckCheck -Id 'backup.softdelete' -Title 'Soft delete su Recovery Services Vault' -Severity 'High' -Status $softDeleteStatus -Rationale "Vault: $($data.Summary.TotalVaults), Soft Delete abilitato: $($data.Summary.VaultsWithSoftDelete)." -Remediation 'Abilita Soft Delete (AlwaysOn/Enabled) su tutti i vault.'
 
-$checks += New-PrecheckCheck -Id 'backup.redundancy' -Title 'Ridondanza dei vault (GRS)' -Severity 'Medium' -Status (
-    if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithGRS -gt 0) { 'Pass' } else { 'Warn' }
-) -Rationale "Vault con GRS: $($data.Summary.VaultsWithGRS)." -Remediation 'Valuta GRS per carichi critici e requisiti BCDR.'
+$redundancyStatus = if ($data.Summary.TotalVaults -eq 0) { 'Warn' } elseif ($data.Summary.VaultsWithGRS -gt 0) { 'Pass' } else { 'Warn' }
+$checks += New-PrecheckCheck -Id 'backup.redundancy' -Title 'Ridondanza dei vault (GRS)' -Severity 'Medium' -Status $redundancyStatus -Rationale "Vault con GRS: $($data.Summary.VaultsWithGRS)." -Remediation 'Valuta GRS per carichi critici e requisiti BCDR.'
 
-$checks += New-PrecheckCheck -Id 'backup.policies' -Title 'Policy di backup disponibili' -Severity 'Medium' -Status (
-    if ($data.Summary.TotalPolicies -gt 0) { 'Pass' } else { 'Fail' }
-) -Rationale "Policy totali: $($data.Summary.TotalPolicies)." -Remediation 'Crea policy standard (VM/Azure Files/Workload) con retention e schedule coerenti.'
+$policiesStatus = if ($data.Summary.TotalPolicies -gt 0) { 'Pass' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'backup.policies' -Title 'Policy di backup disponibili' -Severity 'Medium' -Status $policiesStatus -Rationale "Policy totali: $($data.Summary.TotalPolicies)." -Remediation 'Crea policy standard (VM/Azure Files/Workload) con retention e schedule coerenti.'
 
 $readiness = Get-PrecheckReadiness -Checks $checks
 $data.Readiness = $readiness
 $data.Checks = $checks
-$data.Summary.ReadinessScore = $readiness.score
+if ($data.Summary -is [hashtable]) {
+    $data.Summary['ReadinessScore'] = $readiness.score
+} else {
+    $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
+}
 
 # Build a technical appendix (no AI required)
 $vaultRows = ($data.RecoveryServicesVaults | Select-Object -First 50 | ForEach-Object {

@@ -38,3 +38,6 @@ desktop.ini
 # ── Azure Function output ──
 **/bin/
 **/obj/
+
+# ── Local downloaded log bundles ──
+tmp_func_logs2/

@@ -237,27 +237,28 @@ $data.Summary = @{
 Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 
 $checks = @()
-$checks += New-PrecheckCheck -Id 'avd.deployed' -Title 'AVD già presente' -Severity 'Info' -Status (
-    if ($data.Summary.AlreadyDeployed) { 'Pass' } else { 'Warn' }
-) -Rationale (if ($data.Summary.AlreadyDeployed) { 'Sono presenti risorse AVD (host pool / app group / workspace).' } else { 'Nessuna risorsa AVD rilevata: scenario “greenfield”.' }) -Remediation 'Se greenfield, definire landing zone (network/identity) e standard di naming prima del deploy.'
+$deployedStatus = if ($data.Summary.AlreadyDeployed) { 'Pass' } else { 'Warn' }
+$deployedRationale = if ($data.Summary.AlreadyDeployed) { 'Sono presenti risorse AVD (host pool / app group / workspace).' } else { 'Nessuna risorsa AVD rilevata: scenario “greenfield”.' }
+$checks += New-PrecheckCheck -Id 'avd.deployed' -Title 'AVD già presente' -Severity 'Info' -Status $deployedStatus -Rationale $deployedRationale -Remediation 'Se greenfield, definire landing zone (network/identity) e standard di naming prima del deploy.'
 
-$checks += New-PrecheckCheck -Id 'avd.network' -Title 'Rete disponibile per AVD' -Severity 'Critical' -Status (
-    if ($data.Summary.TotalVNets -gt 0) { 'Pass' } else { 'Fail' }
-) -Rationale "Virtual Networks rilevate: $($data.Summary.TotalVNets)." -Remediation 'Predisporre VNet/subnet dedicate per session host, con DNS/route/NSG coerenti.'
+$networkStatus = if ($data.Summary.TotalVNets -gt 0) { 'Pass' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'avd.network' -Title 'Rete disponibile per AVD' -Severity 'Critical' -Status $networkStatus -Rationale "Virtual Networks rilevate: $($data.Summary.TotalVNets)." -Remediation 'Predisporre VNet/subnet dedicate per session host, con DNS/route/NSG coerenti.'
 
 $fsPct = if ($data.Summary.TotalStorageAccounts -gt 0) { [math]::Round(100 * ($data.Summary.StorageWithFSLogix / $data.Summary.TotalStorageAccounts), 0) } else { 0 }
-$checks += New-PrecheckCheck -Id 'avd.fslogix' -Title 'Storage compatibile FSLogix (AADKERB)' -Severity 'High' -Status (
-    if ($data.Summary.TotalStorageAccounts -eq 0) { 'Warn' } elseif ($data.Summary.StorageWithFSLogix -gt 0) { 'Pass' } else { 'Warn' }
-) -Rationale "Storage account con AADKERB: $($data.Summary.StorageWithFSLogix) / $($data.Summary.TotalStorageAccounts) ($fsPct%)." -Remediation 'Per profili FSLogix su Azure Files: abilitare AADKERB/Entra integration e validare RBAC/NTFS.'
+$fslogixStatus = if ($data.Summary.TotalStorageAccounts -eq 0) { 'Warn' } elseif ($data.Summary.StorageWithFSLogix -gt 0) { 'Pass' } else { 'Warn' }
+$checks += New-PrecheckCheck -Id 'avd.fslogix' -Title 'Storage compatibile FSLogix (AADKERB)' -Severity 'High' -Status $fslogixStatus -Rationale "Storage account con AADKERB: $($data.Summary.StorageWithFSLogix) / $($data.Summary.TotalStorageAccounts) ($fsPct%)." -Remediation 'Per profili FSLogix su Azure Files: abilitare AADKERB/Entra integration e validare RBAC/NTFS.'
 
-$checks += New-PrecheckCheck -Id 'avd.scaling' -Title 'Scaling plan' -Severity 'Medium' -Status (
-    if ($data.Summary.TotalScalingPlans -gt 0) { 'Pass' } else { 'Warn' }
-) -Rationale "Scaling plans: $($data.Summary.TotalScalingPlans)." -Remediation 'Configurare scaling plan per ottimizzare i costi (schedule, cap, drain).'
+$scalingStatus = if ($data.Summary.TotalScalingPlans -gt 0) { 'Pass' } else { 'Warn' }
+$checks += New-PrecheckCheck -Id 'avd.scaling' -Title 'Scaling plan' -Severity 'Medium' -Status $scalingStatus -Rationale "Scaling plans: $($data.Summary.TotalScalingPlans)." -Remediation 'Configurare scaling plan per ottimizzare i costi (schedule, cap, drain).'
 
 $readiness = Get-PrecheckReadiness -Checks $checks
 $data.Readiness = $readiness
 $data.Checks = $checks
-$data.Summary.ReadinessScore = $readiness.score
+if ($data.Summary -is [hashtable]) {
+    $data.Summary['ReadinessScore'] = $readiness.score
+} else {
+    $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
+}
 
 $hpRows = ($data.HostPools | Select-Object -First 30 | ForEach-Object {
     "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.Type)</td><td>$($_.MaxSessionLimit)</td></tr>"

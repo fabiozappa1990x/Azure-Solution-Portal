@@ -187,26 +187,26 @@ Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 
 $checks = @()
 $score = [double]$data.Summary.SecureScorePercent
-$checks += New-PrecheckCheck -Id 'defender.securescore' -Title 'Secure Score (posture)' -Severity 'Critical' -Status (
-    if ($score -ge 80) { 'Pass' } elseif ($score -ge 50) { 'Warn' } else { 'Fail' }
-) -Rationale "Secure Score: $score%." -Remediation 'Esegui remediation delle raccomandazioni High/Medium con ownership e scadenze (SLA).'
+$scoreStatus = if ($score -ge 80) { 'Pass' } elseif ($score -ge 50) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'defender.securescore' -Title 'Secure Score (posture)' -Severity 'Critical' -Status $scoreStatus -Rationale "Secure Score: $score%." -Remediation 'Esegui remediation delle raccomandazioni High/Medium con ownership e scadenze (SLA).'
 
-$checks += New-PrecheckCheck -Id 'defender.plans' -Title 'Defender plans attivi (Standard)' -Severity 'High' -Status (
-    if ($data.Summary.EnabledPlans -ge 3) { 'Pass' } elseif ($data.Summary.EnabledPlans -ge 1) { 'Warn' } else { 'Fail' }
-) -Rationale "Piani Standard: $($data.Summary.EnabledPlans) / $($data.Summary.TotalPlans)." -Remediation 'Abilita i piani necessari (Servers/Storage/KeyVault/ARM/CSPM) in base al perimetro.'
+$plansStatus = if ($data.Summary.EnabledPlans -ge 3) { 'Pass' } elseif ($data.Summary.EnabledPlans -ge 1) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'defender.plans' -Title 'Defender plans attivi (Standard)' -Severity 'High' -Status $plansStatus -Rationale "Piani Standard: $($data.Summary.EnabledPlans) / $($data.Summary.TotalPlans)." -Remediation 'Abilita i piani necessari (Servers/Storage/KeyVault/ARM/CSPM) in base al perimetro.'
 
-$checks += New-PrecheckCheck -Id 'defender.contacts' -Title 'Security contact configurato' -Severity 'High' -Status (
-    if ($data.Summary.SecurityContactsCount -ge 1) { 'Pass' } else { 'Fail' }
-) -Rationale "Contatti: $($data.Summary.SecurityContactsCount)." -Remediation 'Configura security contact (email/ruoli) e flusso di notifica per incident response.'
+$contactsStatus = if ($data.Summary.SecurityContactsCount -ge 1) { 'Pass' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'defender.contacts' -Title 'Security contact configurato' -Severity 'High' -Status $contactsStatus -Rationale "Contatti: $($data.Summary.SecurityContactsCount)." -Remediation 'Configura security contact (email/ruoli) e flusso di notifica per incident response.'
 
-$checks += New-PrecheckCheck -Id 'defender.recs' -Title 'Raccomandazioni High severity' -Severity 'Medium' -Status (
-    if ($data.Summary.HighSeverityRecs -eq 0) { 'Pass' } elseif ($data.Summary.HighSeverityRecs -le 10) { 'Warn' } else { 'Fail' }
-) -Rationale "High severity: $($data.Summary.HighSeverityRecs)." -Remediation 'Prioritizza le raccomandazioni High; abilita owner assignment e tracking.'
+$recsStatus = if ($data.Summary.HighSeverityRecs -eq 0) { 'Pass' } elseif ($data.Summary.HighSeverityRecs -le 10) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'defender.recs' -Title 'Raccomandazioni High severity' -Severity 'Medium' -Status $recsStatus -Rationale "High severity: $($data.Summary.HighSeverityRecs)." -Remediation 'Prioritizza le raccomandazioni High; abilita owner assignment e tracking.'
 
 $readiness = Get-PrecheckReadiness -Checks $checks
 $data.Readiness = $readiness
 $data.Checks = $checks
-$data.Summary.ReadinessScore = $readiness.score
+if ($data.Summary -is [hashtable]) {
+    $data.Summary['ReadinessScore'] = $readiness.score
+} else {
+    $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
+}
 
 $plansRows = ($data.DefenderPlans | Select-Object -First 40 | ForEach-Object {
     "<tr><td>$($_.Name)</td><td>$($_.PricingTier)</td><td>$($_.SubPlan)</td></tr>"

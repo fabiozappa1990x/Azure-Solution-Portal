@@ -194,29 +194,27 @@ $data.Summary = @{
 Import-Module (Join-Path $PSScriptRoot 'lib/EnterprisePrecheck.psm1') -Force
 
 $checks = @()
-$checks += New-PrecheckCheck -Id 'updates.maintenanceconfigs' -Title 'Maintenance Configurations presenti' -Severity 'High' -Status (
-    if ($data.Summary.TotalMaintenanceConfigs -gt 0) { 'Pass' } else { 'Fail' }
-) -Rationale "Maintenance Config: $($data.Summary.TotalMaintenanceConfigs)." -Remediation 'Crea Maintenance Configuration per finestre di patching controllate (prod/non-prod).'
+$maintenanceConfigsStatus = if ($data.Summary.TotalMaintenanceConfigs -gt 0) { 'Pass' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'updates.maintenanceconfigs' -Title 'Maintenance Configurations presenti' -Severity 'High' -Status $maintenanceConfigsStatus -Rationale "Maintenance Config: $($data.Summary.TotalMaintenanceConfigs)." -Remediation 'Crea Maintenance Configuration per finestre di patching controllate (prod/non-prod).'
 
 $autoPct = if ($data.Summary.TotalVMs -gt 0) { [math]::Round(100 * ($data.Summary.VMsWithAutoPatching / $data.Summary.TotalVMs), 1) } else { 0 }
-$checks += New-PrecheckCheck -Id 'updates.patchmode' -Title 'VM in patch mode automatico' -Severity 'Critical' -Status (
-    if ($autoPct -ge 70) { 'Pass' } elseif ($autoPct -ge 30) { 'Warn' } else { 'Fail' }
-) -Rationale "Auto patching: $autoPct% (auto: $($data.Summary.VMsWithAutoPatching) / $($data.Summary.TotalVMs))." -Remediation 'Standardizza patch mode (AutomaticByPlatform/OS) e assegna le VM a Maintenance Config.'
+$patchModeStatus = if ($autoPct -ge 70) { 'Pass' } elseif ($autoPct -ge 30) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'updates.patchmode' -Title 'VM in patch mode automatico' -Severity 'Critical' -Status $patchModeStatus -Rationale "Auto patching: $autoPct% (auto: $($data.Summary.VMsWithAutoPatching) / $($data.Summary.TotalVMs))." -Remediation 'Standardizza patch mode (AutomaticByPlatform/OS) e assegna le VM a Maintenance Config.'
 
-$checks += New-PrecheckCheck -Id 'updates.policies' -Title 'Policy di assessment/auto-patch' -Severity 'Medium' -Status (
-    if ($data.Summary.HasAssessmentPolicy -and $data.Summary.HasAutoPatchPolicy) { 'Pass' }
-    elseif ($data.Summary.HasAssessmentPolicy -or $data.Summary.HasAutoPatchPolicy) { 'Warn' }
-    else { 'Fail' }
-) -Rationale "Assessment policy: $($data.Summary.HasAssessmentPolicy); Auto-patch policy: $($data.Summary.HasAutoPatchPolicy)." -Remediation 'Assegna le policy built-in per assessment periodico e patching tramite Maintenance Configuration.'
+$policiesStatus = if ($data.Summary.HasAssessmentPolicy -and $data.Summary.HasAutoPatchPolicy) { 'Pass' } elseif ($data.Summary.HasAssessmentPolicy -or $data.Summary.HasAutoPatchPolicy) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'updates.policies' -Title 'Policy di assessment/auto-patch' -Severity 'Medium' -Status $policiesStatus -Rationale "Assessment policy: $($data.Summary.HasAssessmentPolicy); Auto-patch policy: $($data.Summary.HasAutoPatchPolicy)." -Remediation 'Assegna le policy built-in per assessment periodico e patching tramite Maintenance Configuration.'
 
-$checks += New-PrecheckCheck -Id 'updates.critical' -Title 'Update critici pendenti' -Severity 'High' -Status (
-    if ($data.Summary.CriticalUpdatesPending -eq 0) { 'Pass' } elseif ($data.Summary.CriticalUpdatesPending -le 20) { 'Warn' } else { 'Fail' }
-) -Rationale "Critical updates pendenti (somma): $($data.Summary.CriticalUpdatesPending)." -Remediation 'Pianifica remediation delle patch critiche e verifica che le VM siano valutate (assessment) regolarmente.'
+$criticalUpdatesStatus = if ($data.Summary.CriticalUpdatesPending -eq 0) { 'Pass' } elseif ($data.Summary.CriticalUpdatesPending -le 20) { 'Warn' } else { 'Fail' }
+$checks += New-PrecheckCheck -Id 'updates.critical' -Title 'Update critici pendenti' -Severity 'High' -Status $criticalUpdatesStatus -Rationale "Critical updates pendenti (somma): $($data.Summary.CriticalUpdatesPending)." -Remediation 'Pianifica remediation delle patch critiche e verifica che le VM siano valutate (assessment) regolarmente.'
 
 $readiness = Get-PrecheckReadiness -Checks $checks
 $data.Readiness = $readiness
 $data.Checks = $checks
-$data.Summary.ReadinessScore = $readiness.score
+if ($data.Summary -is [hashtable]) {
+    $data.Summary['ReadinessScore'] = $readiness.score
+} else {
+    $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
+}
 
 $mcRows = ($data.MaintenanceConfigurations | Select-Object -First 40 | ForEach-Object {
     "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.RecurEvery)</td><td>$($_.AssignedResourceCount)</td></tr>"
