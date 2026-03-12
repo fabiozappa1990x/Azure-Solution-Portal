@@ -12,17 +12,15 @@ console.log('🔗 API Base URL:', API_BASE_URL);
 // ========================================
 
 // GitHub raw base URL per i template ARM e gli script PowerShell
-const GITHUB_RAW = 'https://raw.githubusercontent.com/fabiozappa1990x/Azure-Solution-Portal/main';
-
-function withCacheBuster(url) {
-    const sep = url.includes('?') ? '&' : '?';
-    return `${url}${sep}v=${Date.now()}`;
-}
+// NOTE: `raw.githubusercontent.com/.../main` può essere cacheato in modo aggressivo dal browser/Azure Portal.
+// Usiamo un commit SHA (immutabile) per evitare che il deploy carichi JSON vecchi.
+const GITHUB_COMMIT_SHA = '843013b399657bd7666f102e1a6c09cd738b9f92';
+const GITHUB_RAW = `https://raw.githubusercontent.com/fabiozappa1990x/Azure-Solution-Portal/${GITHUB_COMMIT_SHA}`;
 
 function deployToAzureUrl(folderEncoded) {
     const base = `${GITHUB_RAW}/${folderEncoded}`;
-    const deployJsonUrl = encodeURIComponent(withCacheBuster(`${base}/portal-ui/deploy.json`));
-    const createUiUrl   = encodeURIComponent(withCacheBuster(`${base}/portal-ui/createUiDefinition.json`));
+    const deployJsonUrl = encodeURIComponent(`${base}/portal-ui/deploy.json`);
+    const createUiUrl   = encodeURIComponent(`${base}/portal-ui/createUiDefinition.json`);
     return `https://portal.azure.com/#create/Microsoft.Template/uri/${deployJsonUrl}/createUIDefinitionUri/${createUiUrl}`;
 }
 
