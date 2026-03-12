@@ -95,6 +95,7 @@ function New-EnterpriseHtmlReport {
         [Parameter(Mandatory)] [hashtable] $Summary,
         [Parameter(Mandatory)] [array] $Checks,
         [Parameter()] [string] $AiHtml = '',
+        [Parameter()] [string] $ImplementationHtml = '',
         [Parameter()] [string] $LegacyHtml = '',
         [Parameter()] [hashtable] $Context = @{}
     )
@@ -126,6 +127,17 @@ function New-EnterpriseHtmlReport {
   <summary>Dettaglio tecnico (legacy report)</summary>
   <div class="legacy-body">$LegacyHtml</div>
 </details>
+"@
+    }
+
+    $implementationSection = ''
+    if ($ImplementationHtml) {
+        $implementationSection = @"
+    <div class="card">
+      <h2>Guida implementativa (contestuale)</h2>
+      <div class="muted">Azioni operative suggerite, derivate dal contesto rilevato.</div>
+      <div style="margin-top:12px">$ImplementationHtml</div>
+    </div>
 "@
     }
 
@@ -224,6 +236,8 @@ function New-EnterpriseHtmlReport {
       <div class="muted">Sintesi dei principali rischi e azioni consigliate.</div>
       <div style="margin-top:12px">$AiHtml</div>
     </div>
+
+    $implementationSection
 
     <div class="card">
       <h2>Controls & Checks</h2>

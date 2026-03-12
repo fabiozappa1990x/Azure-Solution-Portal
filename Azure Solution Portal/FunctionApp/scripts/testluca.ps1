@@ -360,38 +360,64 @@ if ($workspaces -and $workspaces.value) {
 Write-ColorOutput "`n[5/15] Raccolta Data Collection Rules..." "Yellow"
 $dcrs = Invoke-AzureAPI -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Insights/dataCollectionRules" -ApiVersion "2022-06-01"
 
-if ($dcrs -and $dcrs.value) {
-    foreach ($dcr in $dcrs.value) {
-        $dcrType = "Unknown"
-        $dataFlows = @()
-        
-        if ($dcr.properties.dataFlows) {
-            foreach ($flow in $dcr.properties.dataFlows) {
-                $dataFlows += @{
-                    Streams = $flow.streams
-                    Destinations = $flow.destinations
-                }
+	if ($dcrs -and $dcrs.value) {
+	    foreach ($dcr in $dcrs.value) {
+	        $dcrType = "Unknown"
+	        $dataFlows = @()
+	        $workspaceDestinations = @()
+	        $workspaceDestinationSubscriptions = @()
+	        $workspaceDestinationIds = @()
+	        
+	        if ($dcr.properties.dataFlows) {
+	            foreach ($flow in $dcr.properties.dataFlows) {
+	                $dataFlows += @{
+	                    Streams = $flow.streams
+	                    Destinations = $flow.destinations
+	                }
                 
                 if ($flow.streams -contains "Microsoft-InsightsMetrics") { $dcrType = "VM Insights" }
                 if ($flow.streams -contains "Microsoft-Event") { $dcrType = "Windows Events" }
                 if ($flow.streams -contains "Microsoft-Syslog") { $dcrType = "Linux Syslog" }
                 if ($flow.streams -contains "Microsoft-Perf") { $dcrType = "Performance" }
-            }
-        }
-        
-        $monitoringData.DataCollectionRules += @{
-            Name = $dcr.name
-            ResourceGroup = ($dcr.id -split '/')[4]
-            Location = $dcr.location
-            ResourceId = $dcr.id
-            Type = $dcrType
-            DataFlows = $dataFlows
-            Description = $dcr.properties.description
-        }
-    }
-    
-    Write-ColorOutput "✓ Trovati $($monitoringData.DataCollectionRules.Count) DCR" "Green"
-}
+	            }
+	        }
+
+	        # Resolve destinations (Log Analytics workspace resource IDs)
+	        if ($dcr.properties.destinations -and $dcr.properties.destinations.logAnalytics) {
+	            foreach ($la in @($dcr.properties.destinations.logAnalytics)) {
+	                if (-not $la.workspaceResourceId) { continue }
+	                $workspaceDestinationIds += [string]$la.workspaceResourceId
+	                $workspaceDestinations += @{
+	                    Name = $la.name
+	                    WorkspaceResourceId = $la.workspaceResourceId
+	                }
+
+	                $subId = $null
+	                try {
+	                    if ($la.workspaceResourceId -match '/subscriptions/([^/]+)/') { $subId = $Matches[1] }
+	                } catch {}
+	                if ($subId) { $workspaceDestinationSubscriptions += $subId }
+	            }
+	        }
+	        
+	        $monitoringData.DataCollectionRules += @{
+	            Name = $dcr.name
+	            ResourceGroup = ($dcr.id -split '/')[4]
+	            Location = $dcr.location
+	            ResourceId = $dcr.id
+	            Type = $dcrType
+	            DataFlows = $dataFlows
+	            Destinations = @{
+	                LogAnalytics = $workspaceDestinations
+	                WorkspaceResourceIds = $workspaceDestinationIds
+	                WorkspaceSubscriptionIds = ($workspaceDestinationSubscriptions | Select-Object -Unique)
+	            }
+	            Description = $dcr.properties.description
+	        }
+	    }
+	    
+	    Write-ColorOutput "✓ Trovati $($monitoringData.DataCollectionRules.Count) DCR" "Green"
+	}
 
 # ═══════════════════════════════════════════════════════════════
 # [6/15] DCR ASSOCIATIONS
