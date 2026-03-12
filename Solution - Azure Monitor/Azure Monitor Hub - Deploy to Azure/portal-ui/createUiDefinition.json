@@ -196,23 +196,13 @@
                 }
               },
               {
-                "name": "vmList",
-                "type": "Microsoft.Solutions.ArmApiControl",
-                "visible": false,
-                "request": {
-                  "method": "GET",
-                  "path": "/providers/Microsoft.Compute/virtualMachines?api-version=2024-03-01"
-                }
-              },
-              {
-                "name": "selectedVMs",
-                "type": "Microsoft.Common.DropDown",
-                "label": "Select Azure VMs to monitor",
-                "toolTip": "Pick one or more Azure VMs from the current subscription.",
-                "multiselect": true,
-                "filter": true,
+                "name": "selectedVMResourceIds",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Azure VM Resource IDs",
+                "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm2",
+                "toolTip": "Enter full Resource IDs of Azure VMs to monitor, separated by commas. Copy Resource ID from VM's Properties page.",
+                "multiLine": true,
                 "constraints": {
-                  "allowedValues": "[map(steps('infrastructure').vmMonitoringSection.vmList.value, (vm) => parse(concat('{\"label\":\"', vm.name, '\",\"value\":\"', vm.id, '\"}')))]",
                   "required": true
                 },
                 "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected')]"
@@ -223,7 +213,7 @@
                 "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected')]",
                 "options": {
                   "icon": "Info",
-                  "text": "Tip: use the filter box to quickly search by VM name. Only VMs in the selected subscription are listed."
+                  "text": "To get Azure VM Resource ID: Go to VM → Properties → Copy 'Resource ID'. Paste multiple IDs separated by commas."
                 }
               },
               {
@@ -276,23 +266,13 @@
                 }
               },
               {
-                "name": "arcList",
-                "type": "Microsoft.Solutions.ArmApiControl",
-                "visible": false,
-                "request": {
-                  "method": "GET",
-                  "path": "/providers/Microsoft.HybridCompute/machines?api-version=2024-05-20"
-                }
-              },
-              {
-                "name": "selectedArcServers",
-                "type": "Microsoft.Common.DropDown",
-                "label": "Select Arc servers to monitor",
-                "toolTip": "Pick one or more Arc-enabled servers from the current subscription.",
-                "multiselect": true,
-                "filter": true,
+                "name": "selectedArcResourceIds",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Arc Server Resource IDs",
+                "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.HybridCompute/machines/server1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.HybridCompute/machines/server2",
+                "toolTip": "Enter full Resource IDs of Arc-enabled servers to monitor, separated by commas. Copy Resource ID from Arc machine's Properties page.",
+                "multiLine": true,
                 "constraints": {
-                  "allowedValues": "[map(steps('infrastructure').arcMonitoringSection.arcList.value, (m) => parse(concat('{\"label\":\"', m.name, '\",\"value\":\"', m.id, '\"}')))]",
                   "required": true
                 },
                 "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected')]"
@@ -303,7 +283,7 @@
                 "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected')]",
                 "options": {
                   "icon": "Info",
-                  "text": "Tip: use the filter box to quickly search by server name. Only Arc machines in the selected subscription are listed."
+                  "text": "To get Arc Server Resource ID: Go to Arc machine → Properties → Copy 'Resource ID'. Paste multiple IDs separated by commas."
                 }
               },
               {
@@ -587,10 +567,10 @@
       "managedIdentityName": "[if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'new'), steps('infrastructure').managedIdentitySection.name, if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing'), steps('infrastructure').managedIdentitySection.existing.name, concat('id-', basics('deploymentName'))))]",
       "monitorExistingVMs": "[or(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all'))]",
       "monitorAllVMs": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all')]",
-      "selectedVMIds": "[if(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), map(steps('infrastructure').vmMonitoringSection.selectedVMs, (item) => item.value), parse('[]'))]",
+      "selectedVMIds": "[if(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), split(replace(steps('infrastructure').vmMonitoringSection.selectedVMResourceIds, ' ', ''), ','), parse('[]'))]",
       "monitorExistingArcServers": "[or(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all'))]",
       "monitorAllArcServers": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all')]",
-      "selectedArcServerIds": "[if(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), map(steps('infrastructure').arcMonitoringSection.selectedArcServers, (item) => item.value), parse('[]'))]",
+      "selectedArcServerIds": "[if(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), split(replace(steps('infrastructure').arcMonitoringSection.selectedArcResourceIds, ' ', ''), ','), parse('[]'))]",
       "dcrNameWindows": "[if(or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none')))), steps('infrastructure').dcrSection.dcrName, concat('dcr-', basics('deploymentName'), '-unified'))]",
       "dcrNameLinux": "[if(or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none')))), steps('infrastructure').dcrSection.dcrName, concat('dcr-', basics('deploymentName'), '-unified'))]",
       "enableAzureVMPolicy": "[steps('automation').azureVMPolicySection.enableAzureVMPolicy]",
