@@ -1,1449 +1,902 @@
 {
-  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
-  "metadata": {
-    "_generator": {
-      "name": "bicep",
-      "version": "0.40.2.10011",
-      "templateHash": "4763503463016179519"
-    }
-  },
   "parameters": {
     "deploymentName": {
       "type": "string",
       "metadata": {
-        "description": "Deployment name"
+        "description": "Unique name for this monitoring deployment"
       }
     },
     "location": {
       "type": "string",
-      "defaultValue": "[deployment().location]",
+      "defaultValue": "[resourceGroup().location]",
       "metadata": {
-        "description": "Azure region for resources"
-      }
-    },
-    "useExistingResourceGroup": {
-      "type": "bool",
-      "defaultValue": false,
-      "metadata": {
-        "description": "Use existing Resource Group"
-      }
-    },
-    "existingResourceGroupName": {
-      "type": "string",
-      "defaultValue": "",
-      "metadata": {
-        "description": "Existing Resource Group name"
+        "description": "Location for all resources"
       }
     },
     "useExistingLogAnalytics": {
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Use existing Log Analytics Workspace"
+        "description": "Use an existing Log Analytics workspace"
       }
     },
     "existingLogAnalyticsWorkspaceId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Existing Log Analytics Workspace ID"
+        "description": "Resource ID of existing Log Analytics workspace"
       }
     },
     "logAnalyticsWorkspaceName": {
       "type": "string",
       "metadata": {
-        "description": "Log Analytics Workspace name"
+        "description": "Name of the Log Analytics workspace"
       }
     },
     "retentionInDays": {
       "type": "int",
       "defaultValue": 90,
+      "minValue": 30,
+      "maxValue": 730,
       "metadata": {
-        "description": "Log retention in days"
+        "description": "Number of days to retain data in Log Analytics"
+      }
+    },
+    "useExistingManagedIdentity": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Use an existing User-Assigned Managed Identity"
+      }
+    },
+    "existingManagedIdentityId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of existing Managed Identity"
+      }
+    },
+    "managedIdentityName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the User-Assigned Managed Identity"
+      }
+    },
+    "dcrNameWindows": {
+      "type": "string",
+      "defaultValue": "[format('dcr-{0}-unified', parameters('deploymentName'))]",
+      "metadata": {
+        "description": "Name of the unified Data Collection Rule for Windows and Linux"
+      }
+    },
+    "dcrNameLinux": {
+      "type": "string",
+      "defaultValue": "[format('dcr-{0}-unified', parameters('deploymentName'))]",
+      "metadata": {
+        "description": "Name of the unified Data Collection Rule (same as Windows)"
       }
     },
     "monitorExistingVMs": {
       "type": "bool",
-      "defaultValue": true,
+      "defaultValue": false,
       "metadata": {
-        "description": "Monitor existing VMs"
+        "description": "Monitor existing Azure VMs during deployment"
+      }
+    },
+    "monitorAllVMs": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Automatically discover and monitor all Azure VMs in subscription"
       }
     },
     "selectedVMIds": {
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Selected VM IDs to monitor"
+        "description": "Array of Azure VM Resource IDs to monitor"
       }
     },
-    "autoEnrollNewVMs": {
+    "monitorExistingArcServers": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Monitor existing Arc-enabled servers during deployment"
+      }
+    },
+    "monitorAllArcServers": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Automatically discover and monitor all Arc servers in subscription"
+      }
+    },
+    "selectedArcServerIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Array of Arc Server Resource IDs to monitor"
+      }
+    },
+    "enableAzureVMPolicy": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Azure Policy for automatic Azure VM enrollment"
+      }
+    },
+    "azureVMPolicyAssignmentName": {
+      "type": "string",
+      "defaultValue": "[format('ama-vm-monitoring-{0}', parameters('deploymentName'))]",
+      "metadata": {
+        "description": "Name of the Azure VM Policy assignment"
+      }
+    },
+    "enableArcPolicy": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable Azure Policy for automatic Arc server enrollment"
+      }
+    },
+    "arcPolicyAssignmentName": {
+      "type": "string",
+      "defaultValue": "[format('ama-arc-monitoring-{0}', parameters('deploymentName'))]",
+      "metadata": {
+        "description": "Name of the Arc Policy assignment"
+      }
+    },
+    "enableProcessesAndDependencies": {
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "Auto-enroll new VMs"
+        "description": "Enable VM Insights processes and dependencies for Arc servers"
       }
     },
     "enableCPUAlerts": {
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "Enable CPU alerts"
+        "description": "Enable CPU utilization alerts"
       }
     },
     "cpuThreshold": {
       "type": "int",
       "defaultValue": 85,
+      "minValue": 50,
+      "maxValue": 100,
       "metadata": {
-        "description": "CPU threshold percentage"
+        "description": "CPU threshold percentage for alerts"
       }
     },
     "enableMemoryAlerts": {
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "Enable Memory alerts"
+        "description": "Enable memory utilization alerts"
       }
     },
     "memoryThreshold": {
       "type": "int",
       "defaultValue": 85,
+      "minValue": 50,
+      "maxValue": 100,
       "metadata": {
-        "description": "Memory threshold percentage"
+        "description": "Memory threshold percentage for alerts"
       }
     },
     "enableDiskAlerts": {
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "Enable Disk alerts"
+        "description": "Enable disk space alerts"
       }
     },
     "diskThreshold": {
       "type": "int",
       "defaultValue": 85,
+      "minValue": 50,
+      "maxValue": 100,
       "metadata": {
-        "description": "Disk threshold percentage"
+        "description": "Disk usage threshold percentage for alerts"
       }
     },
     "enableHeartbeatAlerts": {
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "Enable Heartbeat alerts"
+        "description": "Enable VM heartbeat alerts"
       }
     },
     "createActionGroup": {
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "Create Action Group"
+        "description": "Create an Action Group for alerts"
       }
     },
     "actionGroupName": {
       "type": "string",
       "metadata": {
-        "description": "Action Group name"
+        "description": "Name of the Action Group"
       }
     },
     "emailRecipients": {
       "type": "string",
       "metadata": {
-        "description": "Email recipients (semicolon separated)"
-      }
-    },
-    "deployDashboard": {
-      "type": "bool",
-      "defaultValue": true,
-      "metadata": {
-        "description": "Deploy monitoring dashboard"
-      }
-    },
-    "dashboardName": {
-      "type": "string",
-      "defaultValue": "VM Monitoring Dashboard",
-      "metadata": {
-        "description": "Dashboard name"
+        "description": "Semicolon-separated email addresses for alert notifications"
       }
     },
     "tagsByResource": {
       "type": "object",
       "defaultValue": {},
       "metadata": {
-        "description": "Tags for resources"
+        "description": "Tags to apply to resources"
       }
     }
   },
   "variables": {
-    "resourceGroupName": "[if(parameters('useExistingResourceGroup'), parameters('existingResourceGroupName'), format('rg-{0}', parameters('deploymentName')))]",
-    "tags": {
-      "DeployedBy": "Azure-Monitor-Hub",
-      "Environment": "Production",
-      "ManagedBy": "Bicep"
-    }
+    "workspaceName": "[if(parameters('useExistingLogAnalytics'), split(parameters('existingLogAnalyticsWorkspaceId'), '/')[8], parameters('logAnalyticsWorkspaceName'))]",
+    "workspaceId": "[if(parameters('useExistingLogAnalytics'), parameters('existingLogAnalyticsWorkspaceId'), resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName')))]",
+    "managedIdentityId": "[if(parameters('useExistingManagedIdentity'), parameters('existingManagedIdentityId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')))]",
+    "dcrName": "[format('dcr-{0}-unified', parameters('deploymentName'))]"
   },
   "resources": [
     {
-      "condition": "[not(parameters('useExistingResourceGroup'))]",
-      "type": "Microsoft.Resources/resourceGroups",
-      "apiVersion": "2024-03-01",
-      "name": "[variables('resourceGroupName')]",
+      "condition": "[not(parameters('useExistingLogAnalytics'))]",
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2022-10-01",
+      "name": "[parameters('logAnalyticsWorkspaceName')]",
       "location": "[parameters('location')]",
-      "tags": "[union(variables('tags'), if(contains(parameters('tagsByResource'), 'Microsoft.Resources/resourceGroups'), parameters('tagsByResource')['Microsoft.Resources/resourceGroups'], createObject()))]"
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.OperationalInsights/workspaces'), parameters('tagsByResource')['Microsoft.OperationalInsights/workspaces'], json('{}'))]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": "[parameters('retentionInDays')]",
+        "features": {
+          "enableLogAccessUsingOnlyResourcePermissions": true
+        }
+      }
     },
     {
-      "condition": "[not(parameters('useExistingLogAnalytics'))]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-log-analytics",
-      "resourceGroup": "[variables('resourceGroupName')]",
+      "condition": "[not(parameters('useExistingManagedIdentity'))]",
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[parameters('managedIdentityName')]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.ManagedIdentity/userAssignedIdentities'), parameters('tagsByResource')['Microsoft.ManagedIdentity/userAssignedIdentities'], json('{}'))]"
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('roleAssignment-{0}', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzurePowerShell",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', variables('managedIdentityId'))]": {}
+        }
+      },
       "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "workspaceName": {
-            "value": "[parameters('logAnalyticsWorkspaceName')]"
-          },
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "retentionInDays": {
-            "value": "[parameters('retentionInDays')]"
-          },
-          "tags": {
-            "value": "[union(variables('tags'), if(contains(parameters('tagsByResource'), 'Microsoft.OperationalInsights/workspaces'), parameters('tagsByResource')['Microsoft.OperationalInsights/workspaces'], createObject()))]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "6063542396265770307"
-            }
-          },
-          "parameters": {
-            "workspaceName": {
-              "type": "string",
-              "metadata": {
-                "description": "Log Analytics Workspace name"
-              }
-            },
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region"
-              }
-            },
-            "retentionInDays": {
-              "type": "int",
-              "defaultValue": 90,
-              "metadata": {
-                "description": "Retention in days"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Resource tags"
-              }
-            }
-          },
-          "resources": [
+        "azPowerShellVersion": "10.0",
+        "retentionInterval": "PT1H",
+        "timeout": "PT10M",
+        "cleanupPreference": "OnSuccess",
+        "arguments": "[format('-PrincipalId \"{0}\" -SubscriptionId \"{1}\" -DeploymentName \"{2}\"', if(parameters('useExistingManagedIdentity'), reference(parameters('existingManagedIdentityId'), '2023-01-31').principalId, reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').principalId), subscription().subscriptionId, parameters('deploymentName'))]",
+        "scriptContent": "param(\n    [string]$PrincipalId,\n    [string]$SubscriptionId,\n    [string]$DeploymentName\n)\n\n$ErrorActionPreference = 'Stop'\n\nWrite-Host \"========================================\"\nWrite-Host \"ROLE ASSIGNMENT SETUP\"\nWrite-Host \"========================================\"\nWrite-Host \"Principal ID: $PrincipalId\"\nWrite-Host \"Subscription ID: $SubscriptionId\"\nWrite-Host \"\"\n\n# Define roles to assign\n$roles = @(\n    @{ Name = \"Contributor\"; Id = \"b24988ac-6180-42a0-ab88-20f7382dd24c\"; Description = \"Allows Managed Identity to deploy monitoring resources\" },\n    @{ Name = \"Managed Identity Operator\"; Id = \"f1a07417-d97a-45cb-824c-7a7467783830\"; Description = \"Allows Managed Identity to assign itself to VMs\" },\n    @{ Name = \"Virtual Machine Contributor\"; Id = \"9980e02c-c2be-4d73-94e8-173b1dc7cf3c\"; Description = \"Allows Managed Identity to manage VM extensions\" },\n    @{ Name = \"Azure Connected Machine Resource Administrator\"; Id = \"cd570a14-e51a-42ad-bac8-bafd67325302\"; Description = \"Allows Managed Identity to manage Arc servers\" }\n)\n\n$assignedCount = 0\n$skippedCount = 0\n$failedCount = 0\n\nforeach ($role in $roles) {\n    Write-Host \"Processing role: $($role.Name)\" -ForegroundColor Cyan\n    \n    try {\n        # Check if role assignment already exists\n        $existingAssignment = Get-AzRoleAssignment `\n            -ObjectId $PrincipalId `\n            -RoleDefinitionId $role.Id `\n            -Scope \"/subscriptions/$SubscriptionId\" `\n            -ErrorAction SilentlyContinue\n        \n        if ($existingAssignment) {\n            Write-Host \"  ✓ Role assignment already exists - SKIPPED\" -ForegroundColor Yellow\n            $skippedCount++\n        }\n        else {\n            Write-Host \"  Creating role assignment...\" -ForegroundColor Cyan\n            \n            $assignment = New-AzRoleAssignment `\n                -ObjectId $PrincipalId `\n                -RoleDefinitionId $role.Id `\n                -Scope \"/subscriptions/$SubscriptionId\" `\n                -Description $role.Description `\n                -ErrorAction Stop\n            \n            Write-Host \"  ✓ Role assignment created successfully\" -ForegroundColor Green\n            $assignedCount++\n        }\n    }\n    catch {\n        if ($_.Exception.Message -like \"*role assignment already exists*\") {\n            Write-Host \"  ✓ Role assignment already exists (caught exception) - SKIPPED\" -ForegroundColor Yellow\n            $skippedCount++\n        }\n        else {\n            Write-Host \"  ✗ Failed: $($_.Exception.Message)\" -ForegroundColor Red\n            $failedCount++\n        }\n    }\n    \n    Write-Host \"\"\n}\n\nWrite-Host \"========================================\"\nWrite-Host \"SUMMARY\"\nWrite-Host \"========================================\"\nWrite-Host \"Total Roles: $($roles.Count)\"\nWrite-Host \"✓ Newly Assigned: $assignedCount\" -ForegroundColor Green\nWrite-Host \"⊙ Already Existed: $skippedCount\" -ForegroundColor Yellow\nif ($failedCount -gt 0) {\n    Write-Host \"✗ Failed: $failedCount\" -ForegroundColor Red\n}\nWrite-Host \"========================================\"\nWrite-Host \"\"\n\nif (($assignedCount + $skippedCount) -eq $roles.Count) {\n    Write-Host \"All required role assignments are in place!\" -ForegroundColor Green\n}\n\n$DeploymentScriptOutputs = @{}\n$DeploymentScriptOutputs['assignedCount'] = $assignedCount\n$DeploymentScriptOutputs['skippedCount'] = $skippedCount\n$DeploymentScriptOutputs['failedCount'] = $failedCount\n$DeploymentScriptOutputs['status'] = 'Completed'\n"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2022-06-01",
+      "name": "[variables('dcrName')]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Insights/dataCollectionRules'), parameters('tagsByResource')['Microsoft.Insights/dataCollectionRules'], json('{}'))]",
+      "properties": {
+        "dataSources": {
+          "performanceCounters": [
             {
-              "type": "Microsoft.OperationalInsights/workspaces",
-              "apiVersion": "2023-09-01",
-              "name": "[parameters('workspaceName')]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "sku": {
-                  "name": "PerGB2018"
-                },
-                "retentionInDays": "[parameters('retentionInDays')]",
-                "features": {
-                  "enableLogAccessUsingOnlyResourcePermissions": true
-                },
-                "workspaceCapping": {
-                  "dailyQuotaGb": -1
-                },
-                "publicNetworkAccessForIngestion": "Enabled",
-                "publicNetworkAccessForQuery": "Enabled"
-              }
-            },
-            {
-              "type": "Microsoft.OperationsManagement/solutions",
-              "apiVersion": "2015-11-01-preview",
-              "name": "[format('VMInsights({0})', parameters('workspaceName'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "plan": {
-                "name": "[format('VMInsights({0})', parameters('workspaceName'))]",
-                "publisher": "Microsoft",
-                "product": "OMSGallery/VMInsights",
-                "promotionCode": ""
-              },
-              "properties": {
-                "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+              "name": "VMInsightsPerfCounters",
+              "samplingFrequencyInSeconds": 60,
+              "streams": ["Microsoft-InsightsMetrics"],
+              "counterSpecifiers": [
+                "\\VmInsights\\DetailedMetrics"
               ]
             }
           ],
-          "outputs": {
-            "workspaceId": {
-              "type": "string",
-              "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), '2023-09-01').customerId]"
-            },
-            "workspaceResourceId": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
-            },
-            "workspaceName": {
-              "type": "string",
-              "value": "[parameters('workspaceName')]"
-            }
-          }
-        }
-      }
-    },
-    {
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-dcr",
-      "resourceGroup": "[variables('resourceGroupName')]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "workspaceResourceId": "[if(parameters('useExistingLogAnalytics'), createObject('value', parameters('existingLogAnalyticsWorkspaceId')), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01').outputs.workspaceResourceId.value))]",
-          "dcrName": {
-            "value": "[format('dcr-{0}-vms', parameters('deploymentName'))]"
-          },
-          "tags": {
-            "value": "[union(variables('tags'), if(contains(parameters('tagsByResource'), 'Microsoft.Insights/dataCollectionRules'), parameters('tagsByResource')['Microsoft.Insights/dataCollectionRules'], createObject()))]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "6972673470732827834"
-            }
-          },
-          "parameters": {
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region"
-              }
-            },
-            "workspaceResourceId": {
-              "type": "string",
-              "metadata": {
-                "description": "Log Analytics Workspace Resource ID"
-              }
-            },
-            "dcrName": {
-              "type": "string",
-              "metadata": {
-                "description": "DCR name"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Resource tags"
-              }
-            }
-          },
-          "resources": [
+          "syslog": [
             {
-              "type": "Microsoft.Insights/dataCollectionRules",
-              "apiVersion": "2023-03-11",
-              "name": "[parameters('dcrName')]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "kind": "Linux",
-              "properties": {
-                "dataSources": {
-                  "performanceCounters": [
-                    {
-                      "name": "perfCounterDataSource",
-                      "streams": [
-                        "Microsoft-Perf",
-                        "Microsoft-InsightsMetrics"
-                      ],
-                      "samplingFrequencyInSeconds": 60,
-                      "counterSpecifiers": [
-                        "\\Processor(_Total)\\% Processor Time",
-                        "\\Memory\\Available MBytes",
-                        "\\Memory\\% Available Memory",
-                        "\\LogicalDisk(_Total)\\% Free Space",
-                        "\\LogicalDisk(_Total)\\Free Megabytes",
-                        "\\Network Interface(*)\\Bytes Total/sec",
-                        "\\Network Interface(*)\\Bytes Sent/sec",
-                        "\\Network Interface(*)\\Bytes Received/sec"
-                      ]
-                    }
-                  ],
-                  "extensions": [
-                    {
-                      "name": "DependencyAgentDataSource",
-                      "streams": [
-                        "Microsoft-ServiceMap"
-                      ],
-                      "extensionName": "DependencyAgent",
-                      "extensionSettings": {}
-                    }
-                  ]
-                },
-                "destinations": {
-                  "logAnalytics": [
-                    {
-                      "workspaceResourceId": "[parameters('workspaceResourceId')]",
-                      "name": "la-destination"
-                    }
-                  ]
-                },
-                "dataFlows": [
-                  {
-                    "streams": [
-                      "Microsoft-Perf",
-                      "Microsoft-InsightsMetrics"
-                    ],
-                    "destinations": [
-                      "la-destination"
-                    ]
-                  },
-                  {
-                    "streams": [
-                      "Microsoft-ServiceMap"
-                    ],
-                    "destinations": [
-                      "la-destination"
-                    ]
-                  }
-                ]
-              }
-            },
+              "name": "syslogDataSource",
+              "streams": ["Microsoft-Syslog"],
+              "facilityNames": ["auth", "authpriv", "cron", "daemon", "kern", "syslog"],
+              "logLevels": ["Error", "Critical", "Alert", "Emergency"]
+            }
+          ]
+        },
+        "destinations": {
+          "logAnalytics": [
             {
-              "type": "Microsoft.Insights/dataCollectionRules",
-              "apiVersion": "2023-03-11",
-              "name": "[format('{0}-windows', parameters('dcrName'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "kind": "Windows",
-              "properties": {
-                "dataSources": {
-                  "performanceCounters": [
-                    {
-                      "name": "perfCounterDataSource",
-                      "streams": [
-                        "Microsoft-Perf",
-                        "Microsoft-InsightsMetrics"
-                      ],
-                      "samplingFrequencyInSeconds": 60,
-                      "counterSpecifiers": [
-                        "\\Processor Information(_Total)\\% Processor Time",
-                        "\\Memory\\Available Bytes",
-                        "\\Memory\\% Committed Bytes In Use",
-                        "\\LogicalDisk(_Total)\\% Free Space",
-                        "\\LogicalDisk(_Total)\\Free Megabytes",
-                        "\\Network Interface(*)\\Bytes Total/sec",
-                        "\\Network Interface(*)\\Bytes Sent/sec",
-                        "\\Network Interface(*)\\Bytes Received/sec"
-                      ]
-                    }
-                  ],
-                  "windowsEventLogs": [
-                    {
-                      "name": "eventLogsDataSource",
-                      "streams": [
-                        "Microsoft-Event"
-                      ],
-                      "xPathQueries": [
-                        "System!*[System[(Level=1 or Level=2 or Level=3)]]",
-                        "Application!*[System[(Level=1 or Level=2 or Level=3)]]"
-                      ]
-                    }
-                  ],
-                  "extensions": [
-                    {
-                      "name": "DependencyAgentDataSource",
-                      "streams": [
-                        "Microsoft-ServiceMap"
-                      ],
-                      "extensionName": "DependencyAgent",
-                      "extensionSettings": {}
-                    }
-                  ]
-                },
-                "destinations": {
-                  "logAnalytics": [
-                    {
-                      "workspaceResourceId": "[parameters('workspaceResourceId')]",
-                      "name": "la-destination"
-                    }
-                  ]
-                },
-                "dataFlows": [
-                  {
-                    "streams": [
-                      "Microsoft-Perf",
-                      "Microsoft-InsightsMetrics",
-                      "Microsoft-Event"
-                    ],
-                    "destinations": [
-                      "la-destination"
-                    ]
-                  },
-                  {
-                    "streams": [
-                      "Microsoft-ServiceMap"
-                    ],
-                    "destinations": [
-                      "la-destination"
-                    ]
-                  }
-                ]
-              }
+              "name": "VMInsightsPerf-Logs-Dest",
+              "workspaceResourceId": "[variables('workspaceId')]"
             }
-          ],
-          "outputs": {
-            "dcrId": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
-            },
-            "dcrIdWindows": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.Insights/dataCollectionRules', format('{0}-windows', parameters('dcrName')))]"
-            },
-            "dcrName": {
-              "type": "string",
-              "value": "[parameters('dcrName')]"
-            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": ["Microsoft-InsightsMetrics"],
+            "destinations": ["VMInsightsPerf-Logs-Dest"]
+          },
+          {
+            "streams": ["Microsoft-Syslog"],
+            "destinations": ["VMInsightsPerf-Logs-Dest"]
           }
-        }
+        ],
+        "description": "Unified Data Collection Rule for Azure VMs, Arc servers, Windows and Linux monitoring with VM Insights"
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics')]"
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
       ]
     },
     {
-      "condition": "[parameters('createActionGroup')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-action-group",
-      "resourceGroup": "[variables('resourceGroupName')]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "actionGroupName": {
-            "value": "[parameters('actionGroupName')]"
-          },
-          "location": {
-            "value": "global"
-          },
-          "emailRecipients": {
-            "value": "[parameters('emailRecipients')]"
-          },
-          "tags": {
-            "value": "[union(variables('tags'), if(contains(parameters('tagsByResource'), 'Microsoft.Insights/actionGroups'), parameters('tagsByResource')['Microsoft.Insights/actionGroups'], createObject()))]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "8948594332591919107"
-            }
-          },
-          "parameters": {
-            "actionGroupName": {
-              "type": "string",
-              "metadata": {
-                "description": "Action Group name"
-              }
-            },
-            "location": {
-              "type": "string",
-              "defaultValue": "global",
-              "metadata": {
-                "description": "Location (global for action groups)"
-              }
-            },
-            "emailRecipients": {
-              "type": "string",
-              "metadata": {
-                "description": "Email recipients (semicolon separated)"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Resource tags"
-              }
-            }
-          },
-          "variables": {
-            "emailArray": "[split(parameters('emailRecipients'), ';')]"
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Insights/actionGroups",
-              "apiVersion": "2023-09-01",
-              "name": "[parameters('actionGroupName')]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "copy": [
-                  {
-                    "name": "emailReceivers",
-                    "count": "[length(variables('emailArray'))]",
-                    "input": {
-                      "name": "[format('email-{0}', copyIndex('emailReceivers'))]",
-                      "emailAddress": "[trim(variables('emailArray')[copyIndex('emailReceivers')])]",
-                      "useCommonAlertSchema": true
-                    }
-                  }
-                ],
-                "groupShortName": "[take(parameters('actionGroupName'), 12)]",
-                "enabled": true
-              }
-            }
-          ],
-          "outputs": {
-            "actionGroupId": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
-            },
-            "actionGroupName": {
-              "type": "string",
-              "value": "[parameters('actionGroupName')]"
-            }
-          }
+      "condition": "[parameters('monitorExistingVMs')]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('setup-azure-vms-{0}', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Resources/deploymentScripts'), parameters('tagsByResource')['Microsoft.Resources/deploymentScripts'], json('{}'))]",
+      "kind": "AzurePowerShell",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', variables('managedIdentityId'))]": {}
         }
-      }
+      },
+      "properties": {
+        "azPowerShellVersion": "10.0",
+        "retentionInterval": "PT1H",
+        "timeout": "PT60M",
+        "cleanupPreference": "OnSuccess",
+        "arguments": "[format('-VMIdsBase64 \"{0}\" -MonitorAllVMs ${1} -DCRId \"{2}\"', base64(string(parameters('selectedVMIds'))), parameters('monitorAllVMs'), resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName')))]",
+        "scriptContent": "param(\n    [string]$VMIdsBase64,\n    [bool]$MonitorAllVMs,\n    [string]$DCRId\n)\n\n$ErrorActionPreference = 'Stop'\n\nWrite-Host \"========================================\"\nWrite-Host \"Azure VM Monitoring Setup\"\nWrite-Host \"========================================\"\nWrite-Host \"Monitor All VMs: $MonitorAllVMs\"\nWrite-Host \"DCR ID: $DCRId\"\nWrite-Host \"\"\n\n# Wait for role propagation\nWrite-Host \"Waiting 60 seconds for role assignment propagation...\"\nStart-Sleep -Seconds 60\n\n$vmArray = @()\n\nif ($MonitorAllVMs) {\n    Write-Host \"Discovering all Azure VMs in subscription...\"\n    try {\n        $allVMs = Get-AzVM -ErrorAction Stop\n        Write-Host \"Found $($allVMs.Count) Azure VMs\"\n        \n        foreach ($vm in $allVMs) {\n            $vmArray += $vm.Id\n            Write-Host \"  - $($vm.Name)\"\n        }\n    }\n    catch {\n        Write-Host \"ERROR: $_\" -ForegroundColor Red\n        exit 1\n    }\n}\nelse {\n    Write-Host \"Decoding VM IDs from Base64...\"\n    \n    try {\n        $VMIdsJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($VMIdsBase64))\n        Write-Host \"Decoded JSON: $VMIdsJson\"\n        \n        if ([string]::IsNullOrWhiteSpace($VMIdsJson) -or $VMIdsJson -eq '[]') {\n            Write-Host \"ERROR: No VMs provided!\" -ForegroundColor Red\n            exit 1\n        }\n        \n        $vmArray = $VMIdsJson | ConvertFrom-Json\n        Write-Host \"Parsed $($vmArray.Count) VM(s)\"\n    }\n    catch {\n        Write-Host \"ERROR: Failed to decode/parse: $_\" -ForegroundColor Red\n        exit 1\n    }\n}\n\nif ($vmArray.Count -eq 0) {\n    Write-Host \"No Azure VMs to process\" -ForegroundColor Yellow\n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['status'] = 'NoVMs'\n    exit 0\n}\n\nWrite-Host \"\"\nWrite-Host \"Processing $($vmArray.Count) Azure VM(s)...\"\nWrite-Host \"\"\n\n$results = @()\n$successCount = 0\n$partialCount = 0\n$failCount = 0\n\nforeach ($vmId in $vmArray) {\n    Write-Host \"========================================\"\n    Write-Host \"Processing: $vmId\" -ForegroundColor Cyan\n    Write-Host \"========================================\"\n    \n    $vmName = $vmId.Split('/')[-1]\n    $vmRG = $vmId.Split('/')[4]\n    \n    Write-Host \"VM Name: $vmName\"\n    Write-Host \"Resource Group: $vmRG\"\n    \n    $amaInstalled = $false\n    $dcrAssociated = $false\n    $vmRunning = $false\n    $vmStatus = \"Unknown\"\n    $errorMessage = \"\"\n    \n    try {\n        # Get VM details\n        $vm = Get-AzVM -ResourceGroupName $vmRG -Name $vmName -ErrorAction Stop\n        $osType = $vm.StorageProfile.OsDisk.OsType\n        $location = $vm.Location\n        \n        # Get VM status\n        $vmStatusObj = Get-AzVM -ResourceGroupName $vmRG -Name $vmName -Status -ErrorAction Stop\n        $powerState = $vmStatusObj.Statuses | Where-Object { $_.Code -like 'PowerState/*' } | Select-Object -First 1\n        $vmStatus = if ($powerState) { $powerState.Code.Replace('PowerState/', '') } else { 'unknown' }\n        $vmRunning = ($vmStatus -eq 'running')\n        \n        Write-Host \"OS Type: $osType\"\n        Write-Host \"Location: $location\"\n        Write-Host \"Status: $vmStatus\" -ForegroundColor $(if ($vmRunning) { 'Green' } else { 'Yellow' })\n        Write-Host \"\"\n        \n        # Determine extension details\n        if ($osType -eq \"Linux\") {\n            $extensionName = \"AzureMonitorLinuxAgent\"\n            $extensionPublisher = \"Microsoft.Azure.Monitor\"\n            $extensionType = \"AzureMonitorLinuxAgent\"\n            $extensionVersion = \"1.28\"\n        }\n        else {\n            $extensionName = \"AzureMonitorWindowsAgent\"\n            $extensionPublisher = \"Microsoft.Azure.Monitor\"\n            $extensionType = \"AzureMonitorWindowsAgent\"\n            $extensionVersion = \"1.22\"\n        }\n        \n        # Step 1: Check and install AMA (only if VM is running)\n        Write-Host \"[1/2] Azure Monitor Agent...\" -ForegroundColor Yellow\n        \n        if ($vmRunning) {\n            $existingExtension = Get-AzVMExtension `\n                -ResourceGroupName $vmRG `\n                -VMName $vmName `\n                -Name $extensionName `\n                -ErrorAction SilentlyContinue\n            \n            if ($existingExtension) {\n                Write-Host \"  ✓ AMA already installed (v$($existingExtension.TypeHandlerVersion))\" -ForegroundColor Green\n                $amaInstalled = $true\n            }\n            else {\n                Write-Host \"  Installing Azure Monitor Agent...\" -ForegroundColor Cyan\n                \n                try {\n                    $extensionResult = Set-AzVMExtension `\n                        -ResourceGroupName $vmRG `\n                        -VMName $vmName `\n                        -Name $extensionName `\n                        -Publisher $extensionPublisher `\n                        -ExtensionType $extensionType `\n                        -TypeHandlerVersion $extensionVersion `\n                        -EnableAutomaticUpgrade $true `\n                        -Location $location `\n                        -ErrorAction Stop\n                    \n                    Write-Host \"  ✓ AMA installed successfully\" -ForegroundColor Green\n                    $amaInstalled = $true\n                }\n                catch {\n                    Write-Host \"  ✗ Failed to install AMA: $($_.Exception.Message)\" -ForegroundColor Red\n                    $errorMessage = \"AMA: $($_.Exception.Message)\"\n                    $amaInstalled = $false\n                }\n            }\n        }\n        else {\n            Write-Host \"  ⚠ VM is stopped - AMA will be installed when VM starts\" -ForegroundColor Yellow\n            $amaInstalled = $false\n        }\n        \n        Write-Host \"\"\n        \n        # Step 2: Associate DCR (works even if VM is stopped)\n        Write-Host \"[2/2] Data Collection Rule Association...\" -ForegroundColor Yellow\n        \n        $associationName = \"dcr-association-$vmName\"\n        \n        try {\n            $existingAssociation = Get-AzDataCollectionRuleAssociation `\n                -TargetResourceId $vmId `\n                -AssociationName $associationName `\n                -ErrorAction SilentlyContinue\n            \n            if ($existingAssociation) {\n                Write-Host \"  ✓ DCR association already exists\" -ForegroundColor Green\n                $dcrAssociated = $true\n            }\n            else {\n                $association = New-AzDataCollectionRuleAssociation `\n                    -TargetResourceId $vmId `\n                    -AssociationName $associationName `\n                    -DataCollectionRuleId $DCRId `\n                    -ErrorAction Stop\n                \n                Write-Host \"  ✓ DCR associated successfully\" -ForegroundColor Green\n                $dcrAssociated = $true\n            }\n        }\n        catch {\n            Write-Host \"  ✗ Failed to associate DCR: $($_.Exception.Message)\" -ForegroundColor Red\n            if ($errorMessage) {\n                $errorMessage += \"; DCR: $($_.Exception.Message)\"\n            } else {\n                $errorMessage = \"DCR: $($_.Exception.Message)\"\n            }\n            $dcrAssociated = $false\n        }\n        \n        Write-Host \"\"\n        \n        # Determine overall status\n        if ($dcrAssociated) {\n            if ($amaInstalled -or -not $vmRunning) {\n                Write-Host \"✓ Azure VM configured successfully!\" -ForegroundColor Green\n                if (-not $vmRunning) {\n                    Write-Host \"  Note: Start the VM to complete AMA installation\" -ForegroundColor Cyan\n                }\n                $successCount++\n                $status = \"Success\"\n            }\n            else {\n                Write-Host \"⚠ Partially configured (DCR OK, AMA failed)\" -ForegroundColor Yellow\n                $partialCount++\n                $status = \"Partial\"\n            }\n        }\n        else {\n            Write-Host \"✗ Configuration failed\" -ForegroundColor Red\n            $failCount++\n            $status = \"Failed\"\n        }\n        \n        Write-Host \"\"\n        \n        $results += @{\n            VMName = $vmName\n            Status = $status\n            OSType = $osType\n            VMStatus = $vmStatus\n            AMAInstalled = $amaInstalled\n            DCRAssociated = $dcrAssociated\n            Error = $errorMessage\n        }\n    }\n    catch {\n        Write-Host \"\"\n        Write-Host \"✗ FAILED: $($_.Exception.Message)\" -ForegroundColor Red\n        Write-Host \"\"\n        \n        $failCount++\n        \n        $results += @{\n            VMName = $vmName\n            Status = \"Failed\"\n            Error = $_.Exception.Message\n        }\n    }\n}\n\nWrite-Host \"========================================\"\nWrite-Host \"SUMMARY\"\nWrite-Host \"========================================\"\nWrite-Host \"Total Azure VMs: $($vmArray.Count)\"\nWrite-Host \"✓ Fully Configured: $successCount\" -ForegroundColor Green\nif ($partialCount -gt 0) {\n    Write-Host \"⚠ Partially Configured: $partialCount (DCR OK, AMA pending)\" -ForegroundColor Yellow\n}\nif ($failCount -gt 0) {\n    Write-Host \"✗ Failed: $failCount\" -ForegroundColor Red\n}\nWrite-Host \"========================================\"\nWrite-Host \"\"\n\nif ($successCount -gt 0 -or $partialCount -gt 0) {\n    Write-Host \"DCR associations are active on $(($successCount + $partialCount)) Azure VM(s)\" -ForegroundColor Green\n    if ($partialCount -gt 0) {\n        Write-Host \"Start stopped VMs to complete AMA installation\" -ForegroundColor Cyan\n    }\n    Write-Host \"Data will start appearing in Log Analytics within 5-10 minutes after VMs are running\" -ForegroundColor Cyan\n}\n\n$DeploymentScriptOutputs = @{}\n$DeploymentScriptOutputs['results'] = $results | ConvertTo-Json -Compress\n$DeploymentScriptOutputs['successCount'] = $successCount\n$DeploymentScriptOutputs['partialCount'] = $partialCount\n$DeploymentScriptOutputs['failCount'] = $failCount\n$DeploymentScriptOutputs['totalVMs'] = $vmArray.Count\n$DeploymentScriptOutputs['status'] = 'Completed'\n"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]",
+        "[resourceId('Microsoft.Resources/deploymentScripts', format('roleAssignment-{0}', parameters('deploymentName')))]"
+      ]
     },
     {
-      "condition": "[parameters('createActionGroup')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-alert-rules",
-      "resourceGroup": "[variables('resourceGroupName')]",
+      "condition": "[parameters('monitorExistingArcServers')]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('setup-arc-servers-{0}', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Resources/deploymentScripts'), parameters('tagsByResource')['Microsoft.Resources/deploymentScripts'], json('{}'))]",
+      "kind": "AzurePowerShell",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', variables('managedIdentityId'))]": {}
+        }
+      },
       "properties": {
+        "azPowerShellVersion": "10.0",
+        "retentionInterval": "PT1H",
+        "timeout": "PT60M",
+        "cleanupPreference": "OnSuccess",
+        "arguments": "[format('-ArcServerIdsBase64 \"{0}\" -MonitorAllArcServers ${1} -DCRId \"{2}\"', base64(string(parameters('selectedArcServerIds'))), parameters('monitorAllArcServers'), resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName')))]",
+        "scriptContent": "param(\n    [string]$ArcServerIdsBase64,\n    [bool]$MonitorAllArcServers,\n    [string]$DCRId\n)\n\n$ErrorActionPreference = 'Stop'\n\nWrite-Host \"========================================\"\nWrite-Host \"Arc Server Monitoring Setup\"\nWrite-Host \"========================================\"\nWrite-Host \"Monitor All Arc Servers: $MonitorAllArcServers\"\nWrite-Host \"DCR ID: $DCRId\"\nWrite-Host \"\"\n\n# Install Az.ConnectedMachine module\nWrite-Host \"Installing Az.ConnectedMachine module...\" -ForegroundColor Cyan\ntry {\n    if (-not (Get-Module -ListAvailable -Name Az.ConnectedMachine)) {\n        Install-Module -Name Az.ConnectedMachine -Force -AllowClobber -Scope CurrentUser -ErrorAction Stop\n        Write-Host \"✓ Az.ConnectedMachine module installed successfully\" -ForegroundColor Green\n    } else {\n        Write-Host \"✓ Az.ConnectedMachine module already installed\" -ForegroundColor Green\n    }\n    Import-Module Az.ConnectedMachine -ErrorAction Stop\n    Write-Host \"✓ Az.ConnectedMachine module imported\" -ForegroundColor Green\n}\ncatch {\n    Write-Host \"ERROR: Failed to install/import Az.ConnectedMachine module: $_\" -ForegroundColor Red\n    Write-Host \"This module is required to manage Arc-enabled servers\" -ForegroundColor Red\n    exit 1\n}\nWrite-Host \"\"\n\n# Wait for role propagation\nWrite-Host \"Waiting 60 seconds for role assignment propagation...\"\nStart-Sleep -Seconds 60\n\n$arcArray = @()\n\nif ($MonitorAllArcServers) {\n    Write-Host \"Discovering all Arc-enabled servers in subscription...\"\n    try {\n        $allArcServers = Get-AzConnectedMachine -ErrorAction Stop\n        Write-Host \"Found $($allArcServers.Count) Arc-enabled servers\"\n        \n        foreach ($arc in $allArcServers) {\n            $arcArray += $arc.Id\n            Write-Host \"  - $($arc.Name)\"\n        }\n    }\n    catch {\n        Write-Host \"ERROR: $_\" -ForegroundColor Red\n        exit 1\n    }\n}\nelse {\n    Write-Host \"Decoding Arc Server IDs from Base64...\"\n    \n    try {\n        $ArcIdsJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($ArcServerIdsBase64))\n        Write-Host \"Decoded JSON: $ArcIdsJson\"\n        \n        if ([string]::IsNullOrWhiteSpace($ArcIdsJson) -or $ArcIdsJson -eq '[]') {\n            Write-Host \"ERROR: No Arc servers provided!\" -ForegroundColor Red\n            exit 1\n        }\n        \n        $arcArray = $ArcIdsJson | ConvertFrom-Json\n        Write-Host \"Parsed $($arcArray.Count) Arc server(s)\"\n    }\n    catch {\n        Write-Host \"ERROR: Failed to decode/parse: $_\" -ForegroundColor Red\n        exit 1\n    }\n}\n\nif ($arcArray.Count -eq 0) {\n    Write-Host \"No Arc servers to process\" -ForegroundColor Yellow\n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['status'] = 'NoArcServers'\n    exit 0\n}\n\nWrite-Host \"\"\nWrite-Host \"Processing $($arcArray.Count) Arc server(s)...\"\nWrite-Host \"\"\n\n$results = @()\n$successCount = 0\n$partialCount = 0\n$failCount = 0\n\nforeach ($arcId in $arcArray) {\n    Write-Host \"========================================\"\n    Write-Host \"Processing: $arcId\" -ForegroundColor Cyan\n    Write-Host \"========================================\"\n    \n    $arcName = $arcId.Split('/')[-1]\n    $arcRG = $arcId.Split('/')[4]\n    \n    Write-Host \"Arc Server Name: $arcName\"\n    Write-Host \"Resource Group: $arcRG\"\n    \n    $amaInstalled = $false\n    $dcrAssociated = $false\n    $arcStatus = \"Unknown\"\n    $errorMessage = \"\"\n    \n    try {\n        # Get Arc machine details\n        $arc = Get-AzConnectedMachine -ResourceGroupName $arcRG -Name $arcName -ErrorAction Stop\n        $osType = $arc.OSName\n        $location = $arc.Location\n        $arcStatus = $arc.Status\n        \n        Write-Host \"OS Type: $osType\"\n        Write-Host \"Location: $location\"\n        Write-Host \"Status: $arcStatus\" -ForegroundColor $(if ($arcStatus -eq 'Connected') { 'Green' } else { 'Yellow' })\n        Write-Host \"\"\n        \n        # Determine extension details\n        if ($osType -like \"*Linux*\") {\n            $extensionName = \"AzureMonitorLinuxAgent\"\n            $extensionPublisher = \"Microsoft.Azure.Monitor\"\n            $extensionType = \"AzureMonitorLinuxAgent\"\n        }\n        else {\n            $extensionName = \"AzureMonitorWindowsAgent\"\n            $extensionPublisher = \"Microsoft.Azure.Monitor\"\n            $extensionType = \"AzureMonitorWindowsAgent\"\n        }\n        \n        # Step 1: Check and install AMA\n        Write-Host \"[1/2] Azure Monitor Agent...\" -ForegroundColor Yellow\n        \n        if ($arcStatus -eq 'Connected') {\n            $existingExtension = Get-AzConnectedMachineExtension `\n                -ResourceGroupName $arcRG `\n                -MachineName $arcName `\n                -Name $extensionName `\n                -ErrorAction SilentlyContinue\n            \n            if ($existingExtension) {\n                Write-Host \"  ✓ AMA already installed\" -ForegroundColor Green\n                $amaInstalled = $true\n            }\n            else {\n                Write-Host \"  Installing Azure Monitor Agent...\" -ForegroundColor Cyan\n                \n                try {\n                    $extensionResult = New-AzConnectedMachineExtension `\n                        -ResourceGroupName $arcRG `\n                        -MachineName $arcName `\n                        -Name $extensionName `\n                        -Publisher $extensionPublisher `\n                        -ExtensionType $extensionType `\n                        -Location $location `\n                        -EnableAutomaticUpgrade `\n                        -ErrorAction Stop\n                    \n                    Write-Host \"  ✓ AMA installed successfully\" -ForegroundColor Green\n                    $amaInstalled = $true\n                }\n                catch {\n                    Write-Host \"  ✗ Failed to install AMA: $($_.Exception.Message)\" -ForegroundColor Red\n                    $errorMessage = \"AMA: $($_.Exception.Message)\"\n                    $amaInstalled = $false\n                }\n            }\n        }\n        else {\n            Write-Host \"  ⚠ Arc server is not connected\" -ForegroundColor Yellow\n            $amaInstalled = $false\n        }\n        \n        Write-Host \"\"\n        \n        # Step 2: Associate DCR\n        Write-Host \"[2/2] Data Collection Rule Association...\" -ForegroundColor Yellow\n        \n        $associationName = \"dcr-association-$arcName\"\n        \n        try {\n            $existingAssociation = Get-AzDataCollectionRuleAssociation `\n                -TargetResourceId $arcId `\n                -AssociationName $associationName `\n                -ErrorAction SilentlyContinue\n            \n            if ($existingAssociation) {\n                Write-Host \"  ✓ DCR association already exists\" -ForegroundColor Green\n                $dcrAssociated = $true\n            }\n            else {\n                $association = New-AzDataCollectionRuleAssociation `\n                    -TargetResourceId $arcId `\n                    -AssociationName $associationName `\n                    -DataCollectionRuleId $DCRId `\n                    -ErrorAction Stop\n                \n                Write-Host \"  ✓ DCR associated successfully\" -ForegroundColor Green\n                $dcrAssociated = $true\n            }\n        }\n        catch {\n            Write-Host \"  ✗ Failed to associate DCR: $($_.Exception.Message)\" -ForegroundColor Red\n            if ($errorMessage) {\n                $errorMessage += \"; DCR: $($_.Exception.Message)\"\n            } else {\n                $errorMessage = \"DCR: $($_.Exception.Message)\"\n            }\n            $dcrAssociated = $false\n        }\n        \n        Write-Host \"\"\n        \n        # Determine overall status\n        if ($dcrAssociated) {\n            if ($amaInstalled -or $arcStatus -ne 'Connected') {\n                Write-Host \"✓ Arc server configured successfully!\" -ForegroundColor Green\n                if ($arcStatus -ne 'Connected') {\n                    Write-Host \"  Note: Reconnect Arc server to complete AMA installation\" -ForegroundColor Cyan\n                }\n                $successCount++\n                $status = \"Success\"\n            }\n            else {\n                Write-Host \"⚠ Partially configured (DCR OK, AMA failed)\" -ForegroundColor Yellow\n                $partialCount++\n                $status = \"Partial\"\n            }\n        }\n        else {\n            Write-Host \"✗ Configuration failed\" -ForegroundColor Red\n            $failCount++\n            $status = \"Failed\"\n        }\n        \n        Write-Host \"\"\n        \n        $results += @{\n            ArcServerName = $arcName\n            Status = $status\n            OSType = $osType\n            ArcStatus = $arcStatus\n            AMAInstalled = $amaInstalled\n            DCRAssociated = $dcrAssociated\n            Error = $errorMessage\n        }\n    }\n    catch {\n        Write-Host \"\"\n        Write-Host \"✗ FAILED: $($_.Exception.Message)\" -ForegroundColor Red\n        Write-Host \"\"\n        \n        $failCount++\n        \n        $results += @{\n            ArcServerName = $arcName\n            Status = \"Failed\"\n            Error = $_.Exception.Message\n        }\n    }\n}\n\nWrite-Host \"========================================\"\nWrite-Host \"SUMMARY\"\nWrite-Host \"========================================\"\nWrite-Host \"Total Arc Servers: $($arcArray.Count)\"\nWrite-Host \"✓ Fully Configured: $successCount\" -ForegroundColor Green\nif ($partialCount -gt 0) {\n    Write-Host \"⚠ Partially Configured: $partialCount (DCR OK, AMA pending)\" -ForegroundColor Yellow\n}\nif ($failCount -gt 0) {\n    Write-Host \"✗ Failed: $failCount\" -ForegroundColor Red\n}\nWrite-Host \"========================================\"\nWrite-Host \"\"\n\nif ($successCount -gt 0 -or $partialCount -gt 0) {\n    Write-Host \"DCR associations are active on $(($successCount + $partialCount)) Arc server(s)\" -ForegroundColor Green\n    if ($partialCount -gt 0) {\n        Write-Host \"Reconnect Arc servers to complete AMA installation\" -ForegroundColor Cyan\n    }\n    Write-Host \"Data will start appearing in Log Analytics within 5-10 minutes\" -ForegroundColor Cyan\n}\n\n$DeploymentScriptOutputs = @{}\n$DeploymentScriptOutputs['results'] = $results | ConvertTo-Json -Compress\n$DeploymentScriptOutputs['successCount'] = $successCount\n$DeploymentScriptOutputs['partialCount'] = $partialCount\n$DeploymentScriptOutputs['failCount'] = $failCount\n$DeploymentScriptOutputs['totalArcServers'] = $arcArray.Count\n$DeploymentScriptOutputs['status'] = 'Completed'\n"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]",
+        "[resourceId('Microsoft.Resources/deploymentScripts', format('roleAssignment-{0}', parameters('deploymentName')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableAzureVMPolicy')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('policyAssignment-azure-vms-{0}', parameters('deploymentName'))]",
+      "subscriptionId": "[subscription().subscriptionId]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "mode": "Incremental",
         "expressionEvaluationOptions": {
           "scope": "inner"
         },
-        "mode": "Incremental",
         "parameters": {
+          "policyAssignmentName": {
+            "value": "[parameters('azureVMPolicyAssignmentName')]"
+          },
+          "dcrResourceId": {
+            "value": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]"
+          },
+          "managedIdentityResourceId": {
+            "value": "[variables('managedIdentityId')]"
+          },
           "location": {
             "value": "[parameters('location')]"
           },
-          "workspaceResourceId": "[if(parameters('useExistingLogAnalytics'), createObject('value', parameters('existingLogAnalyticsWorkspaceId')), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01').outputs.workspaceResourceId.value))]",
-          "actionGroupId": "[if(parameters('createActionGroup'), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-action-group'), '2025-04-01').outputs.actionGroupId.value), createObject('value', ''))]",
-          "enableCPUAlerts": {
-            "value": "[parameters('enableCPUAlerts')]"
-          },
-          "cpuThreshold": {
-            "value": "[parameters('cpuThreshold')]"
-          },
-          "enableMemoryAlerts": {
-            "value": "[parameters('enableMemoryAlerts')]"
-          },
-          "memoryThreshold": {
-            "value": "[parameters('memoryThreshold')]"
-          },
-          "enableDiskAlerts": {
-            "value": "[parameters('enableDiskAlerts')]"
-          },
-          "diskThreshold": {
-            "value": "[parameters('diskThreshold')]"
-          },
-          "enableHeartbeatAlerts": {
-            "value": "[parameters('enableHeartbeatAlerts')]"
-          },
-          "alertNamePrefix": {
+          "deploymentName": {
             "value": "[parameters('deploymentName')]"
-          },
-          "tags": {
-            "value": "[union(variables('tags'), if(contains(parameters('tagsByResource'), 'Microsoft.Insights/scheduledQueryRules'), parameters('tagsByResource')['Microsoft.Insights/scheduledQueryRules'], createObject()))]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "10742757779210452669"
-            }
-          },
-          "parameters": {
-            "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region"
-              }
-            },
-            "workspaceResourceId": {
-              "type": "string",
-              "metadata": {
-                "description": "Log Analytics Workspace Resource ID"
-              }
-            },
-            "actionGroupId": {
-              "type": "string",
-              "metadata": {
-                "description": "Action Group ID"
-              }
-            },
-            "enableCPUAlerts": {
-              "type": "bool",
-              "metadata": {
-                "description": "Enable CPU alerts"
-              }
-            },
-            "cpuThreshold": {
-              "type": "int",
-              "metadata": {
-                "description": "CPU threshold"
-              }
-            },
-            "enableMemoryAlerts": {
-              "type": "bool",
-              "metadata": {
-                "description": "Enable Memory alerts"
-              }
-            },
-            "memoryThreshold": {
-              "type": "int",
-              "metadata": {
-                "description": "Memory threshold"
-              }
-            },
-            "enableDiskAlerts": {
-              "type": "bool",
-              "metadata": {
-                "description": "Enable Disk alerts"
-              }
-            },
-            "diskThreshold": {
-              "type": "int",
-              "metadata": {
-                "description": "Disk threshold"
-              }
-            },
-            "enableHeartbeatAlerts": {
-              "type": "bool",
-              "metadata": {
-                "description": "Enable Heartbeat alerts"
-              }
-            },
-            "alertNamePrefix": {
-              "type": "string",
-              "metadata": {
-                "description": "Alert name prefix"
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Resource tags"
-              }
-            }
-          },
-          "resources": [
-            {
-              "condition": "[parameters('enableCPUAlerts')]",
-              "type": "Microsoft.Insights/scheduledQueryRules",
-              "apiVersion": "2023-03-15-preview",
-              "name": "[format('alert-{0}-high-cpu', parameters('alertNamePrefix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "displayName": "High CPU Usage Alert",
-                "description": "[format('Alert when CPU usage exceeds {0}%', parameters('cpuThreshold'))]",
-                "severity": 2,
-                "enabled": true,
-                "evaluationFrequency": "PT5M",
-                "windowSize": "PT15M",
-                "scopes": [
-                  "[parameters('workspaceResourceId')]"
-                ],
-                "criteria": {
-                  "allOf": [
-                    {
-                      "query": "[format('Perf | where ObjectName == \"Processor\" and CounterName == \"% Processor Time\" | where InstanceName == \"_Total\" | summarize AggregatedValue = avg(CounterValue) by Computer, bin(TimeGenerated, 5m) | where AggregatedValue > {0}', parameters('cpuThreshold'))]",
-                      "timeAggregation": "Average",
-                      "metricMeasureColumn": "AggregatedValue",
-                      "operator": "GreaterThan",
-                      "threshold": "[parameters('cpuThreshold')]",
-                      "failingPeriods": {
-                        "numberOfEvaluationPeriods": 2,
-                        "minFailingPeriodsToAlert": 2
-                      }
-                    }
-                  ]
-                },
-                "actions": {
-                  "actionGroups": [
-                    "[parameters('actionGroupId')]"
-                  ]
-                }
-              }
-            },
-            {
-              "condition": "[parameters('enableMemoryAlerts')]",
-              "type": "Microsoft.Insights/scheduledQueryRules",
-              "apiVersion": "2023-03-15-preview",
-              "name": "[format('alert-{0}-high-memory', parameters('alertNamePrefix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "displayName": "High Memory Usage Alert",
-                "description": "[format('Alert when Memory usage exceeds {0}%', parameters('memoryThreshold'))]",
-                "severity": 2,
-                "enabled": true,
-                "evaluationFrequency": "PT5M",
-                "windowSize": "PT15M",
-                "scopes": [
-                  "[parameters('workspaceResourceId')]"
-                ],
-                "criteria": {
-                  "allOf": [
-                    {
-                      "query": "[format('Perf | where ObjectName == \"Memory\" and CounterName == \"% Committed Bytes In Use\" | summarize AggregatedValue = avg(CounterValue) by Computer, bin(TimeGenerated, 5m) | where AggregatedValue > {0}', parameters('memoryThreshold'))]",
-                      "timeAggregation": "Average",
-                      "metricMeasureColumn": "AggregatedValue",
-                      "operator": "GreaterThan",
-                      "threshold": "[parameters('memoryThreshold')]",
-                      "failingPeriods": {
-                        "numberOfEvaluationPeriods": 2,
-                        "minFailingPeriodsToAlert": 2
-                      }
-                    }
-                  ]
-                },
-                "actions": {
-                  "actionGroups": [
-                    "[parameters('actionGroupId')]"
-                  ]
-                }
-              }
-            },
-            {
-              "condition": "[parameters('enableDiskAlerts')]",
-              "type": "Microsoft.Insights/scheduledQueryRules",
-              "apiVersion": "2023-03-15-preview",
-              "name": "[format('alert-{0}-low-disk', parameters('alertNamePrefix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "displayName": "Low Disk Space Alert",
-                "description": "[format('Alert when Disk usage exceeds {0}%', parameters('diskThreshold'))]",
-                "severity": 2,
-                "enabled": true,
-                "evaluationFrequency": "PT15M",
-                "windowSize": "PT30M",
-                "scopes": [
-                  "[parameters('workspaceResourceId')]"
-                ],
-                "criteria": {
-                  "allOf": [
-                    {
-                      "query": "[format('Perf | where ObjectName == \"LogicalDisk\" and CounterName == \"% Free Space\" | where InstanceName != \"_Total\" | summarize AggregatedValue = avg(CounterValue) by Computer, InstanceName, bin(TimeGenerated, 15m) | where AggregatedValue < {0}', sub(100, parameters('diskThreshold')))]",
-                      "timeAggregation": "Average",
-                      "metricMeasureColumn": "AggregatedValue",
-                      "operator": "LessThan",
-                      "threshold": "[sub(100, parameters('diskThreshold'))]",
-                      "failingPeriods": {
-                        "numberOfEvaluationPeriods": 2,
-                        "minFailingPeriodsToAlert": 2
-                      }
-                    }
-                  ]
-                },
-                "actions": {
-                  "actionGroups": [
-                    "[parameters('actionGroupId')]"
-                  ]
-                }
-              }
-            },
-            {
-              "condition": "[parameters('enableHeartbeatAlerts')]",
-              "type": "Microsoft.Insights/scheduledQueryRules",
-              "apiVersion": "2023-03-15-preview",
-              "name": "[format('alert-{0}-vm-offline', parameters('alertNamePrefix'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "properties": {
-                "displayName": "VM Offline Alert",
-                "description": "Alert when VM stops sending heartbeat",
-                "severity": 1,
-                "enabled": true,
-                "evaluationFrequency": "PT5M",
-                "windowSize": "PT15M",
-                "scopes": [
-                  "[parameters('workspaceResourceId')]"
-                ],
-                "criteria": {
-                  "allOf": [
-                    {
-                      "query": "Heartbeat | summarize LastHeartbeat = max(TimeGenerated) by Computer | where LastHeartbeat < ago(10m)",
-                      "timeAggregation": "Count",
-                      "operator": "GreaterThan",
-                      "threshold": 0,
-                      "failingPeriods": {
-                        "numberOfEvaluationPeriods": 2,
-                        "minFailingPeriodsToAlert": 2
-                      }
-                    }
-                  ]
-                },
-                "actions": {
-                  "actionGroups": [
-                    "[parameters('actionGroupId')]"
-                  ]
-                }
-              }
-            }
-          ],
-          "outputs": {
-            "cpuAlertId": {
-              "type": "string",
-              "value": "[if(parameters('enableCPUAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('alert-{0}-high-cpu', parameters('alertNamePrefix'))), '')]"
-            },
-            "memoryAlertId": {
-              "type": "string",
-              "value": "[if(parameters('enableMemoryAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('alert-{0}-high-memory', parameters('alertNamePrefix'))), '')]"
-            },
-            "diskAlertId": {
-              "type": "string",
-              "value": "[if(parameters('enableDiskAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('alert-{0}-low-disk', parameters('alertNamePrefix'))), '')]"
-            },
-            "heartbeatAlertId": {
-              "type": "string",
-              "value": "[if(parameters('enableHeartbeatAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('alert-{0}-vm-offline', parameters('alertNamePrefix'))), '')]"
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-action-group')]",
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics')]"
-      ]
-    },
-    {
-      "condition": "[and(parameters('monitorExistingVMs'), greater(length(parameters('selectedVMIds')), 0))]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-vm-associations",
-      "resourceGroup": "[variables('resourceGroupName')]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "vmIds": {
-            "value": "[parameters('selectedVMIds')]"
-          },
-          "dcrId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01').outputs.dcrId.value]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "8671121554317683243"
-            }
-          },
-          "parameters": {
-            "vmIds": {
-              "type": "array",
-              "metadata": {
-                "description": "Array of VM Resource IDs"
-              }
-            },
-            "dcrId": {
-              "type": "string",
-              "metadata": {
-                "description": "Data Collection Rule ID"
-              }
-            }
-          },
-          "variables": {
-            "copy": [
-              {
-                "name": "vmDetails",
-                "count": "[length(parameters('vmIds'))]",
-                "input": {
-                  "subscriptionId": "[split(parameters('vmIds')[copyIndex('vmDetails')], '/')[2]]",
-                  "resourceGroup": "[split(parameters('vmIds')[copyIndex('vmDetails')], '/')[4]]",
-                  "name": "[split(parameters('vmIds')[copyIndex('vmDetails')], '/')[8]]",
-                  "id": "[parameters('vmIds')[copyIndex('vmDetails')]]"
-                }
-              }
-            ]
-          },
-          "resources": [
-            {
-              "copy": {
-                "name": "vmAgentDeployment",
-                "count": "[length(variables('vmDetails'))]"
-              },
-              "type": "Microsoft.Resources/deployments",
-              "apiVersion": "2025-04-01",
-              "name": "[format('deploy-agent-{0}', variables('vmDetails')[copyIndex()].name)]",
-              "resourceGroup": "[variables('vmDetails')[copyIndex()].resourceGroup]",
-              "properties": {
-                "expressionEvaluationOptions": {
-                  "scope": "inner"
-                },
-                "mode": "Incremental",
-                "parameters": {
-                  "vmName": {
-                    "value": "[variables('vmDetails')[copyIndex()].name]"
-                  },
-                  "location": {
-                    "value": "[resourceGroup().location]"
-                  },
-                  "dcrId": {
-                    "value": "[parameters('dcrId')]"
-                  }
-                },
-                "template": {
-                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-                  "contentVersion": "1.0.0.0",
-                  "metadata": {
-                    "_generator": {
-                      "name": "bicep",
-                      "version": "0.40.2.10011",
-                      "templateHash": "16579769029456358169"
-                    }
-                  },
-                  "parameters": {
-                    "vmName": {
-                      "type": "string",
-                      "metadata": {
-                        "description": "VM Name"
-                      }
-                    },
-                    "location": {
-                      "type": "string",
-                      "metadata": {
-                        "description": "Location"
-                      }
-                    },
-                    "dcrId": {
-                      "type": "string",
-                      "metadata": {
-                        "description": "Data Collection Rule ID"
-                      }
-                    }
-                  },
-                  "resources": [
-                    {
-                      "type": "Microsoft.Compute/virtualMachines/extensions",
-                      "apiVersion": "2024-03-01",
-                      "name": "[format('{0}/{1}', parameters('vmName'), 'AzureMonitorAgent')]",
-                      "location": "[parameters('location')]",
-                      "properties": {
-                        "publisher": "Microsoft.Azure.Monitor",
-                        "type": "AzureMonitorWindowsAgent",
-                        "typeHandlerVersion": "1.0",
-                        "autoUpgradeMinorVersion": true,
-                        "enableAutomaticUpgrade": true
-                      }
-                    },
-                    {
-                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
-                      "apiVersion": "2022-06-01",
-                      "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
-                      "name": "[format('dcra-{0}', uniqueString(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), parameters('dcrId')))]",
-                      "properties": {
-                        "dataCollectionRuleId": "[parameters('dcrId')]"
-                      },
-                      "dependsOn": [
-                        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'AzureMonitorAgent')]"
-                      ]
-                    }
-                  ],
-                  "outputs": {
-                    "associationId": {
-                      "type": "string",
-                      "value": "[extensionResourceId(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), 'Microsoft.Insights/dataCollectionRuleAssociations', format('dcra-{0}', uniqueString(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), parameters('dcrId'))))]"
-                    }
-                  }
-                }
-              }
-            }
-          ],
-          "outputs": {
-            "associationIds": {
-              "type": "array",
-              "copy": {
-                "count": "[length(variables('vmDetails'))]",
-                "input": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('vmDetails')[copyIndex()].resourceGroup), 'Microsoft.Resources/deployments', format('deploy-agent-{0}', variables('vmDetails')[copyIndex()].name)), '2025-04-01').outputs.associationId.value]"
-              }
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr')]"
-      ]
-    },
-    {
-      "condition": "[parameters('autoEnrollNewVMs')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-auto-enroll-policy",
-      "location": "[deployment().location]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "policyName": {
-            "value": "[format('policy-{0}-auto-enroll', parameters('deploymentName'))]"
-          },
-          "dcrId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01').outputs.dcrId.value]"
-          },
-          "assignmentName": {
-            "value": "[format('assign-{0}-auto-enroll', parameters('deploymentName'))]"
-          },
-          "location": {
-            "value": "[parameters('location')]"
           }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "15100802844506817850"
-            }
-          },
           "parameters": {
-            "policyName": {
-              "type": "string",
-              "metadata": {
-                "description": "Policy name"
-              }
+            "policyAssignmentName": {
+              "type": "string"
             },
-            "dcrId": {
-              "type": "string",
-              "metadata": {
-                "description": "Data Collection Rule ID"
-              }
+            "dcrResourceId": {
+              "type": "string"
             },
-            "assignmentName": {
-              "type": "string",
-              "metadata": {
-                "description": "Policy assignment name"
-              }
+            "managedIdentityResourceId": {
+              "type": "string"
             },
             "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Location for policy assignment"
-              }
+              "type": "string"
+            },
+            "deploymentName": {
+              "type": "string"
             }
           },
           "variables": {
-            "windowsPolicyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/ca817e41-e85a-4783-bc7f-dc532d36235e",
-            "linuxPolicyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/a4034bc6-ae50-406d-bf76-50f4ee5a7811",
-            "dcrAssociationPolicyDefinitionId": "/providers/Microsoft.Authorization/policyDefinitions/2ea82cdd-f2e8-4500-af75-67a2e084ca74"
+            "policyDefinitionId": "/providers/Microsoft.Authorization/policySetDefinitions/924bfe3a-762f-40e7-86dd-5c8b95eb09e6"
           },
           "resources": [
             {
-              "type": "Microsoft.Authorization/policySetDefinitions",
+              "type": "Microsoft.Authorization/policyAssignments",
               "apiVersion": "2023-04-01",
-              "name": "[parameters('policyName')]",
+              "name": "[parameters('policyAssignmentName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[parameters('managedIdentityResourceId')]": {}
+                }
+              },
               "properties": {
-                "displayName": "Deploy Azure Monitor Agent and associate with DCR",
-                "description": "Automatically deploy Azure Monitor Agent to VMs and associate them with the specified Data Collection Rule",
-                "policyType": "Custom",
-                "metadata": {
-                  "category": "Monitoring"
-                },
+                "displayName": "[format('Enable Azure Monitor for Azure VMs - {0}', parameters('policyAssignmentName'))]",
+                "description": "Automatically configures Windows and Linux Azure VMs with Azure Monitor Agent using user-assigned managed identity and associates with unified Data Collection Rule",
+                "enforcementMode": "Default",
+                "policyDefinitionId": "[variables('policyDefinitionId')]",
                 "parameters": {
-                  "dcrResourceId": {
-                    "type": "String",
-                    "metadata": {
-                      "displayName": "Data Collection Rule Resource ID",
-                      "description": "Resource ID of the Data Collection Rule to associate with VMs"
-                    }
+                  "bringYourOwnUserAssignedManagedIdentity": {
+                    "value": true
                   },
-                  "effect": {
-                    "type": "String",
-                    "defaultValue": "DeployIfNotExists",
-                    "allowedValues": [
-                      "DeployIfNotExists",
-                      "Disabled"
-                    ],
-                    "metadata": {
-                      "displayName": "Effect",
-                      "description": "Enable or disable the execution of the policy"
-                    }
+                  "scopeToSupportedImages": {
+                    "value": false
+                  },
+                  "dcrResourceId": {
+                    "value": "[parameters('dcrResourceId')]"
+                  },
+                  "restrictBringYourOwnUserAssignedIdentityToSubscription": {
+                    "value": false
+                  },
+                  "userAssignedIdentityResourceId": {
+                    "value": "[parameters('managedIdentityResourceId')]"
+                  },
+                  "userAssignedManagedIdentityResourceGroup": {
+                    "value": "[split(parameters('managedIdentityResourceId'), '/')[4]]"
+                  },
+                  "userAssignedManagedIdentityName": {
+                    "value": "[split(parameters('managedIdentityResourceId'), '/')[8]]"
                   }
                 },
-                "policyDefinitions": [
+                "nonComplianceMessages": [
                   {
-                    "policyDefinitionId": "[variables('windowsPolicyDefinitionId')]",
-                    "parameters": {
-                      "effect": {
-                        "value": "[[parameters('effect')]"
-                      }
-                    },
-                    "policyDefinitionReferenceId": "DeployAMAWindows"
-                  },
-                  {
-                    "policyDefinitionId": "[variables('linuxPolicyDefinitionId')]",
-                    "parameters": {
-                      "effect": {
-                        "value": "[[parameters('effect')]"
-                      }
-                    },
-                    "policyDefinitionReferenceId": "DeployAMALinux"
-                  },
-                  {
-                    "policyDefinitionId": "[variables('dcrAssociationPolicyDefinitionId')]",
-                    "parameters": {
-                      "effect": {
-                        "value": "[[parameters('effect')]"
-                      },
-                      "dcrResourceId": {
-                        "value": "[[parameters('dcrResourceId')]"
-                      }
-                    },
-                    "policyDefinitionReferenceId": "AssociateDCR"
+                    "message": "Azure VMs must have Azure Monitor Agent installed with user-assigned managed identity and configured with the unified Data Collection Rule"
                   }
                 ]
               }
-            },
-            {
-              "type": "Microsoft.Authorization/policyAssignments",
-              "apiVersion": "2023-04-01",
-              "name": "[parameters('assignmentName')]",
-              "location": "[parameters('location')]",
-              "identity": {
-                "type": "SystemAssigned"
-              },
-              "properties": {
-                "displayName": "Auto-enroll VMs to Azure Monitor",
-                "description": "Automatically installs Azure Monitor Agent and associates VMs with Data Collection Rule",
-                "policyDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/policySetDefinitions', parameters('policyName'))]",
-                "parameters": {
-                  "dcrResourceId": {
-                    "value": "[parameters('dcrId')]"
-                  },
-                  "effect": {
-                    "value": "DeployIfNotExists"
-                  }
-                },
-                "enforcementMode": "Default"
-              },
-              "dependsOn": [
-                "[subscriptionResourceId('Microsoft.Authorization/policySetDefinitions', parameters('policyName'))]"
-              ]
-            },
-            {
-              "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2022-04-01",
-              "name": "[guid(subscriptionResourceId('Microsoft.Authorization/policyAssignments', parameters('assignmentName')), 'Contributor')]",
-              "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
-                "principalId": "[reference(subscriptionResourceId('Microsoft.Authorization/policyAssignments', parameters('assignmentName')), '2023-04-01', 'full').identity.principalId]",
-                "principalType": "ServicePrincipal"
-              },
-              "dependsOn": [
-                "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', parameters('assignmentName'))]"
-              ]
             }
           ],
           "outputs": {
-            "policySetDefinitionId": {
-              "type": "string",
-              "value": "[subscriptionResourceId('Microsoft.Authorization/policySetDefinitions', parameters('policyName'))]"
-            },
             "policyAssignmentId": {
               "type": "string",
-              "value": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', parameters('assignmentName'))]"
+              "value": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', parameters('policyAssignmentName'))]"
             }
           }
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr')]"
+        "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]",
+        "[resourceId('Microsoft.Resources/deploymentScripts', format('roleAssignment-{0}', parameters('deploymentName')))]"
       ]
     },
     {
-      "condition": "[parameters('deployDashboard')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "deploy-workbook",
-      "resourceGroup": "[variables('resourceGroupName')]",
+      "condition": "[parameters('enableAzureVMPolicy')]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('remediation-azure-vms-{0}', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzurePowerShell",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', variables('managedIdentityId'))]": {}
+        }
+      },
       "properties": {
+        "azPowerShellVersion": "10.0",
+        "retentionInterval": "PT1H",
+        "timeout": "PT30M",
+        "cleanupPreference": "OnSuccess",
+        "arguments": "[format('-PolicyAssignmentId \"{0}\"', if(parameters('enableAzureVMPolicy'), reference(format('policyAssignment-azure-vms-{0}', parameters('deploymentName'))).outputs.policyAssignmentId.value, ''))]",
+        "scriptContent": "param([string]$PolicyAssignmentId)\n\n$ErrorActionPreference = 'Stop'\n\nWrite-Host \"========================================\"\nWrite-Host \"POLICY REMEDIATION - Azure VMs\"\nWrite-Host \"========================================\"\nWrite-Host \"Policy Assignment ID: $PolicyAssignmentId\"\nWrite-Host \"\"\n\nif ([string]::IsNullOrWhiteSpace($PolicyAssignmentId)) {\n    Write-Host \"No policy assignment ID provided\" -ForegroundColor Yellow\n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['status'] = 'Skipped'\n    exit 0\n}\n\n# Wait for policy to propagate\nWrite-Host \"Waiting 90 seconds for policy propagation...\"\nStart-Sleep -Seconds 90\n\n$remediations = @()\n$successCount = 0\n$failCount = 0\n\ntry {\n    # Get policy assignment details\n    $policyAssignment = Get-AzPolicyAssignment -Id $PolicyAssignmentId -ErrorAction Stop\n    \n    Write-Host \"Policy Assignment: $($policyAssignment.Name)\"\n    Write-Host \"Scope: $($policyAssignment.Properties.Scope)\"\n    Write-Host \"\"\n    \n    # Define all policy definition reference IDs to remediate\n    $policiesToRemediate = @(\n        @{ Name = \"Managed Identity Assignment\"; ReferenceId = \"AddUserAssignedManagedIdentity_VM\" },\n        @{ Name = \"Windows AMA Installation\"; ReferenceId = \"DeployAzureMonitoringAgentWindows\" },\n        @{ Name = \"Windows DCR Association\"; ReferenceId = \"DataCollectionRuleAssociation_Windows\" },\n        @{ Name = \"Linux AMA Installation\"; ReferenceId = \"DeployAzureMonitoringAgentLinux\" },\n        @{ Name = \"Linux DCR Association\"; ReferenceId = \"DataCollectionRuleAssociation_Linux\" }\n    )\n    \n    $policyNumber = 1\n    $totalPolicies = $policiesToRemediate.Count\n    \n    foreach ($policy in $policiesToRemediate) {\n        Write-Host \"[$policyNumber/$totalPolicies] Creating remediation for: $($policy.Name)\" -ForegroundColor Cyan\n        \n        try {\n            $remediationName = \"remediate-$($policy.ReferenceId.ToLower())-$(Get-Date -Format 'yyyyMMddHHmmss')\"\n            \n            $remediation = Start-AzPolicyRemediation `\n                -Name $remediationName `\n                -PolicyAssignmentId $PolicyAssignmentId `\n                -PolicyDefinitionReferenceId $policy.ReferenceId `\n                -ResourceDiscoveryMode ReEvaluateCompliance `\n                -ErrorAction Stop\n            \n            Write-Host \"  ✓ SUCCESS: $($remediation.Id)\" -ForegroundColor Green\n            $successCount++\n            \n            $remediations += @{ \n                Name = $policy.Name\n                ReferenceId = $policy.ReferenceId\n                RemediationId = $remediation.Id\n                Status = \"Created\" \n            }\n        }\n        catch {\n            Write-Host \"  ✗ FAILED: $($_.Exception.Message)\" -ForegroundColor Red\n            $failCount++\n            \n            $remediations += @{ \n                Name = $policy.Name\n                ReferenceId = $policy.ReferenceId\n                Error = $_.Exception.Message\n                Status = \"Failed\" \n            }\n        }\n        \n        Write-Host \"\"\n        $policyNumber++\n    }\n    \n    Write-Host \"========================================\"\n    Write-Host \"REMEDIATION SUMMARY\"\n    Write-Host \"========================================\"\n    Write-Host \"Total Policies: $totalPolicies\"\n    Write-Host \"✓ Successful: $successCount\" -ForegroundColor Green\n    if ($failCount -gt 0) {\n        Write-Host \"✗ Failed: $failCount\" -ForegroundColor Red\n    }\n    Write-Host \"========================================\"\n    Write-Host \"\"\n    \n    if ($successCount -gt 0) {\n        Write-Host \"Remediation tasks are running in the background\" -ForegroundColor Cyan\n        Write-Host \"Check Azure Portal > Policy > Compliance for progress\" -ForegroundColor Cyan\n        Write-Host \"Azure VMs will be configured automatically within 15-30 minutes\" -ForegroundColor Cyan\n    }\n    \n    if ($failCount -gt 0) {\n        Write-Host \"\"\n        Write-Host \"Some remediation tasks failed. You can create them manually:\" -ForegroundColor Yellow\n        Write-Host \"  1. Go to Azure Portal > Policy > Compliance\"\n        Write-Host \"  2. Select the policy assignment\"\n        Write-Host \"  3. Click 'Create remediation task' for failed policies\"\n    }\n    \n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['remediations'] = $remediations | ConvertTo-Json -Compress\n    $DeploymentScriptOutputs['totalPolicies'] = $totalPolicies\n    $DeploymentScriptOutputs['successCount'] = $successCount\n    $DeploymentScriptOutputs['failCount'] = $failCount\n    $DeploymentScriptOutputs['status'] = 'Completed'\n}\ncatch {\n    Write-Host \"========================================\"\n    Write-Host \"ERROR\"\n    Write-Host \"========================================\"\n    Write-Host $_.Exception.Message -ForegroundColor Red\n    Write-Host \"\"\n    Write-Host \"You can create remediation tasks manually from Azure Portal\" -ForegroundColor Yellow\n    \n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['status'] = 'Failed'\n    $DeploymentScriptOutputs['error'] = $_.Exception.Message\n}\n"
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}', subscription().subscriptionId), 'Microsoft.Resources/deployments', format('policyAssignment-azure-vms-{0}', parameters('deploymentName')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableArcPolicy')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "[format('policyAssignment-arc-servers-{0}', parameters('deploymentName'))]",
+      "subscriptionId": "[subscription().subscriptionId]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "mode": "Incremental",
         "expressionEvaluationOptions": {
           "scope": "inner"
         },
-        "mode": "Incremental",
         "parameters": {
-          "workbookName": {
-            "value": "[parameters('dashboardName')]"
+          "policyAssignmentName": {
+            "value": "[parameters('arcPolicyAssignmentName')]"
+          },
+          "dcrResourceId": {
+            "value": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]"
+          },
+          "managedIdentityResourceId": {
+            "value": "[variables('managedIdentityId')]"
           },
           "location": {
             "value": "[parameters('location')]"
           },
-          "workspaceResourceId": "[if(parameters('useExistingLogAnalytics'), createObject('value', parameters('existingLogAnalyticsWorkspaceId')), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01').outputs.workspaceResourceId.value))]",
-          "tags": {
-            "value": "[union(variables('tags'), if(contains(parameters('tagsByResource'), 'Microsoft.Insights/workbooks'), parameters('tagsByResource')['Microsoft.Insights/workbooks'], createObject()))]"
+          "deploymentName": {
+            "value": "[parameters('deploymentName')]"
+          },
+          "enableProcessesAndDependencies": {
+            "value": "[parameters('enableProcessesAndDependencies')]"
           }
         },
         "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.40.2.10011",
-              "templateHash": "10741755025968062427"
-            }
-          },
           "parameters": {
-            "workbookName": {
-              "type": "string",
-              "metadata": {
-                "description": "Workbook display name"
-              }
+            "policyAssignmentName": {
+              "type": "string"
+            },
+            "dcrResourceId": {
+              "type": "string"
+            },
+            "managedIdentityResourceId": {
+              "type": "string"
             },
             "location": {
-              "type": "string",
-              "metadata": {
-                "description": "Azure region"
-              }
+              "type": "string"
             },
-            "workspaceResourceId": {
-              "type": "string",
-              "metadata": {
-                "description": "Log Analytics Workspace Resource ID"
-              }
+            "deploymentName": {
+              "type": "string"
             },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Resource tags"
-              }
+            "enableProcessesAndDependencies": {
+              "type": "bool"
             }
           },
           "variables": {
-            "workbookId": "[guid(parameters('workbookName'), resourceGroup().id)]",
-            "workbookContent": "{\n  \"version\": \"Notebook/1.0\",\n  \"items\": [\n    {\n      \"type\": 1,\n      \"content\": {\n        \"json\": \"# 🖥️ VM Monitoring Dashboard\\n---\\nDashboard completo per il monitoraggio delle macchine virtuali Azure. Naviga tra i tab per visualizzare panoramica, performance, alert e disponibilità.\"\n      },\n      \"customWidth\": \"100\",\n      \"name\": \"text-header\"\n    },\n    {\n      \"type\": 9,\n      \"content\": {\n        \"version\": \"KqlParameterItem/1.0\",\n        \"parameters\": [\n          {\n            \"id\": \"timeRangeParam\",\n            \"version\": \"KqlParameterItem/1.0\",\n            \"name\": \"TimeRange\",\n            \"label\": \"Intervallo di tempo\",\n            \"type\": 4,\n            \"value\": {\n              \"durationMs\": 86400000\n            },\n            \"typeSettings\": {\n              \"selectableValues\": [\n                { \"durationMs\": 3600000 },\n                { \"durationMs\": 14400000 },\n                { \"durationMs\": 43200000 },\n                { \"durationMs\": 86400000 },\n                { \"durationMs\": 172800000 },\n                { \"durationMs\": 604800000 },\n                { \"durationMs\": 2592000000 }\n              ],\n              \"allowCustom\": true\n            },\n            \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n          },\n          {\n            \"id\": \"selectedTabParam\",\n            \"version\": \"KqlParameterItem/1.0\",\n            \"name\": \"selectedTab\",\n            \"type\": 1,\n            \"defaultValue\": \"overview\",\n            \"isHiddenWhenLocked\": true,\n            \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n          }\n        ],\n        \"style\": \"pills\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n      },\n      \"name\": \"parameters\"\n    },\n    {\n      \"type\": 11,\n      \"content\": {\n        \"version\": \"LinkItem/1.0\",\n        \"style\": \"tabs\",\n        \"links\": [\n          {\n            \"id\": \"tab-overview\",\n            \"cellValue\": \"overview\",\n            \"linkTarget\": \"parameter\",\n            \"linkLabel\": \"📊 Panoramica\",\n            \"subTarget\": \"selectedTab\",\n            \"preText\": \"\",\n            \"style\": \"link\"\n          },\n          {\n            \"id\": \"tab-performance\",\n            \"cellValue\": \"performance\",\n            \"linkTarget\": \"parameter\",\n            \"linkLabel\": \"⚡ Performance\",\n            \"subTarget\": \"selectedTab\",\n            \"preText\": \"\",\n            \"style\": \"link\"\n          },\n          {\n            \"id\": \"tab-alerts\",\n            \"cellValue\": \"alerts\",\n            \"linkTarget\": \"parameter\",\n            \"linkLabel\": \"🔔 Alert & Soglie\",\n            \"subTarget\": \"selectedTab\",\n            \"preText\": \"\",\n            \"style\": \"link\"\n          },\n          {\n            \"id\": \"tab-heartbeat\",\n            \"cellValue\": \"heartbeat\",\n            \"linkTarget\": \"parameter\",\n            \"linkLabel\": \"💚 Disponibilità\",\n            \"subTarget\": \"selectedTab\",\n            \"preText\": \"\",\n            \"style\": \"link\"\n          }\n        ]\n      },\n      \"name\": \"tabs-nav\"\n    },\n\n    {\n      \"type\": 12,\n      \"content\": {\n        \"version\": \"NotebookGroup/1.0\",\n        \"groupType\": \"editable\",\n        \"items\": [\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Heartbeat\\n| summarize LastBeat = max(TimeGenerated) by Computer\\n| summarize\\n    TotalVMs = count(),\\n    OnlineVMs = countif(LastBeat > ago(5m)),\\n    OfflineVMs = countif(LastBeat <= ago(5m))\\n| extend CoverturaPct = round(todouble(OnlineVMs) / iff(TotalVMs == 0, 1, todouble(TotalVMs)) * 100, 1)\\n| project\\n    ['VM Totali'] = TotalVMs,\\n    ['VM Online'] = OnlineVMs,\\n    ['VM Offline'] = OfflineVMs,\\n    ['Copertura Monitoraggio'] = strcat(CoverturaPct, ' %')\",\n              \"size\": 4,\n              \"title\": \"Riepilogo Infrastruttura\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"tiles\",\n              \"tileSettings\": {\n                \"titleContent\": {\n                  \"columnMatch\": \"$gen_group\",\n                  \"formatter\": 1\n                },\n                \"leftContent\": {\n                  \"columnMatch\": \"$gen_firstCol\",\n                  \"formatter\": 12,\n                  \"formatOptions\": { \"palette\": \"auto\" },\n                  \"numberFormat\": { \"unit\": 17, \"options\": { \"maximumSignificantDigits\": 3, \"maximumFractionDigits\": 2 } }\n                },\n                \"showBorder\": false,\n                \"size\": \"auto\"\n              }\n            },\n            \"customWidth\": \"100\",\n            \"name\": \"overview-stats-tiles\"\n          },\n          {\n            \"type\": 1,\n            \"content\": {\n              \"json\": \"### Stato VM in Tempo Reale\"\n            },\n            \"name\": \"text-vm-status\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Heartbeat\\n| summarize\\n    LastHeartbeat = max(TimeGenerated),\\n    TotalHeartbeats = count()\\n    by Computer,\\n       OSType,\\n       ResourceGroup = tostring(split(ResourceId, '/')[4]),\\n       Location = RemoteIPCountry\\n| extend Status = iff(LastHeartbeat > ago(5m), '🟢 Online', '🔴 Offline')\\n| extend MinutesSince = datetime_diff('minute', now(), LastHeartbeat)\\n| project\\n    Computer,\\n    ['Gruppo di Risorse'] = ResourceGroup,\\n    ['OS'] = OSType,\\n    Status,\\n    ['Ultimo Heartbeat'] = LastHeartbeat,\\n    ['Minuti Fa'] = MinutesSince\\n| sort by Status asc, Computer asc\",\n              \"size\": 0,\n              \"title\": \"Inventario e Stato VM\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"Status\",\n                    \"formatter\": 1\n                  },\n                  {\n                    \"columnMatch\": \"Minuti Fa\",\n                    \"formatter\": 8,\n                    \"formatOptions\": {\n                      \"palette\": \"greenRed\",\n                      \"customColumnWidthSetting\": \"80px\"\n                    }\n                  }\n                ],\n                \"filter\": true,\n                \"sortBy\": [{ \"itemKey\": \"Status\", \"sortOrder\": 1 }]\n              }\n            },\n            \"name\": \"overview-vm-grid\"\n          }\n        ]\n      },\n      \"conditionalVisibility\": {\n        \"parameterName\": \"selectedTab\",\n        \"comparison\": \"isEqualTo\",\n        \"value\": \"overview\"\n      },\n      \"name\": \"group-overview\"\n    },\n\n    {\n      \"type\": 12,\n      \"content\": {\n        \"version\": \"NotebookGroup/1.0\",\n        \"groupType\": \"editable\",\n        \"items\": [\n          {\n            \"type\": 1,\n            \"content\": {\n              \"json\": \"### Utilizzo CPU\"\n            },\n            \"customWidth\": \"100\",\n            \"name\": \"text-cpu\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Perf\\n| where ObjectName == \\\"Processor\\\" and CounterName == \\\"% Processor Time\\\" and InstanceName == \\\"_Total\\\"\\n| summarize AvgCPU = round(avg(CounterValue), 2) by bin(TimeGenerated, {TimeRange:grain}), Computer\\n| project TimeGenerated, Computer, AvgCPU\\n| render timechart\",\n              \"size\": 0,\n              \"title\": \"CPU % per VM nel Tempo\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n            },\n            \"customWidth\": \"60\",\n            \"name\": \"perf-cpu-chart\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Perf\\n| where ObjectName == \\\"Processor\\\" and CounterName == \\\"% Processor Time\\\" and InstanceName == \\\"_Total\\\"\\n| summarize\\n    ['CPU Media (%)'] = round(avg(CounterValue), 2),\\n    ['CPU Max (%)'] = round(max(CounterValue), 2),\\n    ['CPU Min (%)'] = round(min(CounterValue), 2)\\n    by Computer\\n| top 10 by ['CPU Media (%)'] desc\\n| sort by ['CPU Media (%)'] desc\",\n              \"size\": 0,\n              \"title\": \"Top 10 - CPU Media\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"CPU Media (%)\",\n                    \"formatter\": 8,\n                    \"formatOptions\": { \"palette\": \"yellowOrangeRed\" }\n                  }\n                ]\n              }\n            },\n            \"customWidth\": \"40\",\n            \"name\": \"perf-top-cpu\"\n          },\n          {\n            \"type\": 1,\n            \"content\": {\n              \"json\": \"### Utilizzo Memoria\"\n            },\n            \"customWidth\": \"100\",\n            \"name\": \"text-memory\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Perf\\n| where ObjectName == \\\"Memory\\\" and CounterName == \\\"% Committed Bytes In Use\\\"\\n| summarize AvgMem = round(avg(CounterValue), 2) by bin(TimeGenerated, {TimeRange:grain}), Computer\\n| project TimeGenerated, Computer, AvgMem\\n| render timechart\",\n              \"size\": 0,\n              \"title\": \"Memoria % per VM nel Tempo\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n            },\n            \"customWidth\": \"60\",\n            \"name\": \"perf-memory-chart\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Perf\\n| where ObjectName == \\\"Memory\\\" and CounterName == \\\"Available MBytes\\\"\\n| summarize\\n    ['Memoria Disponibile Avg (MB)'] = round(avg(CounterValue), 0),\\n    ['Memoria Disponibile Min (MB)'] = round(min(CounterValue), 0)\\n    by Computer\\n| sort by ['Memoria Disponibile Avg (MB)'] asc\\n| top 10 by ['Memoria Disponibile Avg (MB)'] asc\",\n              \"size\": 0,\n              \"title\": \"Top 10 - Memoria Disponibile Minima\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"Memoria Disponibile Avg (MB)\",\n                    \"formatter\": 8,\n                    \"formatOptions\": { \"palette\": \"redGreen\" }\n                  }\n                ]\n              }\n            },\n            \"customWidth\": \"40\",\n            \"name\": \"perf-top-memory\"\n          },\n          {\n            \"type\": 1,\n            \"content\": {\n              \"json\": \"### Utilizzo Disco\"\n            },\n            \"customWidth\": \"100\",\n            \"name\": \"text-disk\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Perf\\n| where ObjectName == \\\"LogicalDisk\\\"\\n    and CounterName == \\\"% Free Space\\\"\\n    and InstanceName !in (\\\"_Total\\\", \\\"HarddiskVolume1\\\", \\\"HarddiskVolume2\\\", \\\"HarddiskVolume3\\\")\\n    and InstanceName !startswith \\\"HarddiskVolume\\\"\\n| summarize AvgFreeSpace = round(avg(CounterValue), 1) by Computer, InstanceName\\n| extend ['Usato (%)'] = round(100 - AvgFreeSpace, 1)\\n| extend ['Libero (%)'] = AvgFreeSpace\\n| project\\n    Computer,\\n    ['Drive'] = InstanceName,\\n    ['Usato (%)'],\\n    ['Libero (%)']\\n| sort by ['Usato (%)'] desc\",\n              \"size\": 0,\n              \"title\": \"Utilizzo Disco per VM e Drive\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"Usato (%)\",\n                    \"formatter\": 8,\n                    \"formatOptions\": {\n                      \"palette\": \"yellowOrangeRed\",\n                      \"customColumnWidthSetting\": \"120px\"\n                    },\n                    \"numberFormat\": { \"unit\": 1, \"options\": { \"style\": \"decimal\", \"maximumFractionDigits\": 1 } }\n                  },\n                  {\n                    \"columnMatch\": \"Libero (%)\",\n                    \"formatter\": 8,\n                    \"formatOptions\": {\n                      \"palette\": \"redGreen\",\n                      \"customColumnWidthSetting\": \"120px\"\n                    }\n                  }\n                ],\n                \"filter\": true\n              }\n            },\n            \"customWidth\": \"60\",\n            \"name\": \"perf-disk-table\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Perf\\n| where ObjectName == \\\"Network Adapter\\\"\\n    and CounterName in (\\\"Bytes Received/sec\\\", \\\"Bytes Sent/sec\\\")\\n| summarize\\n    ['Rx Avg (KB/s)'] = round(avg(iff(CounterName == \\\"Bytes Received/sec\\\", CounterValue, 0.0)) / 1024, 2),\\n    ['Tx Avg (KB/s)'] = round(avg(iff(CounterName == \\\"Bytes Sent/sec\\\", CounterValue, 0.0)) / 1024, 2)\\n    by Computer\\n| sort by ['Rx Avg (KB/s)'] desc\\n| top 10 by ['Rx Avg (KB/s)'] desc\",\n              \"size\": 0,\n              \"title\": \"Top 10 - Traffico di Rete\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\"\n            },\n            \"customWidth\": \"40\",\n            \"name\": \"perf-network\"\n          }\n        ]\n      },\n      \"conditionalVisibility\": {\n        \"parameterName\": \"selectedTab\",\n        \"comparison\": \"isEqualTo\",\n        \"value\": \"performance\"\n      },\n      \"name\": \"group-performance\"\n    },\n\n    {\n      \"type\": 12,\n      \"content\": {\n        \"version\": \"NotebookGroup/1.0\",\n        \"groupType\": \"editable\",\n        \"items\": [\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"let cpuThreshold = 85;\\nlet memThreshold = 85;\\nlet diskThreshold = 85;\\nlet cpuAlerts = Perf\\n| where ObjectName == \\\"Processor\\\" and CounterName == \\\"% Processor Time\\\" and InstanceName == \\\"_Total\\\"\\n| where CounterValue > cpuThreshold\\n| extend AlertType = \\\"🔴 CPU Alta\\\", MetricValue = round(CounterValue, 1), Threshold = cpuThreshold, Unit = \\\"%\\\";\\nlet memAlerts = Perf\\n| where ObjectName == \\\"Memory\\\" and CounterName == \\\"% Committed Bytes In Use\\\"\\n| where CounterValue > memThreshold\\n| extend AlertType = \\\"🟠 Memoria Alta\\\", MetricValue = round(CounterValue, 1), Threshold = memThreshold, Unit = \\\"%\\\";\\nlet diskAlerts = Perf\\n| where ObjectName == \\\"LogicalDisk\\\" and CounterName == \\\"% Free Space\\\"\\n    and InstanceName !in (\\\"_Total\\\") and InstanceName !startswith \\\"HarddiskVolume\\\"\\n| where CounterValue < (100 - diskThreshold)\\n| extend AlertType = \\\"🟡 Disco Pieno\\\", MetricValue = round(100 - CounterValue, 1), Threshold = diskThreshold, Unit = \\\"%\\\";\\nunion cpuAlerts, memAlerts, diskAlerts\\n| project\\n    ['Data/Ora'] = TimeGenerated,\\n    Computer,\\n    ['Tipo Alert'] = AlertType,\\n    ['Valore'] = strcat(tostring(MetricValue), \\\" \\\", Unit),\\n    ['Soglia'] = strcat(tostring(Threshold), \\\" \\\", Unit)\\n| sort by ['Data/Ora'] desc\\n| limit 200\",\n              \"size\": 0,\n              \"title\": \"Violazioni di Soglia nel Periodo\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"filter\": true,\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"Tipo Alert\",\n                    \"formatter\": 1\n                  }\n                ]\n              }\n            },\n            \"customWidth\": \"100\",\n            \"name\": \"alerts-threshold-table\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"let cpuThreshold = 85;\\nlet memThreshold = 85;\\nPerf\\n| where (ObjectName == \\\"Processor\\\" and CounterName == \\\"% Processor Time\\\" and InstanceName == \\\"_Total\\\" and CounterValue > cpuThreshold)\\n    or (ObjectName == \\\"Memory\\\" and CounterName == \\\"% Committed Bytes In Use\\\" and CounterValue > memThreshold)\\n| extend AlertType = iff(ObjectName == \\\"Processor\\\", \\\"CPU\\\", \\\"Memoria\\\")\\n| summarize Violazioni = count() by bin(TimeGenerated, {TimeRange:grain}), AlertType\\n| render barchart\",\n              \"size\": 0,\n              \"title\": \"Frequenza Violazioni nel Tempo\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n            },\n            \"customWidth\": \"60\",\n            \"name\": \"alerts-frequency-chart\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"let cpuThreshold = 85;\\nlet memThreshold = 85;\\nlet diskThreshold = 85;\\nlet cpuAlerts = Perf\\n| where ObjectName == \\\"Processor\\\" and CounterName == \\\"% Processor Time\\\" and InstanceName == \\\"_Total\\\"\\n| where CounterValue > cpuThreshold\\n| extend AlertType = \\\"CPU Alta\\\";\\nlet memAlerts = Perf\\n| where ObjectName == \\\"Memory\\\" and CounterName == \\\"% Committed Bytes In Use\\\"\\n| where CounterValue > memThreshold\\n| extend AlertType = \\\"Memoria Alta\\\";\\nlet diskAlerts = Perf\\n| where ObjectName == \\\"LogicalDisk\\\" and CounterName == \\\"% Free Space\\\"\\n    and InstanceName !in (\\\"_Total\\\") and InstanceName !startswith \\\"HarddiskVolume\\\"\\n| where CounterValue < (100 - diskThreshold)\\n| extend AlertType = \\\"Disco Pieno\\\";\\nunion cpuAlerts, memAlerts, diskAlerts\\n| summarize Violazioni = count() by Computer\\n| top 10 by Violazioni desc\\n| project Computer, Violazioni\",\n              \"size\": 0,\n              \"title\": \"Top 10 - VM con più Violazioni\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"Violazioni\",\n                    \"formatter\": 8,\n                    \"formatOptions\": { \"palette\": \"redGreen\" }\n                  }\n                ]\n              }\n            },\n            \"customWidth\": \"40\",\n            \"name\": \"alerts-top-vm\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Event\\n| where EventLog in (\\\"System\\\", \\\"Application\\\")\\n    and EventLevelName in (\\\"Error\\\", \\\"Critical\\\", \\\"Warning\\\")\\n| project\\n    ['Data/Ora'] = TimeGenerated,\\n    Computer,\\n    ['Log'] = EventLog,\\n    ['Livello'] = EventLevelName,\\n    ['Event ID'] = EventID,\\n    ['Messaggio'] = substring(RenderedDescription, 0, 200)\\n| sort by ['Data/Ora'] desc\\n| limit 100\",\n              \"size\": 0,\n              \"title\": \"Windows Event Log - Errori e Warning\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"filter\": true,\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"Livello\",\n                    \"formatter\": 18,\n                    \"formatOptions\": {\n                      \"thresholdsOptions\": \"icons\",\n                      \"thresholdsGrid\": [\n                        { \"operator\": \"==\", \"thresholdValue\": \"Critical\", \"representation\": \"critical\", \"text\": \"Critical\" },\n                        { \"operator\": \"==\", \"thresholdValue\": \"Error\", \"representation\": \"4\", \"text\": \"Error\" },\n                        { \"operator\": \"==\", \"thresholdValue\": \"Warning\", \"representation\": \"2\", \"text\": \"Warning\" },\n                        { \"operator\": \"Default\", \"thresholdValue\": null, \"representation\": \"success\", \"text\": \"\" }\n                      ]\n                    }\n                  }\n                ]\n              }\n            },\n            \"customWidth\": \"100\",\n            \"name\": \"alerts-events-table\"\n          }\n        ]\n      },\n      \"conditionalVisibility\": {\n        \"parameterName\": \"selectedTab\",\n        \"comparison\": \"isEqualTo\",\n        \"value\": \"alerts\"\n      },\n      \"name\": \"group-alerts\"\n    },\n\n    {\n      \"type\": 12,\n      \"content\": {\n        \"version\": \"NotebookGroup/1.0\",\n        \"groupType\": \"editable\",\n        \"items\": [\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"let startTime = {TimeRange:start};\\nlet endTime = {TimeRange:end};\\nlet totalMinutes = toreal(datetime_diff('minute', endTime, startTime));\\nHeartbeat\\n| where TimeGenerated between (startTime .. endTime)\\n| summarize HeartbeatCount = count() by Computer\\n| extend ExpectedHeartbeats = totalMinutes\\n| extend UptimePct = round(min_of(toreal(HeartbeatCount) / ExpectedHeartbeats * 100.0, 100.0), 2)\\n| extend Status = case(\\n    UptimePct >= 99.5, '🟢 Eccellente',\\n    UptimePct >= 99.0, '🟢 Buono',\\n    UptimePct >= 95.0, '🟡 Degradato',\\n    UptimePct >= 80.0, '🟠 Critico',\\n    '🔴 Fuori Servizio'\\n  )\\n| project\\n    Computer,\\n    ['Uptime (%)'] = UptimePct,\\n    Status,\\n    ['Heartbeat Ricevuti'] = HeartbeatCount,\\n    ['Heartbeat Attesi'] = toint(ExpectedHeartbeats)\\n| sort by ['Uptime (%)'] asc\",\n              \"size\": 0,\n              \"title\": \"Disponibilità VM nel Periodo Selezionato\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\",\n              \"gridSettings\": {\n                \"filter\": true,\n                \"formatters\": [\n                  {\n                    \"columnMatch\": \"Uptime (%)\",\n                    \"formatter\": 8,\n                    \"formatOptions\": {\n                      \"palette\": \"redGreen\",\n                      \"customColumnWidthSetting\": \"120px\"\n                    }\n                  },\n                  {\n                    \"columnMatch\": \"Status\",\n                    \"formatter\": 1\n                  }\n                ]\n              }\n            },\n            \"customWidth\": \"60\",\n            \"name\": \"heartbeat-uptime-table\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Heartbeat\\n| summarize LastBeat = max(TimeGenerated) by Computer\\n| extend MinutesOffline = datetime_diff('minute', now(), LastBeat)\\n| where MinutesOffline > 10\\n| project\\n    Computer,\\n    ['Ultimo Heartbeat'] = LastBeat,\\n    ['Minuti Offline'] = MinutesOffline\\n| sort by ['Minuti Offline'] desc\",\n              \"size\": 0,\n              \"title\": \"⚠️ VM Non Raggiungibili (>10 min)\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n              \"visualization\": \"table\"\n            },\n            \"customWidth\": \"40\",\n            \"name\": \"heartbeat-offline-vms\"\n          },\n          {\n            \"type\": 3,\n            \"content\": {\n              \"version\": \"KqlItem/1.0\",\n              \"query\": \"Heartbeat\\n| summarize Count = count() by bin(TimeGenerated, {TimeRange:grain}), Computer\\n| render timechart\",\n              \"size\": 0,\n              \"title\": \"Frequenza Heartbeat nel Tempo\",\n              \"timeContext\": { \"durationMs\": 0 },\n              \"timeContextFromParameter\": \"TimeRange\",\n              \"queryType\": 0,\n              \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n            },\n            \"customWidth\": \"100\",\n            \"name\": \"heartbeat-timechart\"\n          }\n        ]\n      },\n      \"conditionalVisibility\": {\n        \"parameterName\": \"selectedTab\",\n        \"comparison\": \"isEqualTo\",\n        \"value\": \"heartbeat\"\n      },\n      \"name\": \"group-heartbeat\"\n    }\n  ],\n  \"styleSettings\": {},\n  \"$schema\": \"https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json\"\n}\n"
+            "policyDefinitionId": "/providers/Microsoft.Authorization/policySetDefinitions/2b00397d-c309-49c4-aa5a-f0b2c5bc6321"
           },
           "resources": [
             {
-              "type": "Microsoft.Insights/workbooks",
-              "apiVersion": "2023-06-01",
-              "name": "[variables('workbookId')]",
+              "type": "Microsoft.Authorization/policyAssignments",
+              "apiVersion": "2023-04-01",
+              "name": "[parameters('policyAssignmentName')]",
               "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "kind": "shared",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[parameters('managedIdentityResourceId')]": {}
+                }
+              },
               "properties": {
-                "displayName": "[parameters('workbookName')]",
-                "serializedData": "[variables('workbookContent')]",
-                "version": "1.0",
-                "sourceId": "[parameters('workspaceResourceId')]",
-                "category": "Azure Monitor"
+                "displayName": "[format('Enable Azure Monitor for Hybrid VMs with AMA - {0}', parameters('policyAssignmentName'))]",
+                "description": "Automatically configures Windows and Linux Arc-enabled servers with Azure Monitor Agent using user-assigned managed identity and associates with unified Data Collection Rule",
+                "enforcementMode": "Default",
+                "policyDefinitionId": "[variables('policyDefinitionId')]",
+                "parameters": {
+                  "enableProcessesAndDependencies": {
+                    "value": "[parameters('enableProcessesAndDependencies')]"
+                  },
+                  "effect": {
+                    "value": "DeployIfNotExists"
+                  },
+                  "dcrResourceId": {
+                    "value": "[parameters('dcrResourceId')]"
+                  }
+                },
+                "nonComplianceMessages": [
+                  {
+                    "message": "Arc-enabled servers must have Azure Monitor Agent installed and configured with the unified Data Collection Rule"
+                  }
+                ]
               }
             }
           ],
           "outputs": {
-            "workbookId": {
+            "policyAssignmentId": {
               "type": "string",
-              "value": "[resourceId('Microsoft.Insights/workbooks', variables('workbookId'))]"
-            },
-            "workbookName": {
-              "type": "string",
-              "value": "[variables('workbookId')]"
-            },
-            "workbookUrl": {
-              "type": "string",
-              "value": "[format('https://portal.azure.com/#blade/AppInsightsExtension/UsageNotebookBlade/ComponentId/subscribers/{0}', resourceId('Microsoft.Insights/workbooks', variables('workbookId')))]"
+              "value": "[subscriptionResourceId('Microsoft.Authorization/policyAssignments', parameters('policyAssignmentName'))]"
             }
           }
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics')]"
+        "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]",
+        "[resourceId('Microsoft.Resources/deploymentScripts', format('roleAssignment-{0}', parameters('deploymentName')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableArcPolicy')]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('remediation-arc-servers-{0}', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzurePowerShell",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', variables('managedIdentityId'))]": {}
+        }
+      },
+      "properties": {
+        "azPowerShellVersion": "10.0",
+        "retentionInterval": "PT1H",
+        "timeout": "PT30M",
+        "cleanupPreference": "OnSuccess",
+        "arguments": "[format('-PolicyAssignmentId \"{0}\"', if(parameters('enableArcPolicy'), reference(format('policyAssignment-arc-servers-{0}', parameters('deploymentName'))).outputs.policyAssignmentId.value, ''))]",
+        "scriptContent": "param([string]$PolicyAssignmentId)\n\n$ErrorActionPreference = 'Stop'\n\nWrite-Host \"========================================\"\nWrite-Host \"POLICY REMEDIATION - Arc Servers\"\nWrite-Host \"========================================\"\nWrite-Host \"Policy Assignment ID: $PolicyAssignmentId\"\nWrite-Host \"\"\n\nif ([string]::IsNullOrWhiteSpace($PolicyAssignmentId)) {\n    Write-Host \"No policy assignment ID provided\" -ForegroundColor Yellow\n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['status'] = 'Skipped'\n    exit 0\n}\n\n# Wait for policy to propagate\nWrite-Host \"Waiting 90 seconds for policy propagation...\"\nStart-Sleep -Seconds 90\n\n$remediations = @()\n$successCount = 0\n$failCount = 0\n\ntry {\n    # Get policy assignment details\n    $policyAssignment = Get-AzPolicyAssignment -Id $PolicyAssignmentId -ErrorAction Stop\n    \n    Write-Host \"Policy Assignment: $($policyAssignment.Name)\"\n    Write-Host \"Scope: $($policyAssignment.Properties.Scope)\"\n    Write-Host \"\"\n    \n    # Get all policy definitions in the initiative\n    Write-Host \"Retrieving policy definitions...\" -ForegroundColor Cyan\n    $policySet = Get-AzPolicySetDefinition -Id $policyAssignment.Properties.PolicyDefinitionId -ErrorAction Stop\n    \n    $totalPolicies = $policySet.Properties.PolicyDefinitions.Count\n    Write-Host \"Found $totalPolicies policies in the initiative\"\n    Write-Host \"\"\n    \n    $policyNumber = 1\n    \n    foreach ($policyDef in $policySet.Properties.PolicyDefinitions) {\n        $policyRefId = $policyDef.policyDefinitionReferenceId\n        $policyName = if ($policyDef.policyDefinitionId -match '/([^/]+)$') { $matches[1] } else { $policyRefId }\n        \n        Write-Host \"[$policyNumber/$totalPolicies] Creating remediation for: $policyName\" -ForegroundColor Cyan\n        \n        try {\n            $remediationName = \"remediate-arc-$($policyRefId.ToLower() -replace '[^a-z0-9-]', '-')-$(Get-Date -Format 'yyyyMMddHHmmss')\"\n            \n            $remediation = Start-AzPolicyRemediation `\n                -Name $remediationName `\n                -PolicyAssignmentId $PolicyAssignmentId `\n                -PolicyDefinitionReferenceId $policyRefId `\n                -ResourceDiscoveryMode ReEvaluateCompliance `\n                -ErrorAction Stop\n            \n            Write-Host \"  ✓ SUCCESS: $($remediation.Id)\" -ForegroundColor Green\n            $successCount++\n            \n            $remediations += @{ \n                Name = $policyName\n                ReferenceId = $policyRefId\n                RemediationId = $remediation.Id\n                Status = \"Created\" \n            }\n        }\n        catch {\n            Write-Host \"  ✗ FAILED: $($_.Exception.Message)\" -ForegroundColor Red\n            $failCount++\n            \n            $remediations += @{ \n                Name = $policyName\n                ReferenceId = $policyRefId\n                Error = $_.Exception.Message\n                Status = \"Failed\" \n            }\n        }\n        \n        Write-Host \"\"\n        $policyNumber++\n    }\n    \n    Write-Host \"========================================\"\n    Write-Host \"REMEDIATION SUMMARY\"\n    Write-Host \"========================================\"\n    Write-Host \"Total Policies: $totalPolicies\"\n    Write-Host \"✓ Successful: $successCount\" -ForegroundColor Green\n    if ($failCount -gt 0) {\n        Write-Host \"✗ Failed: $failCount\" -ForegroundColor Red\n    }\n    Write-Host \"========================================\"\n    Write-Host \"\"\n    \n    if ($successCount -gt 0) {\n        Write-Host \"Remediation tasks are running in the background\" -ForegroundColor Cyan\n        Write-Host \"Check Azure Portal > Policy > Compliance for progress\" -ForegroundColor Cyan\n        Write-Host \"Arc servers will be configured automatically within 15-30 minutes\" -ForegroundColor Cyan\n    }\n    \n    if ($failCount -gt 0) {\n        Write-Host \"\"\n        Write-Host \"Some remediation tasks failed. You can create them manually:\" -ForegroundColor Yellow\n        Write-Host \"  1. Go to Azure Portal > Policy > Compliance\"\n        Write-Host \"  2. Select the policy assignment\"\n        Write-Host \"  3. Click 'Create remediation task' for failed policies\"\n    }\n    \n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['remediations'] = $remediations | ConvertTo-Json -Compress\n    $DeploymentScriptOutputs['totalPolicies'] = $totalPolicies\n    $DeploymentScriptOutputs['successCount'] = $successCount\n    $DeploymentScriptOutputs['failCount'] = $failCount\n    $DeploymentScriptOutputs['status'] = 'Completed'\n}\ncatch {\n    Write-Host \"========================================\"\n    Write-Host \"ERROR\"\n    Write-Host \"========================================\"\n    Write-Host $_.Exception.Message -ForegroundColor Red\n    Write-Host \"\"\n    Write-Host \"You can create remediation tasks manually from Azure Portal\" -ForegroundColor Yellow\n    \n    $DeploymentScriptOutputs = @{}\n    $DeploymentScriptOutputs['status'] = 'Failed'\n    $DeploymentScriptOutputs['error'] = $_.Exception.Message\n}\n"
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}', subscription().subscriptionId), 'Microsoft.Resources/deployments', format('policyAssignment-arc-servers-{0}', parameters('deploymentName')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('createActionGroup')]",
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('actionGroupName')]",
+      "location": "global",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Insights/actionGroups'), parameters('tagsByResource')['Microsoft.Insights/actionGroups'], json('{}'))]",
+      "properties": {
+        "copy": [
+          {
+            "name": "emailReceivers",
+            "count": "[length(split(parameters('emailRecipients'), ';'))]",
+            "input": {
+              "name": "[format('email-{0}', uniqueString(split(parameters('emailRecipients'), ';')[copyIndex('emailReceivers')]))]",
+              "emailAddress": "[trim(split(parameters('emailRecipients'), ';')[copyIndex('emailReceivers')])]",
+              "useCommonAlertSchema": true
+            }
+          }
+        ],
+        "groupShortName": "[take(parameters('actionGroupName'), 12)]",
+        "enabled": true
+      }
+    },
+    {
+      "condition": "[parameters('enableCPUAlerts')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-{0}-cpu', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Insights/scheduledQueryRules'), parameters('tagsByResource')['Microsoft.Insights/scheduledQueryRules'], json('{}'))]",
+      "properties": {
+        "displayName": "[format('High CPU Usage - {0}', parameters('deploymentName'))]",
+        "description": "[format('Alert when CPU usage exceeds {0}%', parameters('cpuThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "scopes": ["[variables('workspaceId')]"],
+        "windowSize": "PT5M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[format('InsightsMetrics | where Namespace == \"Processor\" and Name == \"UtilizationPercentage\" | where Val > {0} | summarize AggregatedValue = avg(Val) by Computer, bin(TimeGenerated, 5m)', parameters('cpuThreshold'))]",
+              "timeAggregation": "Average",
+              "metricMeasureColumn": "AggregatedValue",
+              "dimensions": [{"name": "Computer", "operator": "Include", "values": ["*"]}],
+              "operator": "GreaterThan",
+              "threshold": "[parameters('cpuThreshold')]",
+              "failingPeriods": {"numberOfEvaluationPeriods": 1, "minFailingPeriodsToAlert": 1}
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(parameters('createActionGroup'), createArray(resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableMemoryAlerts')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-{0}-memory', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Insights/scheduledQueryRules'), parameters('tagsByResource')['Microsoft.Insights/scheduledQueryRules'], json('{}'))]",
+      "properties": {
+        "displayName": "[format('High Memory Usage - {0}', parameters('deploymentName'))]",
+        "description": "[format('Alert when Memory usage exceeds {0}%', parameters('memoryThreshold'))]",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "scopes": ["[variables('workspaceId')]"],
+        "windowSize": "PT5M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[format('InsightsMetrics | where Namespace == \"Memory\" and Name == \"AvailableMB\" | extend TotalMemory = todouble(parse_json(Tags)[\"vm.azm.ms/memorySizeMB\"]) | extend UsedPercent = 100.0 - ((Val / TotalMemory) * 100.0) | where UsedPercent > {0} | summarize AggregatedValue = avg(UsedPercent) by Computer, bin(TimeGenerated, 5m)', parameters('memoryThreshold'))]",
+              "timeAggregation": "Average",
+              "metricMeasureColumn": "AggregatedValue",
+              "dimensions": [{"name": "Computer", "operator": "Include", "values": ["*"]}],
+              "operator": "GreaterThan",
+              "threshold": "[parameters('memoryThreshold')]",
+              "failingPeriods": {"numberOfEvaluationPeriods": 1, "minFailingPeriodsToAlert": 1}
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(parameters('createActionGroup'), createArray(resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableDiskAlerts')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-{0}-disk', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Insights/scheduledQueryRules'), parameters('tagsByResource')['Microsoft.Insights/scheduledQueryRules'], json('{}'))]",
+      "properties": {
+        "displayName": "[format('Low Disk Space - {0}', parameters('deploymentName'))]",
+        "description": "[format('Alert when Disk free space is below {0}%', sub(100, parameters('diskThreshold')))]",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT15M",
+        "scopes": ["[variables('workspaceId')]"],
+        "windowSize": "PT15M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "[format('InsightsMetrics | where Namespace == \"LogicalDisk\" and Name == \"FreeSpacePercentage\" | where Val < {0} | summarize AggregatedValue = avg(Val) by Computer, bin(TimeGenerated, 15m)', sub(100, parameters('diskThreshold')))]",
+              "timeAggregation": "Average",
+              "metricMeasureColumn": "AggregatedValue",
+              "dimensions": [{"name": "Computer", "operator": "Include", "values": ["*"]}],
+              "operator": "LessThan",
+              "threshold": "[sub(100, parameters('diskThreshold'))]",
+              "failingPeriods": {"numberOfEvaluationPeriods": 1, "minFailingPeriodsToAlert": 1}
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(parameters('createActionGroup'), createArray(resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableHeartbeatAlerts')]",
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "[format('alert-{0}-heartbeat', parameters('deploymentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[if(contains(parameters('tagsByResource'), 'Microsoft.Insights/scheduledQueryRules'), parameters('tagsByResource')['Microsoft.Insights/scheduledQueryRules'], json('{}'))]",
+      "properties": {
+        "displayName": "[format('Machine Heartbeat Missing - {0}', parameters('deploymentName'))]",
+        "description": "Alert when machine stops sending heartbeat",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "scopes": ["[variables('workspaceId')]"],
+        "windowSize": "PT15M",
+        "criteria": {
+          "allOf": [
+            {
+              "query": "Heartbeat | summarize LastHeartbeat = max(TimeGenerated) by Computer | where LastHeartbeat < ago(10m)",
+              "timeAggregation": "Count",
+              "dimensions": [],
+              "operator": "GreaterThan",
+              "threshold": 0,
+              "failingPeriods": {"numberOfEvaluationPeriods": 1, "minFailingPeriodsToAlert": 1}
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(parameters('createActionGroup'), createArray(resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
       ]
     }
   ],
   "outputs": {
-    "resourceGroupName": {
+    "managedIdentityPrincipalId": {
       "type": "string",
-      "value": "[if(parameters('useExistingResourceGroup'), parameters('existingResourceGroupName'), variables('resourceGroupName'))]"
+      "value": "[if(parameters('useExistingManagedIdentity'), reference(parameters('existingManagedIdentityId'), '2023-01-31').principalId, reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('managedIdentityName')), '2023-01-31').principalId)]",
+      "metadata": {
+        "description": "Principal ID of the Managed Identity"
+      }
     },
-    "logAnalyticsWorkspaceId": {
+    "workspaceId": {
       "type": "string",
-      "value": "[if(parameters('useExistingLogAnalytics'), parameters('existingLogAnalyticsWorkspaceId'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01').outputs.workspaceId.value)]"
+      "value": "[variables('workspaceId')]",
+      "metadata": {
+        "description": "Resource ID of the Log Analytics Workspace"
+      }
     },
-    "logAnalyticsWorkspaceName": {
+    "workspaceName": {
       "type": "string",
-      "value": "[if(parameters('useExistingLogAnalytics'), split(parameters('existingLogAnalyticsWorkspaceId'), '/')[8], reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics'), '2025-04-01').outputs.workspaceName.value)]"
+      "value": "[variables('workspaceName')]",
+      "metadata": {
+        "description": "Name of the Log Analytics Workspace"
+      }
     },
-    "dataCollectionRuleId": {
+    "dcrId": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01').outputs.dcrId.value]"
+      "value": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('dcrName'))]",
+      "metadata": {
+        "description": "Resource ID of the unified Data Collection Rule"
+      }
+    },
+    "azureVMPolicyAssignmentId": {
+      "type": "string",
+      "value": "[if(parameters('enableAzureVMPolicy'), reference(format('policyAssignment-azure-vms-{0}', parameters('deploymentName'))).outputs.policyAssignmentId.value, '')]",
+      "condition": "[parameters('enableAzureVMPolicy')]",
+      "metadata": {
+        "description": "Resource ID of the Azure VM Policy Assignment (if enabled)"
+      }
+    },
+    "arcPolicyAssignmentId": {
+      "type": "string",
+      "value": "[if(parameters('enableArcPolicy'), reference(format('policyAssignment-arc-servers-{0}', parameters('deploymentName'))).outputs.policyAssignmentId.value, '')]",
+      "condition": "[parameters('enableArcPolicy')]",
+      "metadata": {
+        "description": "Resource ID of the Arc Policy Assignment (if enabled)"
+      }
     },
     "actionGroupId": {
       "type": "string",
-      "value": "[if(parameters('createActionGroup'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-action-group'), '2025-04-01').outputs.actionGroupId.value, '')]"
-    },
-    "workbookId": {
-      "type": "string",
-      "value": "[if(parameters('deployDashboard'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-workbook'), '2025-04-01').outputs.workbookId.value, '')]"
-    },
-    "dashboardUrl": {
-      "type": "string",
-      "value": "[if(parameters('deployDashboard'), format('https://portal.azure.com/#blade/AppInsightsExtension/UsageNotebookBlade/ComponentId/{0}', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-workbook'), '2025-04-01').outputs.workbookId.value), '')]"
+      "value": "[if(parameters('createActionGroup'), resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName')), '')]",
+      "condition": "[parameters('createActionGroup')]",
+      "metadata": {
+        "description": "Resource ID of the Action Group"
+      }
     }
   }
 }
