@@ -30,9 +30,11 @@ function Invoke-Graph {
     try {
         return Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -ErrorAction Stop
     } catch {
+        $statusCode = $null
+        try { $statusCode = $_.Exception.Response.StatusCode.value__ } catch {}
         return [pscustomobject]@{
             __error = $true
-            status  = (try { $_.Exception.Response.StatusCode.value__ } catch { $null })
+            status  = $statusCode
             message = $_.Exception.Message
         }
     }
