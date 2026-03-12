@@ -422,21 +422,89 @@ if ($existingAppJson -and $existingAppJson -ne 'null') {
         --body $spaBody `
         --headers "Content-Type=application/json" `
         --output none
-    Write-OK "Redirect URI configurati: localhost:8787, localhost:3000"
+	    Write-OK "Redirect URI configurati: localhost:8787, localhost:3000"
+	}
 
-    # Aggiungi permesso Azure Management API (user_impersonation)
-    # Resource: Azure Service Management (797f4846-ba00-4fd7-ba43-dac1f8f63013)
-    # Scope:    user_impersonation (41094075-9dad-400e-a0bd-54e686782033)
-    Write-Step "Aggiunta permesso Azure Management API (user_impersonation)..."
-    $permBody = '{"requiredResourceAccess":[{"resourceAppId":"797f4846-ba00-4fd7-ba43-dac1f8f63013","resourceAccess":[{"id":"41094075-9dad-400e-a0bd-54e686782033","type":"Scope"}]}]}'
-    az rest `
-        --method PATCH `
-        --uri "https://graph.microsoft.com/v1.0/applications/$appObjectId" `
-        --body $permBody `
-        --headers "Content-Type=application/json" `
-        --output none
-    Write-OK "Permesso Azure Management API aggiunto"
-}
+	# Allinea permessi (anche su app già esistenti)
+	# - Azure Service Management: user_impersonation (Management API)
+	# - Microsoft Graph: User.Read + Directory.Read.All + Policy.Read.All + Reports.Read.All (per Zero Trust Assessment)
+	Write-Step "Allineamento permessi API (Azure Management + Microsoft Graph)..."
+
+	function Get-GraphDelegatedScopeIds {
+	    param(
+	        [Parameter(Mandatory)] [string[]] $ScopeValues
+	    )
+
+	    $sp = az rest `
+	        --method GET `
+	        --uri "https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=appId%20eq%20'00000003-0000-0000-c000-000000000000'&`$select=appId,oauth2PermissionScopes" `
+	        --output json | ConvertFrom-Json
+
+	    $scopes = @($sp.value[0].oauth2PermissionScopes)
+	    if (-not $scopes -or $scopes.Count -eq 0) { throw "Impossibile leggere oauth2PermissionScopes per Microsoft Graph." }
+
+	    $out = @()
+	    foreach ($val in $ScopeValues) {
+	        $match = $scopes | Where-Object { $_.value -eq $val } | Select-Object -First 1
+	        if (-not $match -or -not $match.id) { throw "Scope Microsoft Graph non trovato: $val" }
+	        $out += @{ id = $match.id; type = 'Scope' }
+	    }
+	    return $out
+	}
+
+	function Ensure-RequiredResourceAccess {
+	    param(
+	        [Parameter(Mandatory)] [ref] $RequiredResourceAccess,
+	        [Parameter(Mandatory)] [string] $ResourceAppId,
+	        [Parameter(Mandatory)] [hashtable[]] $EnsureAccess
+	    )
+
+	    $list = @($RequiredResourceAccess.Value)
+	    $existing = $list | Where-Object { $_.resourceAppId -eq $ResourceAppId } | Select-Object -First 1
+	    if (-not $existing) {
+	        $existing = @{ resourceAppId = $ResourceAppId; resourceAccess = @() }
+	        $list += $existing
+	    }
+
+	    $existingIds = @($existing.resourceAccess | ForEach-Object { $_.id })
+	    foreach ($acc in $EnsureAccess) {
+	        if (-not ($existingIds -contains $acc.id)) {
+	            $existing.resourceAccess += $acc
+	        }
+	    }
+
+	    $RequiredResourceAccess.Value = @($list)
+	}
+
+	$appReq = az rest `
+	    --method GET `
+	    --uri "https://graph.microsoft.com/v1.0/applications/$appObjectId?`$select=requiredResourceAccess" `
+	    --output json | ConvertFrom-Json
+
+	$RequiredResourceAccessList = @()
+	foreach ($r in @($appReq.requiredResourceAccess)) {
+	    $RequiredResourceAccessList += @{
+	        resourceAppId   = $r.resourceAppId
+	        resourceAccess  = @($r.resourceAccess | ForEach-Object { @{ id = $_.id; type = $_.type } })
+	    }
+	}
+
+	$mgmtAccess = @(@{ id = '41094075-9dad-400e-a0bd-54e686782033'; type = 'Scope' })
+	Ensure-RequiredResourceAccess -RequiredResourceAccess ([ref]$RequiredResourceAccessList) -ResourceAppId '797f4846-ba00-4fd7-ba43-dac1f8f63013' -EnsureAccess $mgmtAccess
+
+	$graphWanted = @('User.Read', 'Directory.Read.All', 'Policy.Read.All', 'Reports.Read.All')
+	$graphAccess = Get-GraphDelegatedScopeIds -ScopeValues $graphWanted
+	Ensure-RequiredResourceAccess -RequiredResourceAccess ([ref]$RequiredResourceAccessList) -ResourceAppId '00000003-0000-0000-c000-000000000000' -EnsureAccess $graphAccess
+
+	$permBodyObj = @{ requiredResourceAccess = $RequiredResourceAccessList }
+	$permBody = $permBodyObj | ConvertTo-Json -Depth 15 -Compress
+	az rest `
+	    --method PATCH `
+	    --uri "https://graph.microsoft.com/v1.0/applications/$appObjectId" `
+	    --body $permBody `
+	    --headers "Content-Type=application/json" `
+	    --output none
+	Write-OK "Permessi API aggiornati (Graph + Management)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 8: Aggiorna file di configurazione
