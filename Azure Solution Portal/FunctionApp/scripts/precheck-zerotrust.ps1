@@ -165,13 +165,71 @@ $kpis = @{
     Kpi4Value = if ($legacyAuthBlocked -eq $true) { 'Blocked' } elseif ($legacyAuthBlocked -eq $false) { 'Allowed' } else { 'N/A' }
 }
 
+$enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+$impl = @()
+$impl += "<h3>Deep-dive tenant rilevato</h3>"
+$impl += "<ul style='margin:8px 0 0 18px'>"
+$impl += "<li><b>Tenant</b>: $(& $enc $tenantDisplayName) <span class='muted'>($(& $enc $tenantIdActual))</span></li>"
+$impl += "<li><b>Security Defaults</b>: " + (if ($securityDefaultsEnabled -eq $true) { 'On' } elseif ($securityDefaultsEnabled -eq $false) { 'Off' } else { 'N/A (permessi)' }) + "</li>"
+$impl += "<li><b>Conditional Access</b>: abilitate $caEnabled / totali $($caPolicies.Count)</li>"
+$impl += "<li><b>MFA registration</b>: " + (if ($mfaRegPercent -ne $null) { "$mfaRegPercent%" } else { 'N/A (permessi)' }) + "</li>"
+$impl += "<li><b>Legacy auth</b>: " + (if ($legacyAuthBlocked -eq $true) { 'Blocked' } elseif ($legacyAuthBlocked -eq $false) { 'Allowed' } else { 'N/A (permessi)' }) + "</li>"
+$impl += "</ul>"
+
+$impl += "<h3 style='margin-top:14px'>Guida operativa: cosa fare in questo tenant</h3>"
+$impl += "<ol style='margin:8px 0 0 18px'>"
+
+$impl += "<li><b>Baseline access control</b>: definisci la baseline (Security Defaults per tenant piccoli oppure Conditional Access enterprise). Evita overlap: se usi CA avanzato, mantieni Security Defaults off.</li>"
+
+if ($legacyAuthBlocked -eq $false) {
+    $impl += "<li><b>Blocca Legacy Authentication</b>: crea una CA policy che blocchi <code>clientAppTypes: other</code> (legacy auth). Testa impatti e migra i client legacy (SMTP/IMAP/POP/old Office).</li>"
+} elseif ($legacyAuthBlocked -eq $true) {
+    $impl += "<li><b>Legacy Authentication</b>: risulta già bloccata via CA. Verifica eccezioni e monitora i sign-in falliti per individuare client legacy residui.</li>"
+} else {
+    $impl += "<li><b>Legacy Authentication</b>: non verificabile (permessi). Concedi admin-consent Graph e riesegui l’assessment.</li>"
+}
+
+if ($caEnabled -lt 1) {
+    $impl += "<li><b>Conditional Access</b>: non risultano CA policies abilitate. Implementa almeno: MFA per admin, MFA per utenti, block legacy auth, session controls per app critiche.</li>"
+} elseif ($caEnabled -lt 5) {
+    $impl += "<li><b>Conditional Access</b>: CA presenti ma poche (abilitate: $caEnabled). Confronta con una baseline enterprise e aggiungi policy per: risk-based sign-in, device compliance, privileged access, guest access.</li>"
+} else {
+    $impl += "<li><b>Conditional Access</b>: baseline CA sembra presente (abilitate: $caEnabled). Verifica comunque naming, exclusions (break-glass) e report-only rollout.</li>"
+}
+
+if ($strongMethodsEnabled -eq $false) {
+    $impl += "<li><b>Phishing-resistant MFA</b>: abilita metodi forti (FIDO2/WHfB/Microsoft Authenticator) e promuovi passwordless per ruoli privilegiati e utenti critici.</li>"
+} elseif ($strongMethodsEnabled -eq $true) {
+    $impl += "<li><b>Metodi forti</b>: risultano abilitati. Verifica enforcement (Authentication Strength, CA per privileged) e rollout graduale.</li>"
+} else {
+    $impl += "<li><b>Metodi forti</b>: non verificabile (permessi). Concedi Policy.Read.All e riesegui.</li>"
+}
+
+if ($mfaRegPercent -ne $null) {
+    if ($mfaRegPercent -lt 50) {
+        $impl += "<li><b>MFA registration (bassa)</b>: $mfaRegPercent%. Pianifica una campagna di registration + enforce registration (SSPR/MFA) e monitora adoption.</li>"
+    } elseif ($mfaRegPercent -lt 80) {
+        $impl += "<li><b>MFA registration (media)</b>: $mfaRegPercent%. Completa rollout con reminder/cutover e applica CA di enforcement.</li>"
+    } else {
+        $impl += "<li><b>MFA registration</b>: buona ($mfaRegPercent%). Mantieni monitoraggio e riduci eccezioni.</li>"
+    }
+} else {
+    $impl += "<li><b>MFA registration</b>: report non disponibile (permessi Reports.Read.All). Concedi admin-consent e riesegui.</li>"
+}
+
+$impl += "<li><b>Operatività</b>: esegui cambi in modalità <i>report-only</i> prima del cutover; definisci account break-glass e un processo di change/rollback.</li>"
+$impl += "</ol>"
+
+$implementationHtml = ($impl -join "`n")
+
 $context = @{
     SubscriptionName = $tenantDisplayName
     SubscriptionId   = $tenantIdActual
     Timestamp        = $timestamp
 }
 
-$enterpriseHtml = New-EnterpriseHtmlReport -SolutionName "Zero Trust Assessment" -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml '' -Context $context
+$enterpriseHtml = New-EnterpriseHtmlReport -SolutionName "Zero Trust Assessment" -Summary $kpis -Checks $checks -AiHtml $aiHtml -ImplementationHtml $implementationHtml -LegacyHtml '' -Context $context
 
 $out = [ordered]@{
     Timestamp = $timestamp

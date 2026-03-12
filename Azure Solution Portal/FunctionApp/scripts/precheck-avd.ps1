@@ -260,6 +260,101 @@ if ($data.Summary -is [hashtable]) {
     $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
 }
 
+$enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+function Convert-ListToHtml {
+    param(
+        [Parameter(Mandatory)] [array] $Items,
+        [Parameter()] [int] $Max = 15,
+        [Parameter()] [scriptblock] $ToLi
+    )
+    if (-not $Items -or $Items.Count -eq 0) { return '<span class="muted">Nessun elemento.</span>' }
+    $rows = @($Items | Select-Object -First $Max | ForEach-Object { & $ToLi $_ })
+    $suffix = if ($Items.Count -gt $Max) { "<li class='muted'>... +$($Items.Count - $Max) altri</li>" } else { '' }
+    return "<ul style='margin:8px 0 0 18px'>" + ($rows -join '') + $suffix + "</ul>"
+}
+
+$hpByType = @($data.HostPools | Group-Object HostPoolType | ForEach-Object { @{ Type = $_.Name; Count = $_.Count } })
+$pooled = (@($hpByType | Where-Object { $_.Type -match 'Pooled' }) | Select-Object -First 1).Count
+$personal = (@($hpByType | Where-Object { $_.Type -match 'Personal' }) | Select-Object -First 1).Count
+if (-not $pooled) { $pooled = 0 }
+if (-not $personal) { $personal = 0 }
+
+$wsWithRefs = @($data.Workspaces | Where-Object { $_.AppGroupRefs -and @($_.AppGroupRefs).Count -gt 0 })
+$appGroupIds = @($data.AppGroups | ForEach-Object { "/subscriptions/$SubscriptionId/resourceGroups/$($_.ResourceGroup)/providers/Microsoft.DesktopVirtualization/applicationGroups/$($_.Name)" })
+$wsRefs = @($data.Workspaces | ForEach-Object { @($_.AppGroupRefs) }) | Where-Object { $_ }
+$unreferencedAppGroups = @()
+if ($appGroupIds.Count -gt 0) {
+    $refSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($r in $wsRefs) { [void]$refSet.Add([string]$r) }
+    for ($i = 0; $i -lt $appGroupIds.Count; $i++) {
+        if (-not $refSet.Contains([string]$appGroupIds[$i])) { $unreferencedAppGroups += $data.AppGroups[$i] }
+    }
+}
+
+$fslogixReady = @($data.StorageAccounts | Where-Object { $_.AADKerbEnabled -eq $true })
+$fslogixNotReady = @($data.StorageAccounts | Where-Object { $_.AzureFilesEnabled -and -not $_.AADKerbEnabled })
+
+$unhealthyHosts = @($data.SessionHosts | Where-Object { $_.Status -ne 'Available' -or $_.AllowNewSession -eq $false })
+
+$impl = @()
+$impl += "<h3>Deep-dive dell'ambiente rilevato</h3>"
+$impl += "<ul style='margin:8px 0 0 18px'>"
+$impl += "<li><b>Host pools</b>: $($data.Summary.TotalHostPools) (Pooled: $pooled, Personal: $personal).</li>"
+$impl += "<li><b>Session hosts</b>: $($data.Summary.TotalSessionHosts) (Available: $($data.Summary.ActiveSessionHosts)).</li>"
+$impl += "<li><b>Workspaces</b>: $($data.Summary.TotalWorkspaces) (con riferimenti AppGroup: $($wsWithRefs.Count)).</li>"
+$impl += "<li><b>App Groups</b>: $($data.Summary.TotalAppGroups) (non referenziati da workspace: $($unreferencedAppGroups.Count)).</li>"
+$impl += "<li><b>Scaling plans</b>: $($data.Summary.TotalScalingPlans).</li>"
+$impl += "<li><b>Rete</b>: VNets $($data.Summary.TotalVNets) (subnet totali: $(@($data.VirtualNetworks | ForEach-Object { $_.SubnetCount }) | Measure-Object -Sum).Sum).</li>"
+$impl += "<li><b>FSLogix</b>: storage account AADKERB ready $($fslogixReady.Count) / $($data.Summary.TotalStorageAccounts); Azure Files senza AADKERB: $($fslogixNotReady.Count).</li>"
+$impl += "</ul>"
+
+$impl += "<h3 style='margin-top:14px'>Guida operativa: cosa fare in questo ambiente</h3>"
+$impl += "<ol style='margin:8px 0 0 18px'>"
+
+if (-not $data.Summary.AlreadyDeployed) {
+    if ($data.Summary.TotalVNets -eq 0) {
+        $impl += "<li><b>Predisponi rete</b>: nessuna VNet trovata. Crea una VNet e una subnet dedicata ai session host (DNS/route/NSG secondo standard) e definisci il naming.</li>"
+    } else {
+        $impl += "<li><b>Seleziona rete/subnet per session host</b>: sono presenti VNets. Identifica una subnet dedicata ai session host (no overlap, capienza IP, DNS)."
+        $impl += Convert-ListToHtml -Items $data.VirtualNetworks -Max 8 -ToLi { param($v) "<li><b>$(& $enc $v.Name)</b> <span class='muted'>(RG: $(& $enc $v.ResourceGroup) • Subnet: $($v.SubnetCount))</span></li>" }
+        $impl += "</li>"
+    }
+
+    $impl += "<li><b>Deploy baseline AVD</b>: crea Host Pool (pooled o personal), Workspace e Application Group. Definisci MaxSessionLimit, LB type e tagging/locks in base alle policy aziendali.</li>"
+} else {
+    $impl += "<li><b>Verifica coerenza (plumbing) AVD</b>: host pool, app group e workspace devono essere collegati. AppGroup non referenziati: <b>$($unreferencedAppGroups.Count)</b>."
+    if ($unreferencedAppGroups.Count -gt 0) {
+        $impl += Convert-ListToHtml -Items $unreferencedAppGroups -Max 10 -ToLi { param($ag) "<li><b>$(& $enc $ag.Name)</b> <span class='muted'>(RG: $(& $enc $ag.ResourceGroup) • Type: $(& $enc $ag.ApplicationGroupType))</span></li>" }
+        $impl += "<div class='muted' style='margin-top:6px'>Azione: associa questi AppGroup a un Workspace (applicationGroupReferences) per renderli disponibili in feed.</div>"
+    }
+    $impl += "</li>"
+
+    if ($unhealthyHosts.Count -gt 0) {
+        $impl += "<li><b>Session hosts non healthy</b>: rilevati host con status diverso da Available o con AllowNewSession disabilitato."
+        $impl += Convert-ListToHtml -Items $unhealthyHosts -Max 12 -ToLi { param($h) "<li><b>$(& $enc $h.Name)</b> <span class='muted'>(HostPool: $(& $enc $h.HostPool) • Status: $(& $enc $h.Status) • AllowNewSession: $(& $enc $h.AllowNewSession))</span></li>" }
+        $impl += "<div class='muted' style='margin-top:6px'>Azione: verifica agent version/registration, stato VM e drain mode; riallinea l'immagine e i prerequisiti.</div>"
+        $impl += "</li>"
+    }
+}
+
+if ($fslogixReady.Count -gt 0) {
+    $impl += "<li><b>FSLogix (profili)</b>: esiste almeno uno storage AADKERB-ready. Definisci un file share dedicato (es. <code>profiles</code>) e applica RBAC + ACL NTFS (least privilege) per utenti AVD.</li>"
+} else {
+    $impl += "<li><b>FSLogix (profili)</b>: non risultano storage AADKERB-ready. Per implementare profili su Azure Files, abilita <b>AADKERB</b> su uno storage account e crea file share dedicato; in alternativa valuta profili su Azure NetApp Files.</li>"
+}
+
+if ($data.Summary.TotalScalingPlans -eq 0) {
+    $impl += "<li><b>Cost optimization</b>: non risultano scaling plans. Crea uno scaling plan e associalo ai host pool pooled (schedule business hours/off-hours, drain, cap).</li>"
+} else {
+    $impl += "<li><b>Scaling plan</b>: presenti scaling plans. Verifica che siano associati ai host pool e che le schedule siano allineate al timezone e alle finestre operative.</li>"
+}
+
+$impl += "<li><b>Validazione post-deploy</b>: verifica accesso utente (feed), registrazione session host, e telemetria/monitoring. KPI minimi: logon success rate, session count, CPU/RAM, FSLogix profile load time.</li>"
+$impl += "</ol>"
+
+$implementationHtml = ($impl -join "`n")
+
 $hpRows = ($data.HostPools | Select-Object -First 30 | ForEach-Object {
     "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.Type)</td><td>$($_.MaxSessionLimit)</td></tr>"
 }) -join "`n"
@@ -304,7 +399,7 @@ $kpis = @{
     Kpi4Value = $data.Summary.TotalVNets
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Virtual Desktop' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Virtual Desktop' -Summary $kpis -Checks $checks -AiHtml $aiHtml -ImplementationHtml $implementationHtml -LegacyHtml $appendix -Context @{
     SubscriptionName = $data.Subscription.Name
     SubscriptionId   = $SubscriptionId
     Timestamp        = $data.Timestamp

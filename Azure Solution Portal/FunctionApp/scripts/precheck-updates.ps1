@@ -216,6 +216,73 @@ if ($data.Summary -is [hashtable]) {
     $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
 }
 
+$enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+function Convert-ToListHtml {
+    param(
+        [Parameter(Mandatory)] [array] $Items,
+        [Parameter()] [int] $Max = 20,
+        [Parameter(Mandatory)] [scriptblock] $ToLi
+    )
+    if (-not $Items -or $Items.Count -eq 0) { return '<span class="muted">Nessun elemento.</span>' }
+    $rows = @($Items | Select-Object -First $Max | ForEach-Object { & $ToLi $_ })
+    $suffix = if ($Items.Count -gt $Max) { "<li class='muted'>... +$($Items.Count - $Max) altri</li>" } else { '' }
+    return "<ul style='margin:8px 0 0 18px'>" + ($rows -join '') + $suffix + "</ul>"
+}
+
+$autoPct = if ($data.Summary.TotalVMs -gt 0) { [math]::Round(100 * ($data.Summary.VMsWithAutoPatching / $data.Summary.TotalVMs), 1) } else { 0 }
+$manualVms = @($data.AzureVMs | Where-Object { $_.PatchMode -and $_.PatchMode -notmatch 'Automatic' } | Select-Object -First 40)
+$topCritical = @($data.PendingUpdates | Sort-Object CriticalUpdateCount -Descending | Where-Object { $_.CriticalUpdateCount -gt 0 } | Select-Object -First 15)
+
+$impl = @()
+$impl += "<h3>Deep-dive dell'ambiente rilevato</h3>"
+$impl += "<ul style='margin:8px 0 0 18px'>"
+$impl += "<li><b>Maintenance Config</b>: $($data.Summary.TotalMaintenanceConfigs) (assegnazioni rilevate: $(@($data.MaintenanceConfigurations | ForEach-Object { $_.AssignedResourceCount }) | Measure-Object -Sum).Sum).</li>"
+$impl += "<li><b>VM</b>: totali $($data.Summary.TotalVMs) • auto patching $($data.Summary.VMsWithAutoPatching) • manual/non-config $($data.Summary.VMsWithManualPatching) • auto %: $autoPct%.</li>"
+$impl += "<li><b>Policy</b>: assessment policy $($data.Summary.HasAssessmentPolicy) • auto-patch policy $($data.Summary.HasAutoPatchPolicy) • policy totali: $($data.Summary.TotalUpdatePolicies).</li>"
+$impl += "<li><b>Assessment</b>: VM con assessment/pending updates analizzate: $($data.Summary.AssessedVMs) • critical updates pending (somma): $($data.Summary.CriticalUpdatesPending).</li>"
+$impl += "</ul>"
+
+$impl += "<h3 style='margin-top:14px'>Guida operativa: cosa fare in questo ambiente</h3>"
+$impl += "<ol style='margin:8px 0 0 18px'>"
+
+if ($data.Summary.TotalMaintenanceConfigs -eq 0) {
+    $impl += "<li><b>Crea Maintenance Configuration</b>: non ne ho trovate. Crea almeno 2 finestre (prod/non-prod) con timezone corretto e ricorrenza (weekly/monthly), e definisci reboot policy.</li>"
+} else {
+    $impl += "<li><b>Rivedi Maintenance Configuration esistenti</b>: verifica ricorrenza, durata e timezone, e assicurati che le VM target siano assegnate."
+    $impl += (Convert-ToListHtml -Items $data.MaintenanceConfigurations -Max 10 -ToLi { param($mc) "<li><b>$(& $enc $mc.Name)</b> <span class='muted'>(RG: $(& $enc $mc.ResourceGroup) • Recur: $(& $enc $mc.RecurEvery) • Assigned: $($mc.AssignedResourceCount))</span></li>" })
+    $impl += "</li>"
+}
+
+if ($autoPct -lt 70) {
+    $impl += "<li><b>Standardizza PatchMode</b>: auto patching è $autoPct%. Porta le VM a modalità automatica (AutomaticByPlatform/AutomaticByOS dove applicabile) e governa la finestra via Maintenance Configuration.</li>"
+    if ($manualVms.Count -gt 0) {
+        $impl += "<div class='muted' style='margin-top:6px'>Esempio VM non in automatico (top):</div>"
+        $impl += (Convert-ToListHtml -Items $manualVms -Max 15 -ToLi { param($vm) "<li><b>$(& $enc $vm.Name)</b> <span class='muted'>(RG: $(& $enc $vm.ResourceGroup) • PatchMode: $(& $enc $vm.PatchMode))</span></li>" })
+    }
+} else {
+    $impl += "<li><b>PatchMode</b>: la maggior parte delle VM è già in modalità automatica. Focus su assegnazioni Maintenance Config e remediation critical updates.</li>"
+}
+
+if (-not $data.Summary.HasAssessmentPolicy -or -not $data.Summary.HasAutoPatchPolicy) {
+    $impl += "<li><b>Azure Policy</b>: manca almeno una policy (assessment/auto-patch). Assegna le built-in policy per assessment periodico e patch orchestration, in modo da ridurre drift e ottenere compliance report.</li>"
+} else {
+    $impl += "<li><b>Azure Policy</b>: risultano presenti policy di assessment e auto-patch. Verifica scope ed enforcement (prod/non-prod) ed eventuali exclusions.</li>"
+}
+
+if ($data.Summary.CriticalUpdatesPending -gt 0) {
+    $impl += "<li><b>Remediation critical updates</b>: rilevati update critici pendenti. Pianifica una wave di remediation e monitora success/failure. VM più impattate (top):"
+    $impl += (Convert-ToListHtml -Items $topCritical -Max 12 -ToLi { param($r) "<li><b>$(& $enc $r.Name)</b> <span class='muted'>(Critical: $($r.CriticalUpdateCount) • Security: $($r.SecurityUpdateCount) • PatchMode: $(& $enc $r.PatchMode))</span></li>" })
+    $impl += "</li>"
+} else {
+    $impl += "<li><b>Critical updates</b>: non risultano critical pending nel campione analizzato. Continua con compliance e assessment periodico.</li>"
+}
+
+$impl += "<li><b>Validazione post-deploy</b>: controlla compliance report, esecuzioni schedule, reboot behavior e che le VM vengano valutate regolarmente. KPI: compliance %, critical pending trend, patch success rate.</li>"
+$impl += "</ol>"
+
+$implementationHtml = ($impl -join "`n")
+
 $mcRows = ($data.MaintenanceConfigurations | Select-Object -First 40 | ForEach-Object {
     "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.RecurEvery)</td><td>$($_.AssignedResourceCount)</td></tr>"
 }) -join "`n"
@@ -254,7 +321,7 @@ $kpis = @{
     Kpi4Value = $data.Summary.TotalUpdatePolicies
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Update Manager' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Update Manager' -Summary $kpis -Checks $checks -AiHtml $aiHtml -ImplementationHtml $implementationHtml -LegacyHtml $appendix -Context @{
     SubscriptionName = $data.Subscription.Name
     SubscriptionId   = $SubscriptionId
     Timestamp        = $data.Timestamp

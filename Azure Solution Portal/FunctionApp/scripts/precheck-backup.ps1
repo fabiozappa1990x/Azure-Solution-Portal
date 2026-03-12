@@ -215,6 +215,87 @@ if ($data.Summary -is [hashtable]) {
     $data.Summary | Add-Member -NotePropertyName "ReadinessScore" -NotePropertyValue $readiness.score -Force
 }
 
+$enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+function Convert-ItemsToListHtml {
+    param(
+        [Parameter(Mandatory)] [array] $Items,
+        [Parameter()] [int] $Max = 20,
+        [Parameter(Mandatory)] [scriptblock] $ToLi
+    )
+    if (-not $Items -or $Items.Count -eq 0) { return '<span class="muted">Nessun elemento.</span>' }
+    $rows = @($Items | Select-Object -First $Max | ForEach-Object { & $ToLi $_ })
+    $suffix = if ($Items.Count -gt $Max) { "<li class='muted'>... +$($Items.Count - $Max) altri</li>" } else { '' }
+    return "<ul style='margin:8px 0 0 18px'>" + ($rows -join '') + $suffix + "</ul>"
+}
+
+$vaults = @($data.RecoveryServicesVaults)
+$preferredVault = @(
+    $vaults | Where-Object { $_.SoftDeleteEnabled -eq $true -and $_.StorageType -match 'Geo' } | Select-Object -First 1
+)
+if (-not $preferredVault) { $preferredVault = @($vaults | Where-Object { $_.SoftDeleteEnabled -eq $true } | Select-Object -First 1) }
+if (-not $preferredVault) { $preferredVault = @($vaults | Select-Object -First 1) }
+
+$unprotected = @($data.AzureVMs | Where-Object { -not $_.IsProtected })
+$protected   = @($data.AzureVMs | Where-Object { $_.IsProtected })
+$vaultsSoftDeleteOff = @($vaults | Where-Object { -not $_.SoftDeleteEnabled })
+$vaultsLrs = @($vaults | Where-Object { $_.StorageType -notmatch 'Geo' })
+
+$impl = @()
+$impl += "<h3>Deep-dive dell'ambiente rilevato</h3>"
+$impl += "<ul style='margin:8px 0 0 18px'>"
+$impl += "<li><b>Recovery Services Vault</b>: $($data.Summary.TotalVaults) (GRS: $($data.Summary.VaultsWithGRS), SoftDelete: $($data.Summary.VaultsWithSoftDelete)).</li>"
+$impl += "<li><b>Policy</b>: $($data.Summary.TotalPolicies) • Auto-enable (Azure Policy) rilevate: $($data.Summary.AutoPoliciesCount).</li>"
+$impl += "<li><b>VM</b>: totali $($data.Summary.TotalVMs) • protette $($data.Summary.ProtectedVMs) • non protette $($data.Summary.UnprotectedVMs) • copertura $($data.Summary.BackupCoverage_Pct)%.</li>"
+$impl += "<li><b>Protected items</b>: $($data.Summary.TotalProtectedItems) (attenzione: include workload non-VM se presenti nel vault).</li>"
+$impl += "</ul>"
+
+$impl += "<h3 style='margin-top:14px'>Guida operativa: cosa fare in questo ambiente</h3>"
+$impl += "<ol style='margin:8px 0 0 18px'>"
+
+if ($vaults.Count -eq 0) {
+    $impl += "<li><b>Crea un Recovery Services Vault</b>: non ho trovato alcun vault. Crea un vault in una regione coerente con i workload (di norma stessa region delle VM) e applica baseline security (Soft Delete, immutability se prevista, RBAC, locks).</li>"
+} else {
+    $pv = $preferredVault | Select-Object -First 1
+    $pvName = if ($pv) { & $enc $pv.Name } else { '' }
+    $pvRg = if ($pv) { & $enc $pv.ResourceGroup } else { '' }
+    $pvLoc = if ($pv) { & $enc $pv.Location } else { '' }
+    $pvRed = if ($pv) { & $enc $pv.StorageType } else { '' }
+    $impl += "<li><b>Seleziona il vault target</b>: vault consigliato in questo contesto: <b>$pvName</b> <span class='muted'>(RG: $pvRg • Region: $pvLoc • Redundancy: $pvRed)</span>. Valuta consolidamento se ci sono più vault con policy divergenti.</li>"
+
+    if ($vaultsSoftDeleteOff.Count -gt 0) {
+        $impl += "<li><b>Hardening del vault</b>: rilevati vault con Soft Delete disabilitato. Abilita Soft Delete (Enabled/AlwaysOn) su tutti i vault per ridurre rischio di delete malevoli.</li>"
+    }
+    if ($vaultsLrs.Count -gt 0) {
+        $impl += "<li><b>Ridondanza (GRS)</b>: alcuni vault risultano non-GeoRedundant. Valuta GRS per workload critici e requisiti BCDR (RPO/RTO, compliance).</li>"
+    }
+}
+
+if ($data.Summary.TotalPolicies -eq 0) {
+    $impl += "<li><b>Crea policy standard</b>: non ho trovato policy nel vault. Crea policy per VM (daily/weekly) con retention coerente (es. 30/90/365) e naming standard. Se devi proteggere Azure Files/SQL in VM, crea policy dedicate.</li>"
+} else {
+    $impl += "<li><b>Rivedi policy esistenti</b>: sono presenti policy nel vault. Verifica schedule/retention, timezone e separazione prod/non-prod. Allinea il numero di policy per evitare eccessiva frammentazione.</li>"
+}
+
+if ($unprotected.Count -gt 0) {
+    $impl += "<li><b>Abilita backup sulle VM non protette</b>: ho trovato <b>$($unprotected.Count)</b> VM non protette. Se esiste già un vault target, abilita backup solo per quelle non protette (evita duplicazioni)."
+    $impl += (Convert-ItemsToListHtml -Items $unprotected -Max 25 -ToLi { param($vm) "<li><b>$(& $enc $vm.Name)</b> <span class='muted'>(RG: $(& $enc $vm.ResourceGroup) • Region: $(& $enc $vm.Location) • OS: $(& $enc $vm.OsType))</span></li>" })
+    $impl += "</li>"
+} else {
+    $impl += "<li><b>Copertura VM</b>: tutte le VM risultano protette. Verifica che la protezione sia Healthy e che i job siano in SLA (success rate, duration, throttling).</li>"
+}
+
+if ($data.Summary.AutoPoliciesCount -eq 0) {
+    $impl += "<li><b>Automation / auto-enablement</b>: non risultano policy assignments per auto-enable backup. Se il modello operativo lo richiede, valuta Azure Policy per standardizzare la protezione (scope RG/subscription) e ridurre drift.</li>"
+} else {
+    $impl += "<li><b>Automation</b>: risultano policy di backup presenti. Verifica scope ed enforcement, ed escludi workload non idonei per evitare protezione non desiderata.</li>"
+}
+
+$impl += "<li><b>Validazione post-deploy</b>: verifica che le VM siano in stato Protected, esegui un backup on-demand e un restore test su una VM campione. KPI minimi: backup success rate, restore test periodico, retention compliance.</li>"
+$impl += "</ol>"
+
+$implementationHtml = ($impl -join "`n")
+
 # Build a technical appendix (no AI required)
 $vaultRows = ($data.RecoveryServicesVaults | Select-Object -First 50 | ForEach-Object {
     "<tr><td>$($_.Name)</td><td>$($_.ResourceGroup)</td><td>$($_.Location)</td><td>$($_.StorageType)</td><td>$($_.SoftDeleteEnabled)</td></tr>"
@@ -268,7 +349,7 @@ $context = @{
     Timestamp        = $data.Timestamp
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName "Azure Backup" -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context $context
+$htmlContent = New-EnterpriseHtmlReport -SolutionName "Azure Backup" -Summary $kpis -Checks $checks -AiHtml $aiHtml -ImplementationHtml $implementationHtml -LegacyHtml $appendix -Context $context
 
 $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
 $data["ReportHTML"] = $htmlContent

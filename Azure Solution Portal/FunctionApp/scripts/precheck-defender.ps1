@@ -208,6 +208,80 @@ if ($data.Summary -is [hashtable]) {
     $data.Summary | Add-Member -NotePropertyName 'ReadinessScore' -NotePropertyValue $readiness.score -Force
 }
 
+$enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+function Convert-ToListHtml {
+    param(
+        [Parameter(Mandatory)] [array] $Items,
+        [Parameter()] [int] $Max = 20,
+        [Parameter(Mandatory)] [scriptblock] $ToLi
+    )
+    if (-not $Items -or $Items.Count -eq 0) { return '<span class="muted">Nessun elemento.</span>' }
+    $rows = @($Items | Select-Object -First $Max | ForEach-Object { & $ToLi $_ })
+    $suffix = if ($Items.Count -gt $Max) { "<li class='muted'>... +$($Items.Count - $Max) altri</li>" } else { '' }
+    return "<ul style='margin:8px 0 0 18px'>" + ($rows -join '') + $suffix + "</ul>"
+}
+
+$enabledPlans = @($data.DefenderPlans | Where-Object { $_.PricingTier -eq 'Standard' })
+$disabledPlans = @($data.DefenderPlans | Where-Object { $_.PricingTier -ne 'Standard' })
+$topHigh = @($data.TopRecommendations | Where-Object { $_.Severity -eq 'High' } | Select-Object -First 15)
+$topAny = @($data.TopRecommendations | Select-Object -First 15)
+
+$impl = @()
+$impl += "<h3>Deep-dive dell'ambiente rilevato</h3>"
+$impl += "<ul style='margin:8px 0 0 18px'>"
+$impl += "<li><b>Secure Score</b>: $($data.Summary.SecureScorePercent)%.</li>"
+$impl += "<li><b>Defender plans</b>: Standard $($data.Summary.EnabledPlans) / Totali $($data.Summary.TotalPlans) (Free: $($data.Summary.FreePlans)).</li>"
+$impl += "<li><b>Raccomandazioni</b>: totali $($data.Summary.TotalRecommendations) (High: $($data.Summary.HighSeverityRecs), Medium: $($data.Summary.MediumSeverityRecs)).</li>"
+$impl += "<li><b>Security contact</b>: $($data.Summary.SecurityContactsCount) • Auto-provisioning enabled: $($data.Summary.AutoProvisionEnabled) • Policy assignments security: $($data.Summary.SecurityPoliciesCount).</li>"
+$impl += "</ul>"
+
+$impl += "<h3 style='margin-top:14px'>Guida operativa: cosa fare in questo ambiente</h3>"
+$impl += "<ol style='margin:8px 0 0 18px'>"
+
+if ($data.Summary.EnabledPlans -eq 0) {
+    $impl += "<li><b>Abilita Defender for Cloud (baseline)</b>: nessun piano Standard rilevato. Abilita almeno CSPM e i piani core (Servers, Storage, Key Vault, Resource Manager) in base al perimetro.</li>"
+} else {
+    $impl += "<li><b>Allinea i piani Defender</b>: piani Standard attivi: <b>$($enabledPlans.Count)</b>. Valuta se mancano piani rilevanti per i tuoi workload. Esempio: Servers/Containers/SQL/Storage/KeyVault/ARM.</li>"
+}
+
+if ($disabledPlans.Count -gt 0) {
+    $impl += "<li><b>Piani non Standard (da valutare)</b>: questi piani risultano non in Standard tier (Free/Off)."
+    $impl += (Convert-ToListHtml -Items $disabledPlans -Max 18 -ToLi { param($p) "<li><b>$(& $enc $p.Name)</b> <span class='muted'>(Tier: $(& $enc $p.PricingTier) • SubPlan: $(& $enc $p.SubPlan))</span></li>" })
+    $impl += "</li>"
+}
+
+if ($data.Summary.SecurityContactsCount -eq 0) {
+    $impl += "<li><b>Configura Security Contact</b>: nessun contatto trovato. Imposta email/ruoli e abilita le notifiche per alert e posture changes (SOC/IR).</li>"
+} else {
+    $impl += "<li><b>Security Contact</b>: già configurato. Verifica che le mail siano di un gruppo (non persona) e che il routing incidenti sia conforme al processo SOC/IR.</li>"
+}
+
+if ($data.Summary.AutoProvisionEnabled -eq 0) {
+    $impl += "<li><b>Auto provisioning (agent)</b>: non risulta abilitato. Valuta auto-provisioning (MDE/AMA) per standardizzare la copertura sui server e ridurre drift.</li>"
+} else {
+    $impl += "<li><b>Auto provisioning</b>: risulta attivo. Verifica scope, exclusions e compatibilità con la tua baseline (AMA, MDE, proxy, egress).</li>"
+}
+
+if ($data.Summary.HighSeverityRecs -gt 0) {
+    $impl += "<li><b>Remediation prioritaria (High)</b>: ci sono raccomandazioni High severity aperte. Definisci ownership e SLA e pianifica remediation a sprint."
+    $impl += (Convert-ToListHtml -Items $topHigh -Max 12 -ToLi { param($r) "<li><b>$(& $enc $r.Title)</b> <span class='muted'>(ResourceType: $(& $enc $r.ResourceType))</span></li>" })
+    $impl += "</li>"
+} else {
+    $impl += "<li><b>High severity</b>: non risultano raccomandazioni High tra le top raccolte. Continua con hardening e controllo drift (policy).</li>"
+}
+
+if ($data.Summary.SecurityPoliciesCount -eq 0) {
+    $impl += "<li><b>Governance (Azure Policy)</b>: non risultano policy security rilevanti. Assegna baseline come Microsoft Cloud Security Benchmark (MCSB) o iniziative interne e monitora compliance.</li>"
+} else {
+    $impl += "<li><b>Governance</b>: sono presenti policy assignments security. Verifica che coprano tagging, security baseline, diagnostic settings, e che abbiano remediation tasks dove applicabile.</li>"
+}
+
+$impl += "<li><b>Validazione post-deploy</b>: controlla che Secure Score inizi a migliorare, che i piani siano attivi (pricing), e che le raccomandazioni si riducano con trend. KPI: secure score, #high recs, coverage agent, compliance policy.</li>"
+$impl += "</ol>"
+
+$implementationHtml = ($impl -join "`n")
+
 $plansRows = ($data.DefenderPlans | Select-Object -First 40 | ForEach-Object {
     "<tr><td>$($_.Name)</td><td>$($_.PricingTier)</td><td>$($_.SubPlan)</td></tr>"
 }) -join "`n"
@@ -246,7 +320,7 @@ $kpis = @{
     Kpi4Value = $data.Summary.SecurityContactsCount
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Microsoft Defender for Cloud' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Microsoft Defender for Cloud' -Summary $kpis -Checks $checks -AiHtml $aiHtml -ImplementationHtml $implementationHtml -LegacyHtml $appendix -Context @{
     SubscriptionName = $data.Subscription.Name
     SubscriptionId   = $SubscriptionId
     Timestamp        = $data.Timestamp

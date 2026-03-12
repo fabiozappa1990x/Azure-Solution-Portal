@@ -72,6 +72,9 @@ foreach ($a in $assocs) {
 }
 $machinesWithAssoc = @($machines | Where-Object { $assocByMachine.ContainsKey([string]$_.Name) })
 $machinesAmaWithoutAssoc = @($amaMachines | Where-Object { -not $assocByMachine.ContainsKey([string]$_.Name) })
+$assocCoveragePct = if ($amaMachines.Count -gt 0) { [math]::Round(100 * ($machinesWithAssoc.Count / $amaMachines.Count), 1) } else { 0 }
+
+$dcrWithoutWorkspaceDest = @($dcrs | Where-Object { -not $_.Destinations -or -not $_.Destinations.WorkspaceResourceIds -or @($_.Destinations.WorkspaceResourceIds).Count -eq 0 })
 
 $checks = @()
 $ama = [double]($data.Summary.AMA_Coverage_Percent)
@@ -98,6 +101,11 @@ $assocRationale = if ($amaMachines.Count -eq 0) {
     "Macchine con AMA: $($amaMachines.Count) • con DCR association: $($machinesWithAssoc.Count) • AMA senza association: $($machinesAmaWithoutAssoc.Count)."
 }
 $checks += New-PrecheckCheck -Id 'monitor.associations' -Title 'Associazioni DCR su macchine con AMA' -Severity 'Critical' -Status $assocStatus -Rationale $assocRationale -Remediation 'Associa la DCR alle VM/Arc con AMA (manuale o via policy). Senza association, i dati non vengono inviati al workspace.'
+
+if ($data.Summary.TotalDCRs -gt 0) {
+    $destStatus = if ($dcrWithoutWorkspaceDest.Count -eq 0) { 'Pass' } elseif ($dcrWithoutWorkspaceDest.Count -lt $dcrs.Count) { 'Warn' } else { 'Fail' }
+    $checks += New-PrecheckCheck -Id 'monitor.dcrdest' -Title 'DCR con destinazione Log Analytics' -Severity 'High' -Status $destStatus -Rationale "DCR senza destinazione workspace: $($dcrWithoutWorkspaceDest.Count) / $($dcrs.Count)." -Remediation 'Verifica che le DCR includano una destinazione Log Analytics (workspaceResourceId) coerente con il workspace target.'
+}
 
 $totalAlerts = [int]($data.Summary.TotalMetricAlerts + $data.Summary.TotalLogAlerts)
 $alertsStatus = if ($totalAlerts -ge 4) { 'Pass' } elseif ($totalAlerts -ge 1) { 'Warn' } else { 'Warn' }
@@ -186,8 +194,9 @@ $implParts += "<h3>Deep-dive dell'ambiente rilevato</h3>"
 $implParts += "<ul style='margin:8px 0 0 18px'>"
 $implParts += "<li><b>Macchine</b>: Totali $($data.Summary.TotalMachines) (Azure VM: $($data.Summary.AzureVMs), Arc: $($data.Summary.ArcServers)).</li>"
 $implParts += "<li><b>Agenti</b>: AMA $($data.Summary.MachinesWithAMA), MMA legacy $($data.Summary.MachinesWithLegacyMMA), non monitorate $($data.Summary.UnmonitoredMachines).</li>"
-$implParts += "<li><b>Workspace</b>: trovati nella subscription $($data.Summary.TotalWorkspaces). Workspace referenziati da DCR: $($dcrWorkspaceIds.Count) (subIds: $([string]($dcrWorkspaceSubIds -join ', '))).</li>"
-$implParts += "<li><b>DCR</b>: $($data.Summary.TotalDCRs) • Associazioni DCR: $($data.Summary.TotalDCRAssociations).</li>"
+$implParts += "<li><b>Workspace</b>: trovati nella subscription $($data.Summary.TotalWorkspaces) (VMInsights abilitato su $($data.Summary.WorkspacesWithVMInsights)). Workspace referenziati da DCR: $($dcrWorkspaceIds.Count) (subIds: $([string]($dcrWorkspaceSubIds -join ', '))).</li>"
+$implParts += "<li><b>DCR</b>: $($data.Summary.TotalDCRs) • Associazioni DCR: $($data.Summary.TotalDCRAssociations) • DCR senza destinazione workspace: $($dcrWithoutWorkspaceDest.Count).</li>"
+$implParts += "<li><b>Coverage associazioni</b>: AMA con DCR association: $($machinesWithAssoc.Count)/$($amaMachines.Count) ($assocCoveragePct%).</li>"
 $implParts += "<li><b>Alerting</b>: Action Groups $($data.Summary.TotalActionGroups) • Metric Alerts $($data.Summary.TotalMetricAlerts) • Log Alerts $($data.Summary.TotalLogAlerts).</li>"
 $implParts += "</ul>"
 
@@ -213,8 +222,11 @@ if ($workspaces.Count -gt 0) {
 
 # Step 2: DCR
 if ($dcrs.Count -gt 0) {
-    $implParts += "<li><b>Allinea le Data Collection Rules</b>: sono presenti DCR in subscription. Verifica che includano stream perf/log e che la destinazione Log Analytics sia corretta (workspace centrale)."
+    $implParts += "<li><b>Allinea le Data Collection Rules</b>: sono presenti DCR in subscription. Verifica <b>stream</b> (Perf/Event/Syslog/InsightsMetrics), <b>destinazioni</b> (workspaceResourceId) e naming/standard. Se alcune DCR non hanno destinazione Log Analytics, i dati non verranno ingestiti."
     $implParts += Convert-DcrToTableHtml -Dcrs $dcrs
+    if ($dcrWithoutWorkspaceDest.Count -gt 0) {
+        $implParts += "<div class='muted' style='margin-top:6px'><b>Attenzione:</b> rilevate DCR senza workspace destination. Nel deploy assicurati che <i>ogni DCR</i> punti al workspace target.</div>"
+    }
     $implParts += "</li>"
 } else {
     $implParts += "<li><b>Deploy DCR standard</b>: nessuna DCR trovata. Deploya una DCR standard (perf + eventlog/syslog) puntata al workspace target.</li>"
@@ -235,7 +247,7 @@ if ($legacyMmaMachines.Count -gt 0) {
 
 # Step 4: DCR associations on AMA machines
 if ($amaMachines.Count -gt 0 -and $machinesAmaWithoutAssoc.Count -gt 0) {
-    $implParts += "<li><b>Associa le DCR alle macchine con AMA</b>: ho trovato <b>$($machinesAmaWithoutAssoc.Count)</b> macchine con AMA ma senza DCR association. Senza association i dati non arrivano al workspace."
+    $implParts += "<li><b>Associa le DCR alle macchine con AMA</b>: ho trovato <b>$($machinesAmaWithoutAssoc.Count)</b> macchine con AMA ma senza DCR association. Senza association i dati non arrivano al workspace (coverage attuale: <b>$assocCoveragePct%</b>)."
     $implParts += (Convert-MachinesToListHtml -Machines $machinesAmaWithoutAssoc -Max 15)
     $implParts += "</li>"
 } elseif ($amaMachines.Count -gt 0) {
@@ -243,10 +255,11 @@ if ($amaMachines.Count -gt 0 -and $machinesAmaWithoutAssoc.Count -gt 0) {
 }
 
 # Step 5: Alerting baseline
-$implParts += "<li><b>Alerting & action group</b>: action groups trovati: <b>$($data.Summary.TotalActionGroups)</b>; alert rules totali: <b>$totalAlerts</b>. Se non hai una baseline completa, deploya alert CPU/Memoria/Disco/Heartbeat e routing verso il tuo ITSM/on-call.</li>"
+$agNote = if ($data.Summary.TotalActionGroups -eq 0) { "<div class='muted' style='margin-top:6px'>Non risultano Action Group: nel deploy crea un action group con email/ITSM/webhook e usalo come target degli alert.</div>" } else { "" }
+$implParts += "<li><b>Alerting & action group</b>: action groups trovati: <b>$($data.Summary.TotalActionGroups)</b>; alert rules totali: <b>$totalAlerts</b>. Se non hai una baseline completa, deploya alert CPU/Memoria/Disco/Heartbeat e routing verso il tuo ITSM/on-call.$agNote</li>"
 
 # Step 6: Validation
-$implParts += "<li><b>Validazione post-deploy</b>: dopo il deploy, verifica ingestione dati nel workspace target (es. query: <code>Heartbeat | summarize dcount(Computer)</code> e <code>InsightsMetrics | summarize count() by Name</code>).</li>"
+$implParts += "<li><b>Validazione post-deploy</b>: dopo il deploy verifica ingestione dati nel workspace target:<br><code>Heartbeat | summarize dcount(Computer)</code><br><code>InsightsMetrics | summarize count() by Name</code><br><code>Perf | summarize count() by ObjectName</code><br><code>Event | summarize count() by EventLevelName</code><br><span class='muted'>Se non arrivano dati: controlla association DCR, destinazione workspace e stato estensione AMA.</span></li>"
 
 $implParts += "</ol>"
 
