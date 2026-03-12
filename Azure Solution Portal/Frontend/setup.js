@@ -427,7 +427,7 @@ async function checkFunctionApp() {
     const results = await Promise.all(endpoints.map(async ep => {
         try {
             const r = await fetch(`${FUNCTION_APP_URL}${ep.path}`, { method: 'OPTIONS', signal: AbortSignal.timeout(8000) });
-            return { name: ep.name, ok: r.status > 0 && r.status < 500 };
+            return { name: ep.name, ok: r.status >= 200 && r.status < 300 };
         } catch {
             return { name: ep.name, ok: false };
         }
