@@ -223,23 +223,23 @@ $mon = @($allInventory | Where-Object { $_.monitored }).Count
 $coveragePct = if ($tot -gt 0) { [math]::Round(100 * ($mon / $tot), 0) } else { 0 }
 
 $checks = @()
-$checks += New-PrecheckCheck -Id 'mon2.inventory' -Title 'Copertura risorse monitorabili' -Severity 'High' -Status (if ($coveragePct -ge 85) { 'Pass' } elseif ($coveragePct -ge 50) { 'Warn' } else { 'Fail' }) `
+$checks += New-PrecheckCheck -Id 'mon2.inventory' -Title 'Copertura risorse monitorabili' -Severity 'High' -Status $(if ($coveragePct -ge 85) { 'Pass' } elseif ($coveragePct -ge 50) { 'Warn' } else { 'Fail' }) `
     -Rationale "Risorse monitorabili: $tot. Monitorate: $mon ($coveragePct%)." `
     -Remediation 'Completare onboarding delle risorse non monitorate (Compute via AMA+DCR, PaaS via Diagnostic Settings).'
 
-$checks += New-PrecheckCheck -Id 'mon2.law' -Title 'Log Analytics Workspace disponibile' -Severity 'Critical' -Status (if (@($workspaces).Count -gt 0) { 'Pass' } else { 'Fail' }) `
+$checks += New-PrecheckCheck -Id 'mon2.law' -Title 'Log Analytics Workspace disponibile' -Severity 'Critical' -Status $(if (@($workspaces).Count -gt 0) { 'Pass' } else { 'Fail' }) `
     -Rationale "Workspaces trovati: $(@($workspaces).Count)." `
     -Remediation 'Creare (o individuare) un Log Analytics Workspace centrale e standardizzare retention/region.'
 
-$checks += New-PrecheckCheck -Id 'mon2.dcr' -Title 'Data Collection Rules disponibili' -Severity 'Critical' -Status (if (@($dcrs).Count -gt 0) { 'Pass' } else { 'Warn' }) `
+$checks += New-PrecheckCheck -Id 'mon2.dcr' -Title 'Data Collection Rules disponibili' -Severity 'Critical' -Status $(if (@($dcrs).Count -gt 0) { 'Pass' } else { 'Warn' }) `
     -Rationale "DCR trovate: $(@($dcrs).Count)." `
     -Remediation 'Creare una DCR standard (Windows+Linux) con destination LAW e policy/script di associazione.'
 
-$checks += New-PrecheckCheck -Id 'mon2.dce' -Title 'Data Collection Endpoint (opzionale)' -Severity 'Medium' -Status (if (@($dces).Count -gt 0) { 'Pass' } else { 'Warn' }) `
+$checks += New-PrecheckCheck -Id 'mon2.dce' -Title 'Data Collection Endpoint (opzionale)' -Severity 'Medium' -Status $(if (@($dces).Count -gt 0) { 'Pass' } else { 'Warn' }) `
     -Rationale "DCE trovate: $(@($dces).Count). (Non sempre necessaria: dipende da network/privatelink)." `
     -Remediation 'Se richiesto (private endpoints / data ingestion isolation), creare una DCE e collegarla alla DCR.'
 
-$checks += New-PrecheckCheck -Id 'mon2.actiongroups' -Title 'Action Groups (notifiche)' -Severity 'Medium' -Status (if (@($actionGroups).Count -gt 0) { 'Pass' } else { 'Warn' }) `
+$checks += New-PrecheckCheck -Id 'mon2.actiongroups' -Title 'Action Groups (notifiche)' -Severity 'Medium' -Status $(if (@($actionGroups).Count -gt 0) { 'Pass' } else { 'Warn' }) `
     -Rationale "Action Groups trovati: $(@($actionGroups).Count)." `
     -Remediation 'Creare action group (email/Teams/webhook/ITSM) e usarlo per alert CPU/Mem/Disco/Heartbeat.'
 
@@ -393,9 +393,14 @@ $html = New-EnterpriseHtmlReport -SolutionName 'Azure Monitor Hub — Precheck 2
 $data['ReportHTML'] = $html
 
 $OutputPath = if ($OutputPath) { $OutputPath } else { ".\\AzureMonitorHub-Precheck2.html" }
-$jsonPath = $OutputPath -replace "\\.html$", ".json"
+$jsonPath = $OutputPath -replace "\.html$", ".json"
 
 $html | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
-$data | ConvertTo-Json -Depth 20 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
+$jsonContent = ConvertTo-Json -InputObject $data -Depth 20
+$jsonContent | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
+
+if ($env:DEBUG_PRECHECK_MONITOR_V2 -eq '1') {
+    Write-Host "DEBUG precheck-monitor-v2: jsonPath=$jsonPath jsonLen=$($jsonContent.Length) jsonExists=$(Test-Path -LiteralPath $jsonPath)"
+}
 
 Write-Host "=== MONITOR PRECHECK 2.0 DONE === Time: $([math]::Round(((Get-Date)-$start).TotalSeconds))s Coverage: $coveragePct% Readiness: $($readiness.score)%"
