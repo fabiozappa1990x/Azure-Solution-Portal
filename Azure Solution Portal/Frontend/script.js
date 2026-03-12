@@ -14,10 +14,15 @@ console.log('🔗 API Base URL:', API_BASE_URL);
 // GitHub raw base URL per i template ARM e gli script PowerShell
 const GITHUB_RAW = 'https://raw.githubusercontent.com/fabiozappa1990x/Azure-Solution-Portal/main';
 
+function withCacheBuster(url) {
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}v=${Date.now()}`;
+}
+
 function deployToAzureUrl(folderEncoded) {
     const base = `${GITHUB_RAW}/${folderEncoded}`;
-    const deployJsonUrl = encodeURIComponent(`${base}/portal-ui/deploy.json`);
-    const createUiUrl   = encodeURIComponent(`${base}/portal-ui/createUiDefinition.json`);
+    const deployJsonUrl = encodeURIComponent(withCacheBuster(`${base}/portal-ui/deploy.json`));
+    const createUiUrl   = encodeURIComponent(withCacheBuster(`${base}/portal-ui/createUiDefinition.json`));
     return `https://portal.azure.com/#create/Microsoft.Template/uri/${deployJsonUrl}/createUIDefinitionUri/${createUiUrl}`;
 }
 
