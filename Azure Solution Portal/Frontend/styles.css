@@ -406,6 +406,102 @@ nav ul li a:hover, nav ul li a.active {
     background-color: rgba(0, 120, 212, 0.1);
 }
 
+/* ==============================
+   Subscription Picker (Setup/Precheck)
+   ============================== */
+.sub-picker {
+    margin-top: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.sub-picker-header {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--light-bg);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.sub-picker-title {
+    font-weight: 600;
+}
+
+.sub-picker-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 320px;
+    max-width: 520px;
+}
+
+.sub-picker-search input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 0.95rem;
+}
+
+.sub-picker-body {
+    max-height: 220px;
+    overflow: auto;
+    padding: 6px 12px;
+}
+
+.sub-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 8px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.sub-item:last-child {
+    border-bottom: none;
+}
+
+.sub-item input[type="checkbox"] {
+    margin-top: 3px;
+    transform: scale(1.05);
+}
+
+.sub-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sub-name {
+    font-weight: 600;
+}
+
+.sub-id {
+    font-size: 0.85rem;
+    color: #666;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.sub-picker-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px;
+    border-top: 1px solid var(--border-color);
+    background: #fff;
+}
+
+.sub-picker-note {
+    padding: 0 12px 12px 12px;
+    color: #666;
+    font-size: 0.9rem;
+}
+
 /* Loading Spinner */
 .precheck-loading {
     text-align: center;

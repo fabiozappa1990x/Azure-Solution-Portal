@@ -302,30 +302,57 @@ async function checkSubscription() {
                 : `Subscription selezionate: ${valid.length} (primaria: ${primary.displayName})`;
             setCheckState('sub', 'ok', msg);
             // Keep the option to change selection (landing zone scenarios)
-            showAction('sub', `<button class="btn-fix" onclick="showBox('sub', true)"><i class="fas fa-pen"></i> Modifica</button>`);
+            showAction('sub', subs.length > 1
+                ? `<button class="btn-fix" onclick="showBox('sub', true)"><i class="fas fa-pen"></i> Modifica</button>`
+                : '');
             // If multiple subs exist, allow editing; otherwise keep hidden
             if (subs.length > 1) {
                 // Pre-render the picker but keep it hidden until user clicks "Modifica"
                 const multi = document.getElementById('sub-multi');
                 if (multi && multi.innerHTML.trim() === '') {
-                    const rows = subs.slice(0, 50).map(s => {
+                    const rows = subs.slice(0, 80).map(s => {
                         const id = escapeHtml(s.subscriptionId);
-                        const label = `${escapeHtml(s.displayName)} (${id})`;
                         const checked = valid.includes(s.subscriptionId) ? 'checked' : '';
                         return `
-                            <label style="display:flex;gap:10px;align-items:center;padding:6px 0">
+                            <label class="sub-item">
                                 <input type="checkbox" class="sub-check" value="${id}" ${checked} />
-                                <span>${label}</span>
+                                <span class="sub-meta">
+                                    <span class="sub-name">${escapeHtml(s.displayName)}</span>
+                                    <span class="sub-id">${id}</span>
+                                </span>
                             </label>`;
                     }).join('');
+
                     multi.innerHTML = `
-                        <div style="max-height:180px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff">
-                            ${rows}
-                        </div>
-                        <div style="margin-top:8px;font-size:.92rem;color:#666">
-                            La <strong>prima</strong> selezionata viene usata come primaria.
-                            ${subs.length > 50 ? `<br/>Mostrate 50/${subs.length}.` : ''}
+                        <div class="sub-picker">
+                            <div class="sub-picker-header">
+                                <div class="sub-picker-title">Subscription disponibili</div>
+                                <div class="sub-picker-search">
+                                    <i class="fas fa-search" style="color:#666"></i>
+                                    <input type="text" id="sub-search" placeholder="Cerca per nome o ID..." />
+                                </div>
+                            </div>
+                            <div class="sub-picker-body" id="sub-list">
+                                ${rows}
+                            </div>
+                            <div class="sub-picker-note">
+                                La <strong>prima</strong> selezionata viene usata come primaria.
+                                ${subs.length > 80 ? `<br/>Mostrate 80/${subs.length}.` : ''}
+                            </div>
                         </div>`;
+
+                    // Search filter
+                    const search = document.getElementById('sub-search');
+                    const list = document.getElementById('sub-list');
+                    if (search && list) {
+                        search.addEventListener('input', () => {
+                            const q = search.value.trim().toLowerCase();
+                            list.querySelectorAll('.sub-item').forEach(row => {
+                                const text = row.textContent.toLowerCase();
+                                row.style.display = !q || text.includes(q) ? '' : 'none';
+                            });
+                        });
+                    }
                 }
                 showBox('sub', false);
             } else {
@@ -345,23 +372,50 @@ async function checkSubscription() {
     // Multiple subscriptions: show multi picker (checkboxes)
     const multi = document.getElementById('sub-multi');
     if (multi) {
-        const rows = subs.slice(0, 50).map((s, idx) => {
+        const rows = subs.slice(0, 80).map((s, idx) => {
             const id = escapeHtml(s.subscriptionId);
-            const label = `${escapeHtml(s.displayName)} (${id})`;
+            const checked = idx === 0 ? 'checked' : '';
             return `
-                <label style="display:flex;gap:10px;align-items:center;padding:6px 0">
-                    <input type="checkbox" class="sub-check" value="${id}" ${idx === 0 ? 'checked' : ''} />
-                    <span>${label}</span>
+                <label class="sub-item">
+                    <input type="checkbox" class="sub-check" value="${id}" ${checked} />
+                    <span class="sub-meta">
+                        <span class="sub-name">${escapeHtml(s.displayName)}</span>
+                        <span class="sub-id">${id}</span>
+                    </span>
                 </label>`;
         }).join('');
+
         multi.innerHTML = `
-            <div style="max-height:180px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff">
-                ${rows}
-            </div>
-            <div style="margin-top:8px;font-size:.92rem;color:#666">
-                La <strong>prima</strong> selezionata viene usata come primaria.
-                ${subs.length > 50 ? `<br/>Mostrate 50/${subs.length}.` : ''}
+            <div class="sub-picker">
+                <div class="sub-picker-header">
+                    <div class="sub-picker-title">Subscription disponibili</div>
+                    <div class="sub-picker-search">
+                        <i class="fas fa-search" style="color:#666"></i>
+                        <input type="text" id="sub-search" placeholder="Cerca per nome o ID..." />
+                    </div>
+                </div>
+                <div class="sub-picker-body" id="sub-list">
+                    ${rows}
+                </div>
+                <div class="sub-picker-note">
+                    La <strong>prima</strong> selezionata viene usata come primaria.
+                    ${subs.length > 80 ? `<br/>Mostrate 80/${subs.length}.` : ''}
+                </div>
             </div>`;
+
+        // Search filter
+        const search = document.getElementById('sub-search');
+        const list = document.getElementById('sub-list');
+        if (search && list) {
+            search.addEventListener('input', () => {
+                const q = search.value.trim().toLowerCase();
+                list.querySelectorAll('.sub-item').forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = !q || text.includes(q) ? '' : 'none';
+                });
+            });
+        }
+
         showBox('sub', true);
         setCheckState('sub', 'warning', `${subs.length} subscription disponibili — selezionane una o più`);
         return false;  // wait for user selection

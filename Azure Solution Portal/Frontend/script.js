@@ -66,22 +66,48 @@ function renderSubscriptionPicker(container, subs, preselected) {
         const name = String(s.displayName || '');
         const checked = selected.has(id) ? 'checked' : '';
         return `
-            <label style="display:flex;gap:10px;align-items:center;padding:6px 0">
+            <label class="sub-item">
                 <input type="checkbox" class="precheck-sub-check" value="${id}" ${checked} />
-                <span>${name} (${id})</span>
+                <span class="sub-meta">
+                    <span class="sub-name">${name}</span>
+                    <span class="sub-id">${id}</span>
+                </span>
             </label>`;
     }).join('');
 
     container.innerHTML = `
-        <div style="max-height:200px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff">
-            ${rows}
+        <div class="sub-picker">
+            <div class="sub-picker-header">
+                <div class="sub-picker-title">Seleziona subscription</div>
+                <div class="sub-picker-search">
+                    <i class="fas fa-search" style="color:#666"></i>
+                    <input type="text" id="precheck-sub-search" placeholder="Cerca per nome o ID..." />
+                </div>
+            </div>
+            <div class="sub-picker-body" id="precheck-sub-list">
+                ${rows}
+            </div>
+            <div class="sub-picker-actions">
+                <button type="button" class="btn-primary" id="btn-use-subs">Usa selezione</button>
+                <button type="button" class="btn-secondary" id="btn-hide-subs">Chiudi</button>
+            </div>
+            <div class="sub-picker-note">
+                Mostrate ${Math.min(subs.length,80)}/${subs.length}. Per liste grandi usa la pagina Setup.
+            </div>
         </div>
-        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-            <button type="button" class="btn-primary" id="btn-use-subs">Usa selezione</button>
-            <button type="button" class="btn-secondary" id="btn-hide-subs">Chiudi</button>
-        </div>
-        <small style="display:block;margin-top:6px;color:#666">Mostrate ${Math.min(subs.length,80)}/${subs.length}. La lista completa è disponibile via Setup.</small>
     `;
+
+    const search = container.querySelector('#precheck-sub-search');
+    const list = container.querySelector('#precheck-sub-list');
+    if (search && list) {
+        search.addEventListener('input', () => {
+            const q = search.value.trim().toLowerCase();
+            list.querySelectorAll('.sub-item').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = !q || text.includes(q) ? '' : 'none';
+            });
+        });
+    }
 }
 
 const SOLUTIONS = {
