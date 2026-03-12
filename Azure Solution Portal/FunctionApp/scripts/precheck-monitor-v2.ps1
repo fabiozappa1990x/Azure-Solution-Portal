@@ -84,7 +84,7 @@ function Get-WorkspaceLinksFromDiagSettings {
         }
         if ($wsId) { $ids += [string]$wsId }
     }
-    return ($ids | Where-Object { $_ } | Select-Object -Unique)
+    return @($ids | Where-Object { $_ } | Select-Object -Unique)
 }
 
 function Get-VmAmaState {
@@ -134,38 +134,38 @@ if (-not $sub) { throw "Subscription non accessibile o non trovata: $Subscriptio
 $vmResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Compute/virtualMachines?api-version=2023-07-01"
 $vms = @()
 if ($vmResp -and ($vmResp.PSObject.Properties.Name -contains 'value') -and $vmResp.value) { $vms = @($vmResp.value) }
-$vms = $vms | Where-Object { $_ }
+$vms = @($vms | Where-Object { $_ })
 
 $saResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Storage/storageAccounts?api-version=2023-01-01"
 $storageAccounts = @()
 if ($saResp -and ($saResp.PSObject.Properties.Name -contains 'value') -and $saResp.value) { $storageAccounts = @($saResp.value) }
-$storageAccounts = $storageAccounts | Where-Object { $_ }
+$storageAccounts = @($storageAccounts | Where-Object { $_ })
 
 $kvResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.KeyVault/vaults?api-version=2023-07-01"
 $keyVaults = @()
 if ($kvResp -and ($kvResp.PSObject.Properties.Name -contains 'value') -and $kvResp.value) { $keyVaults = @($kvResp.value) }
-$keyVaults = $keyVaults | Where-Object { $_ }
+$keyVaults = @($keyVaults | Where-Object { $_ })
 
 # ---------- Prerequisites ----------
 $lawResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.OperationalInsights/workspaces?api-version=2022-10-01"
 $workspaces = @()
 if ($lawResp -and ($lawResp.PSObject.Properties.Name -contains 'value') -and $lawResp.value) { $workspaces = @($lawResp.value) }
-$workspaces = $workspaces | Where-Object { $_ }
+$workspaces = @($workspaces | Where-Object { $_ })
 
 $dcrResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Insights/dataCollectionRules?api-version=2022-06-01"
 $dcrs = @()
 if ($dcrResp -and ($dcrResp.PSObject.Properties.Name -contains 'value') -and $dcrResp.value) { $dcrs = @($dcrResp.value) }
-$dcrs = $dcrs | Where-Object { $_ }
+$dcrs = @($dcrs | Where-Object { $_ })
 
 $dceResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Insights/dataCollectionEndpoints?api-version=2022-06-01"
 $dces = @()
 if ($dceResp -and ($dceResp.PSObject.Properties.Name -contains 'value') -and $dceResp.value) { $dces = @($dceResp.value) }
-$dces = $dces | Where-Object { $_ }
+$dces = @($dces | Where-Object { $_ })
 
 $agResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Insights/actionGroups?api-version=2023-01-01"
 $actionGroups = @()
 if ($agResp -and ($agResp.PSObject.Properties.Name -contains 'value') -and $agResp.value) { $actionGroups = @($agResp.value) }
-$actionGroups = $actionGroups | Where-Object { $_ }
+$actionGroups = @($actionGroups | Where-Object { $_ })
 
 # ---------- Monitoring posture ----------
 $vmInventory = @()
@@ -189,14 +189,14 @@ $paasInventory = @()
 foreach ($sa in $storageAccounts) {
     $id = [string]$sa.id
     $diag = Get-DiagnosticSettings -ResourceId $id
-    $wsLinks = Get-WorkspaceLinksFromDiagSettings -DiagSettings $diag
+    $wsLinks = @(Get-WorkspaceLinksFromDiagSettings -DiagSettings $diag)
     $paasInventory += [ordered]@{
         type          = 'StorageAccount'
         name          = [string]$sa.name
         id            = $id
         resourceGroup = (Get-RgFromId $id)
         location      = [string]$sa.location
-        monitored     = ($wsLinks.Count -gt 0)
+        monitored     = (@($wsLinks).Count -gt 0)
         workspaceIds  = $wsLinks
     }
 }
@@ -204,21 +204,21 @@ foreach ($sa in $storageAccounts) {
 foreach ($kv in $keyVaults) {
     $id = [string]$kv.id
     $diag = Get-DiagnosticSettings -ResourceId $id
-    $wsLinks = Get-WorkspaceLinksFromDiagSettings -DiagSettings $diag
+    $wsLinks = @(Get-WorkspaceLinksFromDiagSettings -DiagSettings $diag)
     $paasInventory += [ordered]@{
         type          = 'KeyVault'
         name          = [string]$kv.name
         id            = $id
         resourceGroup = (Get-RgFromId $id)
         location      = [string]$kv.location
-        monitored     = ($wsLinks.Count -gt 0)
+        monitored     = (@($wsLinks).Count -gt 0)
         workspaceIds  = $wsLinks
     }
 }
 
 $allInventory = @($vmInventory + $paasInventory)
 
-$tot = $allInventory.Count
+$tot = @($allInventory).Count
 $mon = @($allInventory | Where-Object { $_.monitored }).Count
 $coveragePct = if ($tot -gt 0) { [math]::Round(100 * ($mon / $tot), 0) } else { 0 }
 
@@ -227,20 +227,20 @@ $checks += New-PrecheckCheck -Id 'mon2.inventory' -Title 'Copertura risorse moni
     -Rationale "Risorse monitorabili: $tot. Monitorate: $mon ($coveragePct%)." `
     -Remediation 'Completare onboarding delle risorse non monitorate (Compute via AMA+DCR, PaaS via Diagnostic Settings).'
 
-$checks += New-PrecheckCheck -Id 'mon2.law' -Title 'Log Analytics Workspace disponibile' -Severity 'Critical' -Status (if ($workspaces.Count -gt 0) { 'Pass' } else { 'Fail' }) `
-    -Rationale "Workspaces trovati: $($workspaces.Count)." `
+$checks += New-PrecheckCheck -Id 'mon2.law' -Title 'Log Analytics Workspace disponibile' -Severity 'Critical' -Status (if (@($workspaces).Count -gt 0) { 'Pass' } else { 'Fail' }) `
+    -Rationale "Workspaces trovati: $(@($workspaces).Count)." `
     -Remediation 'Creare (o individuare) un Log Analytics Workspace centrale e standardizzare retention/region.'
 
-$checks += New-PrecheckCheck -Id 'mon2.dcr' -Title 'Data Collection Rules disponibili' -Severity 'Critical' -Status (if ($dcrs.Count -gt 0) { 'Pass' } else { 'Warn' }) `
-    -Rationale "DCR trovate: $($dcrs.Count)." `
+$checks += New-PrecheckCheck -Id 'mon2.dcr' -Title 'Data Collection Rules disponibili' -Severity 'Critical' -Status (if (@($dcrs).Count -gt 0) { 'Pass' } else { 'Warn' }) `
+    -Rationale "DCR trovate: $(@($dcrs).Count)." `
     -Remediation 'Creare una DCR standard (Windows+Linux) con destination LAW e policy/script di associazione.'
 
-$checks += New-PrecheckCheck -Id 'mon2.dce' -Title 'Data Collection Endpoint (opzionale)' -Severity 'Medium' -Status (if ($dces.Count -gt 0) { 'Pass' } else { 'Warn' }) `
-    -Rationale "DCE trovate: $($dces.Count). (Non sempre necessaria: dipende da network/privatelink)." `
+$checks += New-PrecheckCheck -Id 'mon2.dce' -Title 'Data Collection Endpoint (opzionale)' -Severity 'Medium' -Status (if (@($dces).Count -gt 0) { 'Pass' } else { 'Warn' }) `
+    -Rationale "DCE trovate: $(@($dces).Count). (Non sempre necessaria: dipende da network/privatelink)." `
     -Remediation 'Se richiesto (private endpoints / data ingestion isolation), creare una DCE e collegarla alla DCR.'
 
-$checks += New-PrecheckCheck -Id 'mon2.actiongroups' -Title 'Action Groups (notifiche)' -Severity 'Medium' -Status (if ($actionGroups.Count -gt 0) { 'Pass' } else { 'Warn' }) `
-    -Rationale "Action Groups trovati: $($actionGroups.Count)." `
+$checks += New-PrecheckCheck -Id 'mon2.actiongroups' -Title 'Action Groups (notifiche)' -Severity 'Medium' -Status (if (@($actionGroups).Count -gt 0) { 'Pass' } else { 'Warn' }) `
+    -Rationale "Action Groups trovati: $(@($actionGroups).Count)." `
     -Remediation 'Creare action group (email/Teams/webhook/ITSM) e usarlo per alert CPU/Mem/Disco/Heartbeat.'
 
 $readiness = Get-PrecheckReadiness -Checks $checks
@@ -248,9 +248,9 @@ $readiness = Get-PrecheckReadiness -Checks $checks
 # ---------- Roadmap (phased) ----------
 $roadmap = @()
 
-$missingLaw = ($workspaces.Count -le 0)
-$missingDcr = ($dcrs.Count -le 0)
-$missingAg  = ($actionGroups.Count -le 0)
+$missingLaw = (@($workspaces).Count -le 0)
+$missingDcr = (@($dcrs).Count -le 0)
+$missingAg  = (@($actionGroups).Count -le 0)
 
 $needsFoundation = $missingLaw -or $missingDcr -or $missingAg
 $roadmap += [ordered]@{
@@ -318,9 +318,9 @@ $kpis = @{
     Kpi2Label = 'Monitorate'
     Kpi2Value = "$mon ($coveragePct%)"
     Kpi3Label = 'Workspaces'
-    Kpi3Value = $workspaces.Count
+    Kpi3Value = @($workspaces).Count
     Kpi4Label = 'DCR'
-    Kpi4Value = $dcrs.Count
+    Kpi4Value = @($dcrs).Count
 }
 
 $appendix = @()
@@ -336,7 +336,7 @@ $appendix += "<table><thead><tr><th>Name</th><th>RG</th><th>Region</th><th>AMA</
 $appendix += "<h4>PaaS (Storage/KeyVault) (top 80)</h4>"
 $paasRows = ($paasInventory | Select-Object -First 80 | ForEach-Object {
     $m = if ($_.monitored) { 'Yes' } else { 'No' }
-    $ws = if ($_.workspaceIds -and $_.workspaceIds.Count) { ($_.workspaceIds -join '<br/>') } else { '' }
+    $ws = if ($_.workspaceIds -and @($_.workspaceIds).Count) { (@($_.workspaceIds) -join '<br/>') } else { '' }
     "<tr><td>$($_.type)</td><td>$($_.name)</td><td>$($_.resourceGroup)</td><td>$($_.location)</td><td>$m</td><td>$ws</td></tr>"
 }) -join "`n"
 $appendix += "<table><thead><tr><th>Type</th><th>Name</th><th>RG</th><th>Region</th><th>Monitored</th><th>Workspace</th></tr></thead><tbody>$paasRows</tbody></table>"
@@ -350,8 +350,8 @@ $aiPayload = @{
         resourcesMonitorable = $tot
         resourcesMonitored = $mon
         coveragePct = $coveragePct
-        workspaces = $workspaces.Count
-        dcr = $dcrs.Count
+        workspaces = @($workspaces).Count
+        dcr = @($dcrs).Count
     }
     roadmap = $roadmap
     topNotMonitored = @($allInventory | Where-Object { -not $_.monitored } | Select-Object -First 20 type,name,resourceGroup)
@@ -366,12 +366,12 @@ $data = [ordered]@{
         TotalMonitorableResources = $tot
         MonitoredResources        = $mon
         CoveragePercent           = $coveragePct
-        TotalVMs                  = $vmInventory.Count
-        TotalPaaS                 = $paasInventory.Count
-        TotalWorkspaces           = $workspaces.Count
-        TotalDCRs                 = $dcrs.Count
-        TotalDCEs                 = $dces.Count
-        TotalActionGroups         = $actionGroups.Count
+        TotalVMs                  = @($vmInventory).Count
+        TotalPaaS                 = @($paasInventory).Count
+        TotalWorkspaces           = @($workspaces).Count
+        TotalDCRs                 = @($dcrs).Count
+        TotalDCEs                 = @($dces).Count
+        TotalActionGroups         = @($actionGroups).Count
         ReadinessScore            = $readiness.score
     }
     Inventory = [ordered]@{
