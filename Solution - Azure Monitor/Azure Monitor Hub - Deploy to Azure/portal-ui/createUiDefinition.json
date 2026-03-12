@@ -64,6 +64,34 @@
                 }
               },
               {
+                "name": "useWorkspaceResourceId",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Workspace in another subscription (landing zone)",
+                "defaultValue": false,
+                "toolTip": "Enable if your Log Analytics Workspace is centralized in another subscription. You'll paste the workspace Resource ID.",
+                "visible": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing')]"
+              },
+              {
+                "name": "existingResourceId",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Existing Workspace Resource ID",
+                "placeholder": "/subscriptions/<subId>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<name>",
+                "toolTip": "Paste the full resource ID of the existing Log Analytics Workspace (can be in another subscription in the same tenant).",
+                "constraints": {
+                  "required": true
+                },
+                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), equals(steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId, true))]"
+              },
+              {
+                "name": "existingCrossSubInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), equals(steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId, true))]",
+                "options": {
+                  "icon": "Info",
+                  "text": "Landing-zone scenario: run the deployment in the workload subscription (where VMs/Arc live), but reference the central workspace by Resource ID. DCR destinations and alerts will point to that workspace."
+                }
+              },
+              {
                 "name": "name",
                 "type": "Microsoft.Common.TextBox",
                 "label": "Workspace Name",
@@ -87,35 +115,7 @@
                     "location": "onBasics"
                   }
                 },
-                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), not(steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId))]"
-              },
-              {
-                "name": "useWorkspaceResourceId",
-                "type": "Microsoft.Common.CheckBox",
-                "label": "Workspace in another subscription (landing zone)",
-                "defaultValue": false,
-                "toolTip": "Enable if your Log Analytics Workspace is centralized in another subscription. You'll paste the workspace Resource ID.",
-                "visible": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing')]"
-              },
-              {
-                "name": "existingResourceId",
-                "type": "Microsoft.Common.TextBox",
-                "label": "Existing Workspace Resource ID",
-                "placeholder": "/subscriptions/<subId>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<name>",
-                "toolTip": "Paste the full resource ID of the existing Log Analytics Workspace (can be in another subscription in the same tenant).",
-                "constraints": {
-                  "required": true
-                },
-                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId)]"
-              },
-              {
-                "name": "existingCrossSubInfo",
-                "type": "Microsoft.Common.InfoBox",
-                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId)]",
-                "options": {
-                  "icon": "Info",
-                  "text": "Landing-zone scenario: run the deployment in the workload subscription (where VMs/Arc live), but reference the central workspace by Resource ID. DCR destinations and alerts will point to that workspace."
-                }
+                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), equals(steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId, false))]"
               },
               {
                 "name": "retentionInDays",
