@@ -16,6 +16,10 @@ jobs:
     name: Build and Deploy Job
     steps:
       - uses: actions/checkout@v4
+      - name: Inject commit SHA for raw template URLs
+        run: |
+          FILE="Azure Solution Portal/Frontend/script.js"
+          sed -i "s/__GIT_SHA__/${GITHUB_SHA}/g" "$FILE"
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1

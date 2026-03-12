@@ -13,9 +13,11 @@ console.log('🔗 API Base URL:', API_BASE_URL);
 
 // GitHub raw base URL per i template ARM e gli script PowerShell
 // NOTE: `raw.githubusercontent.com/.../main` può essere cacheato in modo aggressivo dal browser/Azure Portal.
-// Usiamo un commit SHA (immutabile) per evitare che il deploy carichi JSON vecchi.
-const GITHUB_COMMIT_SHA = 'fde9d1b79743b15d2435f4b43acb642f68cc0659';
-const GITHUB_RAW = `https://raw.githubusercontent.com/fabiozappa1990x/Azure-Solution-Portal/${GITHUB_COMMIT_SHA}`;
+// In produzione, la GitHub Action della Static Web App sostituisce `__GIT_SHA__` con il commit SHA (immutabile)
+// così i template `deploy.json` / `createUiDefinition.json` vengono sempre scaricati aggiornati.
+const GITHUB_COMMIT_SHA = '__GIT_SHA__';
+const GITHUB_REF = (GITHUB_COMMIT_SHA === '__GIT_SHA__') ? 'main' : GITHUB_COMMIT_SHA;
+const GITHUB_RAW = `https://raw.githubusercontent.com/fabiozappa1990x/Azure-Solution-Portal/${GITHUB_REF}`;
 
 function deployToAzureUrl(folderEncoded) {
     const base = `${GITHUB_RAW}/${folderEncoded}`;
