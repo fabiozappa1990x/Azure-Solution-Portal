@@ -301,7 +301,36 @@ async function checkSubscription() {
                 ? `Subscription: ${primary.displayName} (${primary.subscriptionId})`
                 : `Subscription selezionate: ${valid.length} (primaria: ${primary.displayName})`;
             setCheckState('sub', 'ok', msg);
-            showBox('sub', false);
+            // Keep the option to change selection (landing zone scenarios)
+            showAction('sub', `<button class="btn-fix" onclick="showBox('sub', true)"><i class="fas fa-pen"></i> Modifica</button>`);
+            // If multiple subs exist, allow editing; otherwise keep hidden
+            if (subs.length > 1) {
+                // Pre-render the picker but keep it hidden until user clicks "Modifica"
+                const multi = document.getElementById('sub-multi');
+                if (multi && multi.innerHTML.trim() === '') {
+                    const rows = subs.slice(0, 50).map(s => {
+                        const id = escapeHtml(s.subscriptionId);
+                        const label = `${escapeHtml(s.displayName)} (${id})`;
+                        const checked = valid.includes(s.subscriptionId) ? 'checked' : '';
+                        return `
+                            <label style="display:flex;gap:10px;align-items:center;padding:6px 0">
+                                <input type="checkbox" class="sub-check" value="${id}" ${checked} />
+                                <span>${label}</span>
+                            </label>`;
+                    }).join('');
+                    multi.innerHTML = `
+                        <div style="max-height:180px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff">
+                            ${rows}
+                        </div>
+                        <div style="margin-top:8px;font-size:.92rem;color:#666">
+                            La <strong>prima</strong> selezionata viene usata come primaria.
+                            ${subs.length > 50 ? `<br/>Mostrate 50/${subs.length}.` : ''}
+                        </div>`;
+                }
+                showBox('sub', false);
+            } else {
+                showBox('sub', false);
+            }
             return true;
         }
     }

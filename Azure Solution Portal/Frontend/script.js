@@ -50,6 +50,40 @@ function parseSubscriptionIds(input) {
     return Array.from(new Set(valid));
 }
 
+async function fetchSubscriptionsForUser(accessToken) {
+    const resp = await fetch('https://management.azure.com/subscriptions?api-version=2022-12-01', {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!resp.ok) throw new Error(`Impossibile leggere subscriptions (HTTP ${resp.status})`);
+    const data = await resp.json();
+    return data.value || [];
+}
+
+function renderSubscriptionPicker(container, subs, preselected) {
+    const selected = new Set(preselected || []);
+    const rows = subs.slice(0, 80).map(s => {
+        const id = String(s.subscriptionId || '').trim();
+        const name = String(s.displayName || '');
+        const checked = selected.has(id) ? 'checked' : '';
+        return `
+            <label style="display:flex;gap:10px;align-items:center;padding:6px 0">
+                <input type="checkbox" class="precheck-sub-check" value="${id}" ${checked} />
+                <span>${name} (${id})</span>
+            </label>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div style="max-height:200px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff">
+            ${rows}
+        </div>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+            <button type="button" class="btn-primary" id="btn-use-subs">Usa selezione</button>
+            <button type="button" class="btn-secondary" id="btn-hide-subs">Chiudi</button>
+        </div>
+        <small style="display:block;margin-top:6px;color:#666">Mostrate ${Math.min(subs.length,80)}/${subs.length}. La lista completa è disponibile via Setup.</small>
+    `;
+}
+
 const SOLUTIONS = {
     'azure-monitor': {
         name: 'Azure Monitor Hub',
@@ -367,6 +401,38 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========================================
     // ESEGUI PRECHECK
     // ========================================
+
+    document.getElementById('btn-load-subs')?.addEventListener('click', async function() {
+        try {
+            if (!currentAccount) { alert('⚠️ Effettua il login prima di caricare le subscriptions.'); return; }
+            const accessToken = await getAccessToken();
+            const subs = await fetchSubscriptionsForUser(accessToken);
+
+            const picker = document.getElementById('precheck-sub-picker');
+            if (!picker) return;
+            picker.style.display = 'block';
+
+            const current = parseSubscriptionIds(document.getElementById('subscription-id')?.value || '');
+            const saved = getSavedSubscriptionIds();
+            const preselected = current.length ? current : saved;
+
+            renderSubscriptionPicker(picker, subs, preselected);
+
+            picker.querySelector('#btn-hide-subs')?.addEventListener('click', () => { picker.style.display = 'none'; });
+            picker.querySelector('#btn-use-subs')?.addEventListener('click', () => {
+                const checked = Array.from(picker.querySelectorAll('.precheck-sub-check'))
+                    .filter(el => el.checked)
+                    .map(el => String(el.value || '').trim())
+                    .filter(Boolean);
+                if (!checked.length) { alert('⚠️ Seleziona almeno una subscription.'); return; }
+                document.getElementById('subscription-id').value = checked.join(',');
+                try { localStorage.setItem(LS_SUBS, JSON.stringify(checked)); } catch {}
+                picker.style.display = 'none';
+            });
+        } catch (e) {
+            alert('❌ Errore nel caricamento subscriptions: ' + e.message);
+        }
+    });
 
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
         const subscriptionInput = document.getElementById('subscription-id').value.trim();
