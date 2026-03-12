@@ -201,7 +201,7 @@
                 "visible": false,
                 "request": {
                   "method": "GET",
-                  "path": "[concat(subscription().id, '/providers/Microsoft.Compute/virtualMachines?api-version=2024-03-01')]"
+                  "path": "/providers/Microsoft.Compute/virtualMachines?api-version=2024-03-01"
                 }
               },
               {
@@ -281,7 +281,7 @@
                 "visible": false,
                 "request": {
                   "method": "GET",
-                  "path": "[concat(subscription().id, '/providers/Microsoft.HybridCompute/machines?api-version=2024-05-20')]"
+                  "path": "/providers/Microsoft.HybridCompute/machines?api-version=2024-05-20"
                 }
               },
               {
