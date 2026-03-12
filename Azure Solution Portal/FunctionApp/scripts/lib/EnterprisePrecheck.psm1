@@ -94,6 +94,7 @@ function New-EnterpriseHtmlReport {
         [Parameter(Mandatory)] [string] $SolutionName,
         [Parameter(Mandatory)] [hashtable] $Summary,
         [Parameter(Mandatory)] [array] $Checks,
+        [Parameter()] [array] $ImplementationGuide = @(),
         [Parameter()] [string] $AiHtml = '',
         [Parameter()] [string] $LegacyHtml = '',
         [Parameter()] [hashtable] $Context = @{}
@@ -126,6 +127,42 @@ function New-EnterpriseHtmlReport {
   <summary>Dettaglio tecnico (legacy report)</summary>
   <div class="legacy-body">$LegacyHtml</div>
 </details>
+"@
+    }
+
+    $guideSection = ''
+    if ($ImplementationGuide -and $ImplementationGuide.Count -gt 0) {
+        $items = foreach ($s in $ImplementationGuide) {
+            if ($s -is [string]) {
+                "<li>$([System.Net.WebUtility]::HtmlEncode($s))</li>"
+                continue
+            }
+
+            $title = if ($s.title) { [string]$s.title } else { '' }
+            $why   = if ($s.why) { [string]$s.why } else { '' }
+            $how   = if ($s.how) { [string]$s.how } else { '' }
+            $when  = if ($s.when) { [string]$s.when } else { '' }
+
+            $parts = @()
+            if ($why)  { $parts += ('<div class="s"><strong>Perché:</strong> ' + [System.Net.WebUtility]::HtmlEncode($why) + '</div>') }
+            if ($how)  { $parts += ('<div class="s"><strong>Cosa fare:</strong> ' + [System.Net.WebUtility]::HtmlEncode($how) + '</div>') }
+            if ($when) { $parts += ('<div class="s"><strong>Priorità:</strong> ' + [System.Net.WebUtility]::HtmlEncode($when) + '</div>') }
+            $body = ($parts -join '')
+
+            @"
+<li class="g">
+  <div class="t">$([System.Net.WebUtility]::HtmlEncode($title))</div>
+  $body
+</li>
+"@
+        }
+
+        $guideSection = @"
+<div class="card">
+  <h2>Guida operativa (action plan)</h2>
+  <div class="muted">Passi consigliati, basati sull’ambiente rilevato, per rendere la soluzione operativa.</div>
+  <ol class="guide" style="margin-top:12px;padding-left:18px">$($items -join "`n")</ol>
+</div>
 "@
     }
 
@@ -224,6 +261,8 @@ function New-EnterpriseHtmlReport {
       <div class="muted">Sintesi dei principali rischi e azioni consigliate.</div>
       <div style="margin-top:12px">$AiHtml</div>
     </div>
+
+    $guideSection
 
     <div class="card">
       <h2>Controls & Checks</h2>

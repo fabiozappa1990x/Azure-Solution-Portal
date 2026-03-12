@@ -322,12 +322,18 @@
                             <div class="instructions-box">
                                 <strong>Seleziona la subscription Azure:</strong>
                                 <div class="sub-selector">
-                                    <select id="sub-select">
+                                    <!-- Multi-sub selection (workload/precheck). The first selected is treated as "primary". -->
+                                    <div id="sub-multi" style="width:100%"></div>
+                                    <!-- Legacy single-select fallback (kept for safety) -->
+                                    <select id="sub-select" style="display:none">
                                         <option value="">— In caricamento... —</option>
                                     </select>
                                     <button class="btn-sub-confirm" onclick="onSubSelected()">
                                         <i class="fas fa-check"></i> Conferma
                                     </button>
+                                </div>
+                                <div style="margin-top:10px;color:#666;font-size:.92rem">
+                                    Puoi selezionare più subscription (es. landing zone). Il portale usa la prima come “primaria” per i check infrastrutturali; i precheck possono girare su tutte.
                                 </div>
                             </div>
                         </div>

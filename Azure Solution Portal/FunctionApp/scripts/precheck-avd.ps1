@@ -304,7 +304,20 @@ $kpis = @{
     Kpi4Value = $data.Summary.TotalVNets
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Virtual Desktop' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+$guide = @()
+foreach ($c in $checks) {
+    if ($c.status -in @('Fail','Warn') -and $c.remediation) {
+        $guide += [ordered]@{
+            title = [string]$c.title
+            why   = [string]$c.rationale
+            how   = [string]$c.remediation
+            when  = [string]$c.severity
+        }
+    }
+}
+if ($guide.Count -eq 0) { $guide += 'Nessuna azione immediata: prerequisiti AVD risultano soddisfatti. Procedere con deploy e validazione accesso utenti.' }
+
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Azure Virtual Desktop' -Summary $kpis -Checks $checks -ImplementationGuide $guide -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
     SubscriptionName = $data.Subscription.Name
     SubscriptionId   = $SubscriptionId
     Timestamp        = $data.Timestamp

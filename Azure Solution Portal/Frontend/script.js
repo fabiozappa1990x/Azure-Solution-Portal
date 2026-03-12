@@ -3,6 +3,7 @@
 // ========================================
 
 const API_BASE_URL = 'https://func-azsolportal-089fb2a1.azurewebsites.net';
+const LS_SUBS = 'azsp.selectedSubIds';
 
 console.log('🌍 Ambiente rilevato:', window.location.hostname === 'localhost' ? 'LOCALE' : 'AZURE');
 console.log('🔗 API Base URL:', API_BASE_URL);
@@ -23,6 +24,30 @@ function deployToAzureUrl(folderEncoded) {
 
 function psDownloadUrl(folderEncoded, scriptName) {
     return `${GITHUB_RAW}/${folderEncoded}/workload/scripts/${scriptName}`;
+}
+
+function getSavedSubscriptionIds() {
+    try {
+        const raw = localStorage.getItem(LS_SUBS);
+        if (!raw) return [];
+        if (!raw.trim().startsWith('[')) return [raw].filter(Boolean);
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr.map(s => String(s).trim()).filter(Boolean) : [];
+    } catch {
+        return [];
+    }
+}
+
+function parseSubscriptionIds(input) {
+    const parts = String(input || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+    // Keep only GUID-like ids (avoid accidental text)
+    const guidRe = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const valid = parts.filter(p => guidRe.test(p));
+    return Array.from(new Set(valid));
 }
 
 const SOLUTIONS = {
@@ -344,12 +369,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========================================
 
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
-        const subscriptionId = document.getElementById('subscription-id').value.trim();
+        const subscriptionInput = document.getElementById('subscription-id').value.trim();
+        const subscriptionIds = parseSubscriptionIds(subscriptionInput);
 
-        if (!subscriptionId) { alert('⚠️ Inserisci l\'ID della sottoscrizione Azure'); return; }
+        if (!subscriptionIds.length) { alert('⚠️ Inserisci almeno un SubscriptionId valido (GUID).'); return; }
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
 
-        console.log('🚀 Avvio precheck per:', currentSolution, 'subscription:', subscriptionId);
+        console.log('🚀 Avvio precheck per:', currentSolution, 'subscriptions:', subscriptionIds.join(','));
 
         document.querySelector('.precheck-form').style.display = 'none';
         document.getElementById('precheck-loading').style.display = 'block';
@@ -358,25 +384,34 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const accessToken = await getAccessToken();
             const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
-            const apiUrl = `${API_BASE_URL}${solConfig.apiEndpoint}?subscriptionId=${encodeURIComponent(subscriptionId)}`;
+            const results = [];
 
-            const response = await fetch(apiUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
+            for (const subId of subscriptionIds) {
+                const apiUrl = `${API_BASE_URL}${solConfig.apiEndpoint}?subscriptionId=${encodeURIComponent(subId)}`;
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    if (response.status === 401) throw new Error('Token scaduto. Effettua nuovamente il login.');
+                    if (response.status === 403) throw new Error(`Accesso negato sulla subscription ${subId}. Verifica i permessi Reader.`);
+                    if (response.status === 404) throw new Error(`Subscription non trovata: ${subId}.`);
+                    throw new Error(`Errore HTTP ${response.status} su ${subId}: ${errorText}`);
                 }
-            });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                if (response.status === 401) throw new Error('Token scaduto. Effettua nuovamente il login.');
-                if (response.status === 403) throw new Error('Accesso negato. Verifica i permessi Reader sulla subscription.');
-                if (response.status === 404) throw new Error('Subscription non trovata. Verifica l\'ID inserito.');
-                throw new Error(`Errore HTTP ${response.status}: ${errorText}`);
+                const data = await response.json();
+                results.push({ subscriptionId: subId, data });
             }
 
-            const data = await response.json();
+            const data = (results.length === 1)
+                ? results[0].data
+                : { multi: true, results };
+
             window.lastPrecheckResponse = data;
 
             document.getElementById('precheck-loading').style.display = 'none';
@@ -830,7 +865,7 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
-    function populatePrecheckResults(data) {
+    function populatePrecheckResultsSingle(data) {
         applyPrecheckUiForSolution(currentSolution);
 
         if (currentSolution === 'azure-monitor') {
@@ -868,6 +903,41 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('workspace-count').textContent = summary.TotalPolicies ?? summary.SecurityPoliciesCount ?? summary.TotalUpdatePolicies ?? 0;
         setOverallStatus('Report disponibile nella tab "Report"', 'warning');
         renderReportHtmlInRecommendations(data);
+    }
+
+    function populatePrecheckResults(data) {
+        // Multi-subscription: let the user switch between reports
+        if (data?.multi && Array.isArray(data.results)) {
+            const container = document.getElementById('multi-sub-container');
+            const select = document.getElementById('multi-sub-select');
+            if (container && select) {
+                container.style.display = 'block';
+                select.innerHTML = data.results.map((r, idx) => {
+                    const subName = r.data?.Subscription?.Name ? ` — ${r.data.Subscription.Name}` : '';
+                    return `<option value="${idx}">${r.subscriptionId}${subName}</option>`;
+                }).join('');
+                select.onchange = () => {
+                    const i = Number(select.value || 0);
+                    const picked = data.results[i]?.data;
+                    if (picked) {
+                        window.lastPrecheckResponse = picked;
+                        populatePrecheckResultsSingle(picked);
+                    }
+                };
+            }
+
+            const first = data.results[0]?.data;
+            if (first) {
+                window.lastPrecheckResponse = first;
+                populatePrecheckResultsSingle(first);
+            }
+            return;
+        }
+
+        const container = document.getElementById('multi-sub-container');
+        if (container) container.style.display = 'none';
+
+        populatePrecheckResultsSingle(data);
     }
 
     // ========================================
@@ -916,8 +986,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Copia comando PowerShell
     document.getElementById('copy-precheck-command')?.addEventListener('click', function() {
-        const subscriptionId = document.getElementById('subscription-id').value.trim();
-        if (!subscriptionId) { alert('⚠️ Inserisci prima l\'ID della sottoscrizione'); return; }
+        const input = document.getElementById('subscription-id').value.trim();
+        const subs = parseSubscriptionIds(input);
+        const subscriptionId = subs[0] || '';
+        if (!subscriptionId) { alert('⚠️ Inserisci prima un SubscriptionId valido'); return; }
         const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
         const command = solConfig.psCommand.replace('YOUR-SUB-ID', subscriptionId);
         navigator.clipboard.writeText(command).then(() => {
@@ -970,7 +1042,8 @@ function showPrecheckModal(solution) {
     document.querySelector('.precheck-form').style.display = 'block';
     document.getElementById('precheck-loading').style.display = 'none';
     document.getElementById('precheck-results').style.display = 'none';
-    document.getElementById('subscription-id').value = '';
+    const saved = getSavedSubscriptionIds();
+    document.getElementById('subscription-id').value = saved.length ? saved.join(',') : '';
 
     modal.style.display = 'block';
 }

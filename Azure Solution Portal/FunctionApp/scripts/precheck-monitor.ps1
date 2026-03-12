@@ -85,7 +85,43 @@ $context = @{
     Timestamp        = $data.Timestamp
 }
 
-$enterpriseHtml = New-EnterpriseHtmlReport -SolutionName 'Azure Monitor Hub' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $legacyHtml -Context $context
+$guide = @()
+$totalMachines = [int]($data.Summary.TotalMachines)
+$totalWorkspaces = [int]($data.Summary.TotalWorkspaces)
+$totalDcr = [int]($data.Summary.TotalDCRs)
+
+if ($totalMachines -gt 0 -and $totalWorkspaces -le 0) {
+    $guide += [ordered]@{
+        title = 'Definire la destinazione Log Analytics (Workspace)'
+        why   = 'Sono presenti risorse (VM/Arc) ma non risulta alcun Log Analytics Workspace nella subscription analizzata.'
+        how   = 'Creare o individuare un Workspace centralizzato (landing zone) e verificare che la DCR invii i dati al Workspace corretto.'
+        when  = 'Alta'
+    }
+}
+
+if ($totalDcr -le 0 -and $totalMachines -gt 0) {
+    $guide += [ordered]@{
+        title = 'Creare una Data Collection Rule (DCR) standard'
+        why   = 'Senza DCR non si raccolgono log/performance in modo coerente (AMA).'
+        how   = 'Creare DCR (Windows+Linux) con destination Log Analytics e associare le VM/Arc target (script/policy).'
+        when  = 'Alta'
+    }
+}
+
+if ($ama -lt 90) {
+    $guide += [ordered]@{
+        title = 'Distribuire Azure Monitor Agent (AMA) e rimuovere MMA legacy'
+        why   = "Copertura AMA bassa: $ama%."
+        how   = 'Usare Azure Policy o automation (deploy) per installare AMA su tutte le VM/Arc e standardizzare le estensioni.'
+        when  = if ($ama -lt 60) { 'Alta' } else { 'Media' }
+    }
+}
+
+if ($guide.Count -eq 0) {
+    $guide += 'Nessuna azione immediata: la configurazione base risulta coerente. Procedere con tuning alert, retention e dashboard.'
+}
+
+$enterpriseHtml = New-EnterpriseHtmlReport -SolutionName 'Azure Monitor Hub' -Summary $kpis -Checks $checks -ImplementationGuide $guide -AiHtml $aiHtml -LegacyHtml $legacyHtml -Context $context
 $data.ReportHTML = $enterpriseHtml
 
 $enterpriseHtml | Out-File -FilePath $OutputPath -Encoding UTF8 -Force

@@ -268,7 +268,20 @@ $context = @{
     Timestamp        = $data.Timestamp
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName "Azure Backup" -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context $context
+$guide = @()
+foreach ($c in $checks) {
+    if ($c.status -in @('Fail','Warn') -and $c.remediation) {
+        $guide += [ordered]@{
+            title = [string]$c.title
+            why   = [string]$c.rationale
+            how   = [string]$c.remediation
+            when  = [string]$c.severity
+        }
+    }
+}
+if ($guide.Count -eq 0) { $guide += 'Nessuna azione immediata: backup risulta configurato. Validare policy, GFS e test di restore (VM/File/SQL).' }
+
+$htmlContent = New-EnterpriseHtmlReport -SolutionName "Azure Backup" -Summary $kpis -Checks $checks -ImplementationGuide $guide -AiHtml $aiHtml -LegacyHtml $appendix -Context $context
 
 $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
 $data["ReportHTML"] = $htmlContent

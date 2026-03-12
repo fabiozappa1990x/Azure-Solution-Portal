@@ -26,9 +26,12 @@ const MGMT_API    = 'https://management.azure.com';
 
 let msalInstance       = null;
 let currentAccount     = null;
-let selectedSubId      = null;
+let selectedSubIds     = [];
+let primarySubId       = null;
 let mgmtToken          = null;
 let checkResults       = {};
+
+const LS_SUBS = 'azsp.selectedSubIds';
 
 // Checks: msal, login, sub, funcexist, cors, funcs, ai  → 7
 const TOTAL_CHECKS     = 7;
@@ -36,6 +39,44 @@ const TOTAL_CHECKS     = 7;
 // ============================================================
 // HELPER: UI
 // ============================================================
+
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function loadSavedSubscriptions() {
+    try {
+        const raw = localStorage.getItem(LS_SUBS);
+        if (!raw) { selectedSubIds = []; primarySubId = null; return; }
+
+        // Backward compat: string single id
+        if (!raw.trim().startsWith('[')) {
+            selectedSubIds = raw ? [raw] : [];
+        } else {
+            const arr = JSON.parse(raw);
+            selectedSubIds = Array.isArray(arr) ? arr.filter(Boolean) : [];
+        }
+        selectedSubIds = selectedSubIds.map(s => String(s).trim()).filter(Boolean);
+        primarySubId = selectedSubIds.length ? selectedSubIds[0] : null;
+    } catch {
+        selectedSubIds = [];
+        primarySubId = null;
+    }
+}
+
+function saveSubscriptions(ids) {
+    const clean = (Array.isArray(ids) ? ids : [ids])
+        .map(s => String(s ?? '').trim())
+        .filter(Boolean);
+    selectedSubIds = clean;
+    primarySubId = clean.length ? clean[0] : null;
+    localStorage.setItem(LS_SUBS, JSON.stringify(clean));
+}
 
 function setCheckState(id, state, detail = '') {
     const icon  = document.getElementById(`icon-${id}`);
@@ -190,7 +231,9 @@ async function doLogout() {
         await msalInstance.logoutPopup({ account: currentAccount });
         currentAccount = null;
         mgmtToken      = null;
-        selectedSubId  = null;
+        // Keep subscription selection in localStorage (useful for next login)
+        selectedSubIds = [];
+        primarySubId   = null;
         updateAuthHeader(false);
         runAllChecks();
     } catch {}
@@ -248,43 +291,78 @@ async function checkSubscription() {
         return false;
     }
 
-    // Restore previously selected
-    if (selectedSubId && subs.find(s => s.subscriptionId === selectedSubId)) {
-        const sub = subs.find(s => s.subscriptionId === selectedSubId);
-        setCheckState('sub', 'ok', `Subscription: ${sub.displayName} (${sub.subscriptionId})`);
-        showBox('sub', false);
-        return true;
+    // Restore previously selected (multi)
+    if (selectedSubIds.length) {
+        const valid = selectedSubIds.filter(id => subs.some(s => s.subscriptionId === id));
+        if (valid.length) {
+            saveSubscriptions(valid);
+            const primary = subs.find(s => s.subscriptionId === primarySubId) || subs.find(s => s.subscriptionId === valid[0]);
+            const msg = valid.length === 1
+                ? `Subscription: ${primary.displayName} (${primary.subscriptionId})`
+                : `Subscription selezionate: ${valid.length} (primaria: ${primary.displayName})`;
+            setCheckState('sub', 'ok', msg);
+            showBox('sub', false);
+            return true;
+        }
     }
 
     if (subs.length === 1) {
-        selectedSubId = subs[0].subscriptionId;
+        saveSubscriptions([subs[0].subscriptionId]);
         setCheckState('sub', 'ok', `Subscription: ${subs[0].displayName} (${subs[0].subscriptionId})`);
         showBox('sub', false);
         return true;
     }
 
-    // Multiple subscriptions: show picker
-    const select = document.getElementById('sub-select');
-    if (select) {
-        select.innerHTML = '<option value="">— Seleziona —</option>' +
-            subs.map(s => `<option value="${s.subscriptionId}">${s.displayName} (${s.subscriptionId})</option>`).join('');
+    // Multiple subscriptions: show multi picker (checkboxes)
+    const multi = document.getElementById('sub-multi');
+    if (multi) {
+        const rows = subs.slice(0, 50).map((s, idx) => {
+            const id = escapeHtml(s.subscriptionId);
+            const label = `${escapeHtml(s.displayName)} (${id})`;
+            return `
+                <label style="display:flex;gap:10px;align-items:center;padding:6px 0">
+                    <input type="checkbox" class="sub-check" value="${id}" ${idx === 0 ? 'checked' : ''} />
+                    <span>${label}</span>
+                </label>`;
+        }).join('');
+        multi.innerHTML = `
+            <div style="max-height:180px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#fff">
+                ${rows}
+            </div>
+            <div style="margin-top:8px;font-size:.92rem;color:#666">
+                La <strong>prima</strong> selezionata viene usata come primaria.
+                ${subs.length > 50 ? `<br/>Mostrate 50/${subs.length}.` : ''}
+            </div>`;
         showBox('sub', true);
-        setCheckState('sub', 'warning', `${subs.length} subscription disponibili — selezionane una`);
+        setCheckState('sub', 'warning', `${subs.length} subscription disponibili — selezionane una o più`);
         return false;  // wait for user selection
     }
 
     // Fallback: pick first
-    selectedSubId = subs[0].subscriptionId;
+    saveSubscriptions([subs[0].subscriptionId]);
     setCheckState('sub', 'ok', `Subscription: ${subs[0].displayName}`);
     return true;
 }
 
 async function onSubSelected() {
-    const select = document.getElementById('sub-select');
-    if (!select || !select.value) return;
-    selectedSubId = select.value;
+    const checked = Array.from(document.querySelectorAll('#sub-multi .sub-check'))
+        .filter(el => el.checked)
+        .map(el => (el.value || '').trim())
+        .filter(Boolean);
+
+    if (checked.length) {
+        saveSubscriptions(checked);
+    } else {
+        // Legacy single select fallback
+        const select = document.getElementById('sub-select');
+        if (!select || !select.value) return;
+        saveSubscriptions([select.value]);
+    }
+
     showBox('sub', false);
-    setCheckState('sub', 'ok', `Subscription selezionata: ${select.value}`);
+    setCheckState('sub', 'ok', selectedSubIds.length === 1
+        ? `Subscription selezionata: ${selectedSubIds[0]}`
+        : `Subscription selezionate: ${selectedSubIds.length} (primaria: ${primarySubId})`);
     // Continue with the remaining checks
     await checkFunctionApp();
     await checkAI();
@@ -301,10 +379,10 @@ async function checkFunctionApp() {
 
     // ── 4: Check Function App exists via Management API ──────────
     let funcAppFound = false;
-    if (mgmtToken && selectedSubId) {
+    if (mgmtToken && primarySubId) {
         try {
             const r = await fetch(
-                `${MGMT_API}/subscriptions/${selectedSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}?api-version=2022-03-01`,
+                `${MGMT_API}/subscriptions/${primarySubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}?api-version=2022-03-01`,
                 { headers: { Authorization: `Bearer ${mgmtToken}` } }
             );
             if (r.ok) {
@@ -319,7 +397,7 @@ async function checkFunctionApp() {
                     showBox('funcexist', true);
                 }
             } else if (r.status === 404) {
-                setCheckState('funcexist', 'error', `Function App '${FUNCTION_APP_NAME}' non trovata nella subscription`);
+                setCheckState('funcexist', 'error', `Function App '${FUNCTION_APP_NAME}' non trovata nella subscription primaria`);
                 showBox('funcexist', true);
                 // Can't check CORS or endpoints without the function app
                 setCheckState('cors', 'warning', 'Verifica CORS non possibile — Function App non trovata');
@@ -412,12 +490,12 @@ async function checkAI() {
     try {
         // Enterprise-friendly check: read Function App settings via ARM (no dependency on function execution/cold start).
         const token = await getManagementToken();
-        if (!token || !selectedSubId) {
+        if (!token || !primarySubId) {
             setCheckState('ai', 'warning', 'Verificabile dopo login + selezione subscription');
             return;
         }
 
-        const uri = `${MGMT_API}/subscriptions/${selectedSubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}/config/appsettings/list?api-version=2022-03-01`;
+        const uri = `${MGMT_API}/subscriptions/${primarySubId}/resourceGroups/${RESOURCE_GROUP_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}/config/appsettings/list?api-version=2022-03-01`;
         const resp = await fetch(uri, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` }
@@ -469,7 +547,7 @@ async function continueAfterLogin() {
 async function runAllChecks() {
     checkResults  = {};
     mgmtToken     = null;
-    selectedSubId = null;
+    loadSavedSubscriptions();
 
     document.getElementById('btn-portal').style.display         = 'none';
     document.getElementById('btn-portal-disabled').style.display = 'inline-flex';

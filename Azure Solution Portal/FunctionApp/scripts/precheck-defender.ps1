@@ -246,7 +246,20 @@ $kpis = @{
     Kpi4Value = $data.Summary.SecurityContactsCount
 }
 
-$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Microsoft Defender for Cloud' -Summary $kpis -Checks $checks -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
+$guide = @()
+foreach ($c in $checks) {
+    if ($c.status -in @('Fail','Warn') -and $c.remediation) {
+        $guide += [ordered]@{
+            title = [string]$c.title
+            why   = [string]$c.rationale
+            how   = [string]$c.remediation
+            when  = [string]$c.severity
+        }
+    }
+}
+if ($guide.Count -eq 0) { $guide += 'Nessuna azione immediata: Defender for Cloud risulta attivo. Pianificare remediation raccomandazioni e integrazione con SIEM/SOAR.' }
+
+$htmlContent = New-EnterpriseHtmlReport -SolutionName 'Microsoft Defender for Cloud' -Summary $kpis -Checks $checks -ImplementationGuide $guide -AiHtml $aiHtml -LegacyHtml $appendix -Context @{
     SubscriptionName = $data.Subscription.Name
     SubscriptionId   = $SubscriptionId
     Timestamp        = $data.Timestamp
