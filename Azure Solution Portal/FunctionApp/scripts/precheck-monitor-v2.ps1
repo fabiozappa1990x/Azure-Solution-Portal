@@ -68,14 +68,20 @@ function Get-DiagnosticSettings {
     param([Parameter(Mandatory)] [string] $ResourceId)
     $uri = "https://management.azure.com${ResourceId}/providers/microsoft.insights/diagnosticSettings?api-version=2021-05-01-preview"
     $resp = Invoke-AzureApi -Uri $uri
-    return @($resp?.value)
+    if ($resp -and ($resp.PSObject.Properties.Name -contains 'value') -and $resp.value) { return @($resp.value) }
+    return @()
 }
 
 function Get-WorkspaceLinksFromDiagSettings {
     param([array] $DiagSettings)
     $ids = @()
     foreach ($d in ($DiagSettings | Where-Object { $_ })) {
-        $wsId = $d?.properties?.workspaceId
+        $wsId = $null
+        if ($d -and ($d.PSObject.Properties.Name -contains 'properties') -and $d.properties) {
+            if ($d.properties.PSObject.Properties.Name -contains 'workspaceId') {
+                $wsId = $d.properties.workspaceId
+            }
+        }
         if ($wsId) { $ids += [string]$wsId }
     }
     return ($ids | Where-Object { $_ } | Select-Object -Unique)
@@ -86,9 +92,14 @@ function Get-VmAmaState {
     $extUri = "https://management.azure.com${VmId}/extensions?api-version=2023-09-01"
     $ext = Invoke-AzureApi -Uri $extUri
     $hasAma = $false
-    foreach ($e in @($ext?.value)) {
-        $n = [string]($e?.name)
-        $t = [string]($e?.properties?.type)
+    $extItems = @()
+    if ($ext -and ($ext.PSObject.Properties.Name -contains 'value') -and $ext.value) { $extItems = @($ext.value) }
+    foreach ($e in $extItems) {
+        $n = if ($e -and ($e.PSObject.Properties.Name -contains 'name')) { [string]$e.name } else { '' }
+        $t = ''
+        if ($e -and ($e.PSObject.Properties.Name -contains 'properties') -and $e.properties) {
+            if ($e.properties.PSObject.Properties.Name -contains 'type') { $t = [string]$e.properties.type }
+        }
         if ($n -in @('AzureMonitorWindowsAgent','AzureMonitorLinuxAgent') -or $t -in @('AzureMonitorWindowsAgent','AzureMonitorLinuxAgent')) {
             $hasAma = $true
         }
@@ -96,10 +107,15 @@ function Get-VmAmaState {
 
     $dcrUri = "https://management.azure.com${VmId}/providers/Microsoft.Insights/dataCollectionRuleAssociations?api-version=2022-06-01"
     $dcr = Invoke-AzureApi -Uri $dcrUri
-    $assoc = @($dcr?.value) | Where-Object { $_ }
+    $assoc = @()
+    if ($dcr -and ($dcr.PSObject.Properties.Name -contains 'value') -and $dcr.value) { $assoc = @($dcr.value) }
+    $assoc = $assoc | Where-Object { $_ }
     $dcrIds = @()
     foreach ($a in $assoc) {
-        $rid = $a?.properties?.dataCollectionRuleId
+        $rid = $null
+        if ($a -and ($a.PSObject.Properties.Name -contains 'properties') -and $a.properties) {
+            if ($a.properties.PSObject.Properties.Name -contains 'dataCollectionRuleId') { $rid = $a.properties.dataCollectionRuleId }
+        }
         if ($rid) { $dcrIds += [string]$rid }
     }
 
@@ -116,26 +132,40 @@ if (-not $sub) { throw "Subscription non accessibile o non trovata: $Subscriptio
 
 # ---------- Inventory (monitorable resources) ----------
 $vmResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Compute/virtualMachines?api-version=2023-07-01"
-$vms = @($vmResp?.value) | Where-Object { $_ }
+$vms = @()
+if ($vmResp -and ($vmResp.PSObject.Properties.Name -contains 'value') -and $vmResp.value) { $vms = @($vmResp.value) }
+$vms = $vms | Where-Object { $_ }
 
 $saResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Storage/storageAccounts?api-version=2023-01-01"
-$storageAccounts = @($saResp?.value) | Where-Object { $_ }
+$storageAccounts = @()
+if ($saResp -and ($saResp.PSObject.Properties.Name -contains 'value') -and $saResp.value) { $storageAccounts = @($saResp.value) }
+$storageAccounts = $storageAccounts | Where-Object { $_ }
 
 $kvResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.KeyVault/vaults?api-version=2023-07-01"
-$keyVaults = @($kvResp?.value) | Where-Object { $_ }
+$keyVaults = @()
+if ($kvResp -and ($kvResp.PSObject.Properties.Name -contains 'value') -and $kvResp.value) { $keyVaults = @($kvResp.value) }
+$keyVaults = $keyVaults | Where-Object { $_ }
 
 # ---------- Prerequisites ----------
 $lawResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.OperationalInsights/workspaces?api-version=2022-10-01"
-$workspaces = @($lawResp?.value) | Where-Object { $_ }
+$workspaces = @()
+if ($lawResp -and ($lawResp.PSObject.Properties.Name -contains 'value') -and $lawResp.value) { $workspaces = @($lawResp.value) }
+$workspaces = $workspaces | Where-Object { $_ }
 
 $dcrResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Insights/dataCollectionRules?api-version=2022-06-01"
-$dcrs = @($dcrResp?.value) | Where-Object { $_ }
+$dcrs = @()
+if ($dcrResp -and ($dcrResp.PSObject.Properties.Name -contains 'value') -and $dcrResp.value) { $dcrs = @($dcrResp.value) }
+$dcrs = $dcrs | Where-Object { $_ }
 
 $dceResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Insights/dataCollectionEndpoints?api-version=2022-06-01"
-$dces = @($dceResp?.value) | Where-Object { $_ }
+$dces = @()
+if ($dceResp -and ($dceResp.PSObject.Properties.Name -contains 'value') -and $dceResp.value) { $dces = @($dceResp.value) }
+$dces = $dces | Where-Object { $_ }
 
 $agResp = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Insights/actionGroups?api-version=2023-01-01"
-$actionGroups = @($agResp?.value) | Where-Object { $_ }
+$actionGroups = @()
+if ($agResp -and ($agResp.PSObject.Properties.Name -contains 'value') -and $agResp.value) { $actionGroups = @($agResp.value) }
+$actionGroups = $actionGroups | Where-Object { $_ }
 
 # ---------- Monitoring posture ----------
 $vmInventory = @()
