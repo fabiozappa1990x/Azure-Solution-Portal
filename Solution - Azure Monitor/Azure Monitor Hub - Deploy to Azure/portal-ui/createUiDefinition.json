@@ -87,39 +87,34 @@
                     "location": "onBasics"
                   }
                 },
-                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), equals(steps('infrastructure').logAnalyticsSection.existingMode, 'select'))]"
+                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), not(steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId))]"
               },
               {
-                "name": "existingMode",
-                "type": "Microsoft.Common.OptionsGroup",
-                "label": "Existing workspace source",
-                "defaultValue": "select",
-                "toolTip": "For landing-zone scenarios, you can reference a workspace in another subscription by pasting its Resource ID.",
-                "constraints": {
-                  "allowedValues": [
-                    { "label": "Select from this subscription", "value": "select" },
-                    { "label": "Paste Workspace Resource ID (cross-subscription)", "value": "id" }
-                  ],
-                  "required": true
-                },
+                "name": "useWorkspaceResourceId",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Workspace in another subscription (landing zone)",
+                "defaultValue": false,
+                "toolTip": "Enable if your Log Analytics Workspace is centralized in another subscription. You'll paste the workspace Resource ID.",
                 "visible": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing')]"
               },
               {
                 "name": "existingResourceId",
                 "type": "Microsoft.Common.TextBox",
-                "label": "Workspace Resource ID",
+                "label": "Existing Workspace Resource ID",
                 "placeholder": "/subscriptions/<subId>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<name>",
-                "toolTip": "Use this when the workspace is in a different subscription (landing zone). The deployment will run in the current subscription, but DCR destinations can point to a workspace in another subscription (same tenant).",
-                "constraints": { "required": true },
-                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), equals(steps('infrastructure').logAnalyticsSection.existingMode, 'id'))]"
+                "toolTip": "Paste the full resource ID of the existing Log Analytics Workspace (can be in another subscription in the same tenant).",
+                "constraints": {
+                  "required": true
+                },
+                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId)]"
               },
               {
-                "name": "existingInfo",
+                "name": "existingCrossSubInfo",
                 "type": "Microsoft.Common.InfoBox",
-                "visible": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing')]",
+                "visible": "[and(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId)]",
                 "options": {
                   "icon": "Info",
-                  "text": "Landing-zone tip: if your Log Analytics Workspace is centralized in another subscription, choose 'Paste Workspace Resource ID' and use that ID. You can run this deployment in the workload subscription and still send data to the central workspace."
+                  "text": "Landing-zone scenario: run the deployment in the workload subscription (where VMs/Arc live), but reference the central workspace by Resource ID. DCR destinations and alerts will point to that workspace."
                 }
               },
               {
@@ -219,45 +214,43 @@
                     {
                       "label": "Select specific Azure VMs to monitor",
                       "value": "selected"
+                    },
+                    {
+                      "label": "Monitor all Azure VMs in subscription",
+                      "value": "all"
                     }
                   ],
                   "required": true
                 }
               },
               {
-                "name": "vmApi",
-                "type": "Microsoft.Solutions.ArmApiControl",
-                "request": {
-                  "method": "GET",
-                  "path": "[concat(subscription().id, '/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01')]"
+                "name": "selectedVMResourceIds",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Azure VM Resource IDs",
+                "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm2",
+                "toolTip": "Enter full Resource IDs of Azure VMs to monitor, separated by commas. Copy Resource ID from VM's Properties page.",
+                "multiLine": true,
+                "constraints": {
+                  "required": true
                 },
                 "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected')]"
               },
               {
-                "name": "selectedVMs",
-                "type": "Microsoft.Common.EditableGrid",
-                "label": "Select Azure VMs",
-                "ariaLabel": "Select Azure VMs to monitor",
+                "name": "vmInfoBoxSelected",
+                "type": "Microsoft.Common.InfoBox",
                 "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected')]",
-                "constraints": {
-                  "rows": {
-                    "count": { "min": 1, "max": 200 }
-                  },
-                  "columns": [
-                    {
-                      "id": "vmId",
-                      "header": "Virtual Machine",
-                      "width": "100%",
-                      "element": {
-                        "type": "Microsoft.Common.DropDown",
-                        "placeholder": "Select VM...",
-                        "constraints": {
-                          "allowedValues": "[map(steps('infrastructure').vmMonitoringSection.vmApi.value, (item) => json(concat('{\"label\":\"', item.name, ' (', split(item.id, '/')[4], ')\",\"value\":\"', item.id, '\"}')))]",
-                          "required": true
-                        }
-                      }
-                    }
-                  ]
+                "options": {
+                  "icon": "Info",
+                  "text": "To get Azure VM Resource ID: Go to VM → Properties → Copy 'Resource ID'. Paste multiple IDs separated by commas."
+                }
+              },
+              {
+                "name": "vmInfoBoxAll",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all')]",
+                "options": {
+                  "icon": "Warning",
+                  "text": "ALL Azure Virtual Machines in the subscription will be discovered and monitored automatically. The deployment script will query all Azure VMs and associate them with the unified Data Collection Rule. This may take several minutes."
                 }
               },
               {
@@ -291,45 +284,43 @@
                     {
                       "label": "Select specific Arc servers to monitor",
                       "value": "selected"
+                    },
+                    {
+                      "label": "Monitor all Arc servers in subscription",
+                      "value": "all"
                     }
                   ],
                   "required": true
                 }
               },
               {
-                "name": "arcApi",
-                "type": "Microsoft.Solutions.ArmApiControl",
-                "request": {
-                  "method": "GET",
-                  "path": "[concat(subscription().id, '/providers/Microsoft.HybridCompute/machines?api-version=2023-10-03')]"
+                "name": "selectedArcResourceIds",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Arc Server Resource IDs",
+                "placeholder": "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.HybridCompute/machines/server1,/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.HybridCompute/machines/server2",
+                "toolTip": "Enter full Resource IDs of Arc-enabled servers to monitor, separated by commas. Copy Resource ID from Arc machine's Properties page.",
+                "multiLine": true,
+                "constraints": {
+                  "required": true
                 },
                 "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected')]"
               },
               {
-                "name": "selectedArcServers",
-                "type": "Microsoft.Common.EditableGrid",
-                "label": "Select Arc servers",
-                "ariaLabel": "Select Arc-enabled servers to monitor",
+                "name": "arcInfoBoxSelected",
+                "type": "Microsoft.Common.InfoBox",
                 "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected')]",
-                "constraints": {
-                  "rows": {
-                    "count": { "min": 1, "max": 200 }
-                  },
-                  "columns": [
-                    {
-                      "id": "arcId",
-                      "header": "Arc machine",
-                      "width": "100%",
-                      "element": {
-                        "type": "Microsoft.Common.DropDown",
-                        "placeholder": "Select Arc machine...",
-                        "constraints": {
-                          "allowedValues": "[map(steps('infrastructure').arcMonitoringSection.arcApi.value, (item) => json(concat('{\"label\":\"', item.name, ' (', split(item.id, '/')[4], ')\",\"value\":\"', item.id, '\"}')))]",
-                          "required": true
-                        }
-                      }
-                    }
-                  ]
+                "options": {
+                  "icon": "Info",
+                  "text": "To get Arc Server Resource ID: Go to Arc machine → Properties → Copy 'Resource ID'. Paste multiple IDs separated by commas."
+                }
+              },
+              {
+                "name": "arcInfoBoxAll",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all')]",
+                "options": {
+                  "icon": "Warning",
+                  "text": "ALL Azure Arc-enabled servers in the subscription will be discovered and monitored automatically. The deployment script will query all Arc machines and associate them with the unified Data Collection Rule. This may take several minutes."
                 }
               },
               {
@@ -596,16 +587,18 @@
       "location": "[location()]",
       "deploymentName": "[basics('deploymentName')]",
       "useExistingLogAnalytics": "[equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing')]",
-      "existingLogAnalyticsWorkspaceId": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), if(equals(steps('infrastructure').logAnalyticsSection.existingMode, 'select'), steps('infrastructure').logAnalyticsSection.existing.id, steps('infrastructure').logAnalyticsSection.existingResourceId), '')]",
-      "logAnalyticsWorkspaceName": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'new'), steps('infrastructure').logAnalyticsSection.name, if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), if(equals(steps('infrastructure').logAnalyticsSection.existingMode, 'select'), steps('infrastructure').logAnalyticsSection.existing.name, split(steps('infrastructure').logAnalyticsSection.existingResourceId, '/')[8]), concat('law-', basics('deploymentName'))))]",
+      "existingLogAnalyticsWorkspaceId": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), if(steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId, steps('infrastructure').logAnalyticsSection.existingResourceId, steps('infrastructure').logAnalyticsSection.existing.id), '')]",
+      "logAnalyticsWorkspaceName": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'new'), steps('infrastructure').logAnalyticsSection.name, if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'existing'), if(steps('infrastructure').logAnalyticsSection.useWorkspaceResourceId, split(steps('infrastructure').logAnalyticsSection.existingResourceId, '/')[8], steps('infrastructure').logAnalyticsSection.existing.name), concat('law-', basics('deploymentName'))))]",
       "retentionInDays": "[if(equals(steps('infrastructure').logAnalyticsSection.newOrExisting, 'new'), steps('infrastructure').logAnalyticsSection.retentionInDays, 90)]",
       "useExistingManagedIdentity": "[equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing')]",
       "existingManagedIdentityId": "[if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing'), steps('infrastructure').managedIdentitySection.existing.id, '')]",
       "managedIdentityName": "[if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'new'), steps('infrastructure').managedIdentitySection.name, if(equals(steps('infrastructure').managedIdentitySection.newOrExisting, 'existing'), steps('infrastructure').managedIdentitySection.existing.name, concat('id-', basics('deploymentName'))))]",
-      "monitorExistingVMs": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected')]",
-      "selectedVMIds": "[if(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), map(steps('infrastructure').vmMonitoringSection.selectedVMs, (row) => row.vmId), parse('[]'))]",
-      "monitorExistingArcServers": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected')]",
-      "selectedArcServerIds": "[if(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), map(steps('infrastructure').arcMonitoringSection.selectedArcServers, (row) => row.arcId), parse('[]'))]",
+      "monitorExistingVMs": "[or(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all'))]",
+      "monitorAllVMs": "[equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'all')]",
+      "selectedVMIds": "[if(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'selected'), split(replace(steps('infrastructure').vmMonitoringSection.selectedVMResourceIds, ' ', ''), ','), parse('[]'))]",
+      "monitorExistingArcServers": "[or(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all'))]",
+      "monitorAllArcServers": "[equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'all')]",
+      "selectedArcServerIds": "[if(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'selected'), split(replace(steps('infrastructure').arcMonitoringSection.selectedArcResourceIds, ' ', ''), ','), parse('[]'))]",
       "dcrNameWindows": "[if(or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none'))), steps('infrastructure').dcrSection.dcrName, concat('dcr-', basics('deploymentName'), '-unified'))]",
       "dcrNameLinux": "[if(or(not(equals(steps('infrastructure').vmMonitoringSection.monitorVMs, 'none')), not(equals(steps('infrastructure').arcMonitoringSection.monitorArcServers, 'none'))), steps('infrastructure').dcrSection.dcrName, concat('dcr-', basics('deploymentName'), '-unified'))]",
       "enableAzureVMPolicy": "[steps('automation').azureVMPolicySection.enableAzureVMPolicy]",

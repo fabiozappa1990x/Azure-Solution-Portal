@@ -77,20 +77,6 @@
         "description": "Selected VM IDs to monitor"
       }
     },
-    "monitorExistingArcServers": {
-      "type": "bool",
-      "defaultValue": false,
-      "metadata": {
-        "description": "Monitor existing Arc-enabled servers"
-      }
-    },
-    "selectedArcServerIds": {
-      "type": "array",
-      "defaultValue": [],
-      "metadata": {
-        "description": "Selected Arc machine resource IDs to monitor"
-      }
-    },
     "autoEnrollNewVMs": {
       "type": "bool",
       "defaultValue": true,
@@ -974,11 +960,11 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-log-analytics')]"
       ]
     },
-	    {
-	      "condition": "[and(parameters('monitorExistingVMs'), greater(length(parameters('selectedVMIds')), 0))]",
-	      "type": "Microsoft.Resources/deployments",
-	      "apiVersion": "2025-04-01",
-	      "name": "deploy-vm-associations",
+    {
+      "condition": "[and(parameters('monitorExistingVMs'), greater(length(parameters('selectedVMIds')), 0))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-vm-associations",
       "resourceGroup": "[variables('resourceGroupName')]",
       "properties": {
         "expressionEvaluationOptions": {
@@ -1135,139 +1121,14 @@
           }
         }
       },
-	      "dependsOn": [
-	        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr')]"
-	      ]
-	    },
-	    {
-	      "condition": "[and(parameters('monitorExistingArcServers'), greater(length(parameters('selectedArcServerIds')), 0))]",
-	      "type": "Microsoft.Resources/deployments",
-	      "apiVersion": "2025-04-01",
-	      "name": "deploy-arc-associations",
-	      "resourceGroup": "[variables('resourceGroupName')]",
-	      "properties": {
-	        "expressionEvaluationOptions": {
-	          "scope": "inner"
-	        },
-	        "mode": "Incremental",
-	        "parameters": {
-	          "arcIds": {
-	            "value": "[parameters('selectedArcServerIds')]"
-	          },
-	          "dcrId": {
-	            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr'), '2025-04-01').outputs.dcrId.value]"
-	          }
-	        },
-	        "template": {
-	          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-	          "contentVersion": "1.0.0.0",
-	          "parameters": {
-	            "arcIds": {
-	              "type": "array",
-	              "metadata": {
-	                "description": "Array of Arc machine Resource IDs"
-	              }
-	            },
-	            "dcrId": {
-	              "type": "string",
-	              "metadata": {
-	                "description": "Data Collection Rule ID"
-	              }
-	            }
-	          },
-	          "variables": {
-	            "copy": [
-	              {
-	                "name": "arcDetails",
-	                "count": "[length(parameters('arcIds'))]",
-	                "input": {
-	                  "resourceGroup": "[split(parameters('arcIds')[copyIndex('arcDetails')], '/')[4]]",
-	                  "name": "[split(parameters('arcIds')[copyIndex('arcDetails')], '/')[8]]",
-	                  "id": "[parameters('arcIds')[copyIndex('arcDetails')]]"
-	                }
-	              }
-	            ]
-	          },
-	          "resources": [
-	            {
-	              "copy": {
-	                "name": "arcAssociationDeployment",
-	                "count": "[length(variables('arcDetails'))]"
-	              },
-	              "type": "Microsoft.Resources/deployments",
-	              "apiVersion": "2025-04-01",
-	              "name": "[format('deploy-arc-assoc-{0}', variables('arcDetails')[copyIndex()].name)]",
-	              "resourceGroup": "[variables('arcDetails')[copyIndex()].resourceGroup]",
-	              "properties": {
-	                "expressionEvaluationOptions": {
-	                  "scope": "inner"
-	                },
-	                "mode": "Incremental",
-	                "parameters": {
-	                  "machineName": {
-	                    "value": "[variables('arcDetails')[copyIndex()].name]"
-	                  },
-	                  "dcrId": {
-	                    "value": "[parameters('dcrId')]"
-	                  }
-	                },
-	                "template": {
-	                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-	                  "contentVersion": "1.0.0.0",
-	                  "parameters": {
-	                    "machineName": {
-	                      "type": "string",
-	                      "metadata": {
-	                        "description": "Arc machine name"
-	                      }
-	                    },
-	                    "dcrId": {
-	                      "type": "string",
-	                      "metadata": {
-	                        "description": "Data Collection Rule ID"
-	                      }
-	                    }
-	                  },
-	                  "resources": [
-	                    {
-	                      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
-	                      "apiVersion": "2022-06-01",
-	                      "scope": "[resourceId('Microsoft.HybridCompute/machines', parameters('machineName'))]",
-	                      "name": "[format('dcra-{0}', uniqueString(resourceId('Microsoft.HybridCompute/machines', parameters('machineName')), parameters('dcrId')))]",
-	                      "properties": {
-	                        "dataCollectionRuleId": "[parameters('dcrId')]"
-	                      }
-	                    }
-	                  ],
-	                  "outputs": {
-	                    "associationId": {
-	                      "type": "string",
-	                      "value": "[extensionResourceId(resourceId('Microsoft.HybridCompute/machines', parameters('machineName')), 'Microsoft.Insights/dataCollectionRuleAssociations', format('dcra-{0}', uniqueString(resourceId('Microsoft.HybridCompute/machines', parameters('machineName')), parameters('dcrId'))))]"
-	                    }
-	                  }
-	                }
-	              }
-	            }
-	          ],
-	          "outputs": {
-	            "associationIds": {
-	              "type": "array",
-	              "copy": {
-	                "count": "[length(variables('arcDetails'))]",
-	                "input": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('arcDetails')[copyIndex()].resourceGroup), 'Microsoft.Resources/deployments', format('deploy-arc-assoc-{0}', variables('arcDetails')[copyIndex()].name)), '2025-04-01').outputs.associationId.value]"
-	              }
-	            }
-	          }
-	        }
-	      },
-	      "dependsOn": [
-	        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr')]"
-	      ]
-	    },
-	    {
-	      "condition": "[parameters('autoEnrollNewVMs')]",
-	      "type": "Microsoft.Resources/deployments",
-	      "apiVersion": "2025-04-01",
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'deploy-dcr')]"
+      ]
+    },
+    {
+      "condition": "[parameters('autoEnrollNewVMs')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
       "name": "deploy-auto-enroll-policy",
       "location": "[deployment().location]",
       "properties": {
