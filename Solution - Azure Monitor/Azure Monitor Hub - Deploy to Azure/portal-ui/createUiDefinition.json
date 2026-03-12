@@ -11,10 +11,7 @@
           "allowExisting": true
         },
         "location": {
-          "visible": true,
-          "resourceTypes": [
-            "Microsoft.OperationalInsights/workspaces"
-          ]
+          "visible": true
         }
       }
     },
@@ -24,7 +21,6 @@
         "type": "Microsoft.Common.TextBox",
         "label": "Deployment Name",
         "placeholder": "prod-monitoring",
-        "defaultValue": "",
         "toolTip": "Unique name for this monitoring deployment",
         "constraints": {
           "required": true,
