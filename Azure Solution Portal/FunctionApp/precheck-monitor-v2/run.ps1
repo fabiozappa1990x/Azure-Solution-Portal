@@ -118,9 +118,15 @@ try {
         })
     }
 } catch {
+    $err = @{
+        error    = $_.Exception.Message
+        position = (if ($_.InvocationInfo) { $_.InvocationInfo.PositionMessage } else { $null })
+        stack    = (if ($_.ScriptStackTrace) { $_.ScriptStackTrace } else { $null })
+    } | ConvertTo-Json -Depth 6
+
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 500
-        Body       = "{`"error`":`"$($_.Exception.Message)`"}"
+        Body       = $err
         Headers    = $corsHeaders
     })
 } finally {
@@ -128,4 +134,3 @@ try {
     Remove-Item Env:AZURE_SUBSCRIPTION_ID -ErrorAction SilentlyContinue
     Write-Host "=== END precheck-monitor-v2 ==="
 }
-
