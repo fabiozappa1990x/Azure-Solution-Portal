@@ -190,6 +190,7 @@ let currentSolution = 'azure-monitor';
 let msalInstance = null;
 let currentAccessToken = null;
 let currentAccount = null;
+const POST_LOGIN_REDIRECT_KEY = 'asp.postLoginRedirect';
 
 const msalConfig = {
     auth: {
@@ -244,17 +245,28 @@ async function initializeAuth() {
         if (accounts.length > 0) {
             currentAccount = accounts[0];
             msalInstance.setActiveAccount(currentAccount);
-            try {
-                const response = await msalInstance.acquireTokenSilent({ ...loginRequest, account: currentAccount });
-                currentAccessToken = response.accessToken;
-                updateAuthUI(true, currentAccount.username);
-            } catch {
-                currentAccessToken = null;
-                updateAuthUI(false);
-            }
-        } else {
-            updateAuthUI(false);
-        }
+            updateAuthUI(true, currentAccount.username);
+	            try {
+	                const response = await msalInstance.acquireTokenSilent({ ...loginRequest, account: currentAccount });
+	                currentAccessToken = response.accessToken;
+	            } catch {
+	                currentAccessToken = null;
+	            }
+
+	            // Redirect flow may land on "/" (rewritten to setup.html). Return to original page if requested.
+	            try {
+	                const target = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+	                if (target) {
+	                    sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+	                    if (target !== window.location.pathname + window.location.search) {
+	                        window.location.href = target;
+	                        return;
+	                    }
+	                }
+	            } catch {}
+	        } else {
+	            updateAuthUI(false);
+	        }
     } catch (error) {
         console.error("❌ Errore init auth:", error);
         updateAuthUI(false);
@@ -267,10 +279,9 @@ async function handleAuthentication() {
 
     if (currentAccount) {
         try {
-            await msalInstance.logoutPopup({ account: currentAccount, postLogoutRedirectUri: window.location.origin });
-            currentAccessToken = null;
-            currentAccount = null;
-            updateAuthUI(false);
+            // Use redirect flow to avoid popup issues under COOP/COEP policies.
+            await msalInstance.logoutRedirect({ account: currentAccount, postLogoutRedirectUri: window.location.origin });
+            return;
         } catch (error) {
             alert('❌ Errore durante il logout: ' + error.message);
         }
@@ -278,11 +289,10 @@ async function handleAuthentication() {
         authButton.disabled = true;
         authButton.textContent = 'Accesso in corso...';
         try {
-            const response = await msalInstance.loginPopup(loginRequest);
-            currentAccount = response.account;
-            currentAccessToken = response.accessToken;
-            msalInstance.setActiveAccount(currentAccount);
-            updateAuthUI(true, currentAccount.username);
+            // Remember current page: redirectUri is origin, SWA rewrites "/" to setup.html
+            try { sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, window.location.pathname + window.location.search); } catch {}
+            await msalInstance.loginRedirect(loginRequest);
+            return;
         } catch (error) {
             let msg = error.message;
             if (error.errorCode === 'user_cancelled') msg = 'Login annullato';
@@ -303,9 +313,8 @@ async function getAccessToken() {
         currentAccessToken = response.accessToken;
         return currentAccessToken;
     } catch {
-        const response = await msalInstance.acquireTokenPopup(loginRequest);
-        currentAccessToken = response.accessToken;
-        return currentAccessToken;
+        await msalInstance.acquireTokenRedirect(loginRequest);
+        return null;
     }
 }
 
@@ -317,8 +326,8 @@ async function getAccessTokenForScopes(scopes) {
         const response = await msalInstance.acquireTokenSilent(req);
         return response.accessToken;
     } catch {
-        const response = await msalInstance.acquireTokenPopup(req);
-        return response.accessToken;
+        await msalInstance.acquireTokenRedirect(req);
+        return null;
     }
 }
 
@@ -397,11 +406,12 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('precheck-loading').style.display = 'block';
         document.getElementById('precheck-results').style.display = 'none';
 
-        try {
-            const accessToken = solConfig.tokenScopes ? await getAccessTokenForScopes(solConfig.tokenScopes) : await getAccessToken();
+	        try {
+	            const accessToken = solConfig.tokenScopes ? await getAccessTokenForScopes(solConfig.tokenScopes) : await getAccessToken();
+	            if (!accessToken) { return; } // interactive redirect started (consent/auth)
 
-            const loadingTextEl = document.querySelector('#precheck-loading p');
-            const originalLoadingText = loadingTextEl ? loadingTextEl.textContent : null;
+	            const loadingTextEl = document.querySelector('#precheck-loading p');
+	            const originalLoadingText = loadingTextEl ? loadingTextEl.textContent : null;
 
             const resultsBySub = {};
             const orderedSubs = [];
@@ -1046,11 +1056,12 @@ document.addEventListener('DOMContentLoaded', function() {
         return parseSubscriptionIds(input ? input.value : '');
     }
 
-    async function listSubscriptionsForAccount() {
-        const token = await getAccessToken();
-        const resp = await fetch('https://management.azure.com/subscriptions?api-version=2022-12-01', {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+	    async function listSubscriptionsForAccount() {
+	        const token = await getAccessToken();
+	        if (!token) return [];
+	        const resp = await fetch('https://management.azure.com/subscriptions?api-version=2022-12-01', {
+	            headers: { Authorization: `Bearer ${token}` }
+	        });
         if (!resp.ok) throw new Error(`Management API subscriptions: HTTP ${resp.status}`);
         const data = await resp.json();
         return data.value || [];

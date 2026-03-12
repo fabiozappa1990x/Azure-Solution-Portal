@@ -178,13 +178,8 @@ async function checkLogin() {
 
 async function doLogin() {
     try {
-        const resp = await msalInstance.loginPopup({ scopes: [MGMT_SCOPE] });
-        currentAccount = resp.account;
-        msalInstance.setActiveAccount(currentAccount);
-        updateAuthHeader(true, currentAccount.username);
-        setCheckState('login', 'ok', `Autenticato come: ${currentAccount.username}`);
-        showAction('login', '');
-        await continueAfterLogin();
+        await msalInstance.loginRedirect({ scopes: [MGMT_SCOPE] });
+        return;
     } catch (e) {
         setCheckState('login', 'error', `Login fallito: ${e.message}`);
     }
@@ -192,7 +187,13 @@ async function doLogin() {
 
 async function doLogout() {
     try {
-        await msalInstance.logoutPopup({ account: currentAccount });
+        await msalInstance.logoutRedirect({ account: currentAccount, postLogoutRedirectUri: window.location.origin });
+        return;
+    } catch {
+        // ignore
+    }
+
+    try {
         currentAccount = null;
         mgmtToken      = null;
         portalSubId    = null;
@@ -220,8 +221,8 @@ async function getManagementToken() {
         return resp.accessToken;
     } catch {
         try {
-            const resp = await msalInstance.acquireTokenPopup({ scopes: [MGMT_SCOPE] });
-            return resp.accessToken;
+            await msalInstance.acquireTokenRedirect({ scopes: [MGMT_SCOPE] });
+            return null;
         } catch (e) {
             return null;
         }
