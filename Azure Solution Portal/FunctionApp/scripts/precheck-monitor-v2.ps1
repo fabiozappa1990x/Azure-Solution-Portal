@@ -111,7 +111,7 @@ function Get-VmAmaState {
 }
 
 $start = Get-Date
-$sub = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/$SubscriptionId?api-version=2022-12-01"
+$sub = Invoke-AzureApi -Uri "https://management.azure.com/subscriptions/${SubscriptionId}?api-version=2022-12-01"
 if (-not $sub) { throw "Subscription non accessibile o non trovata: $SubscriptionId" }
 
 # ---------- Inventory (monitorable resources) ----------
