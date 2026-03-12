@@ -150,6 +150,33 @@ const SOLUTIONS = {
         psDownload: psDownloadUrl('Solution%20-%20Azure%20Update%20Manager/Azure%20Update%20Manager%20-%20Deploy%20to%20Azure', 'Deploy-UpdateManager.ps1'),
         psCommand: '.\\Deploy-UpdateManager.ps1 -SubscriptionId "YOUR-SUB-ID" -DeploymentName "updates-prod"',
         apiEndpoint: '/api/precheck-updates'
+    },
+    'zero-trust': {
+        name: 'Zero Trust Assessment',
+        detailsTitle: 'Zero Trust Assessment — Dettagli',
+        details: {
+            whatIs: 'Assessment tenant-scoped (Entra ID) basato su Microsoft Graph. Non effettua deploy: produce un report enterprise di posture e gap Zero Trust.',
+            features: [
+                'Security Defaults e baseline Conditional Access',
+                'MFA registration e metodi di autenticazione',
+                'Legacy authentication e controlli di accesso',
+                'Governance (consent/app registration) e best practice'
+            ],
+            notes: [
+                'Richiede permessi Microsoft Graph delegated e, tipicamente, admin consent.'
+            ],
+            docsAnchor: 'zero-trust'
+        },
+        precheckTitle: 'Zero Trust Assessment (Tenant)',
+        precheckDesc: 'Analizza configurazioni Entra ID via Microsoft Graph per una valutazione Zero Trust enterprise.',
+        deployTitle: 'Zero Trust Assessment',
+        deployDesc: 'Assessment only: nessun deploy richiesto.',
+        portalUrl: '#',
+        psDownload: '',
+        psCommand: 'N/A (assessment only)',
+        apiEndpoint: '/api/precheck-zerotrust',
+        scope: 'tenant',
+        tokenScopes: ['User.Read', 'Policy.Read.All', 'Directory.Read.All', 'Reports.Read.All']
     }
 };
 
@@ -282,6 +309,19 @@ async function getAccessToken() {
     }
 }
 
+async function getAccessTokenForScopes(scopes) {
+    if (!msalInstance) throw new Error("Autenticazione non inizializzata");
+    if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    const req = { scopes, account: currentAccount };
+    try {
+        const response = await msalInstance.acquireTokenSilent(req);
+        return response.accessToken;
+    } catch {
+        const response = await msalInstance.acquireTokenPopup(req);
+        return response.accessToken;
+    }
+}
+
 function updateAuthUI(isAuthenticated, username = '') {
     const authIndicator = document.getElementById('auth-indicator');
     const authText = document.getElementById('auth-text');
@@ -344,20 +384,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // ========================================
 
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
-        const subscriptionIds = getSubscriptionIdsForPrecheckRun();
+        const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
+        const scopeType = solConfig.scope || 'subscription';
 
-        if (subscriptionIds.length === 0) { alert('⚠️ Inserisci o seleziona almeno una subscription'); return; }
+        const subscriptionIds = scopeType === 'subscription' ? getSubscriptionIdsForPrecheckRun() : [];
+        if (scopeType === 'subscription' && subscriptionIds.length === 0) { alert('⚠️ Inserisci o seleziona almeno una subscription'); return; }
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
 
-        console.log('🚀 Avvio precheck per:', currentSolution, 'subscriptions:', subscriptionIds);
+        console.log('🚀 Avvio precheck per:', currentSolution, scopeType === 'subscription' ? 'subscriptions:' : 'tenant:', scopeType === 'subscription' ? subscriptionIds : currentAccount.tenantId);
 
         document.querySelector('.precheck-form').style.display = 'none';
         document.getElementById('precheck-loading').style.display = 'block';
         document.getElementById('precheck-results').style.display = 'none';
 
         try {
-            const accessToken = await getAccessToken();
-            const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
+            const accessToken = solConfig.tokenScopes ? await getAccessTokenForScopes(solConfig.tokenScopes) : await getAccessToken();
 
             const loadingTextEl = document.querySelector('#precheck-loading p');
             const originalLoadingText = loadingTextEl ? loadingTextEl.textContent : null;
@@ -365,6 +406,36 @@ document.addEventListener('DOMContentLoaded', function() {
             const resultsBySub = {};
             const orderedSubs = [];
             const errors = [];
+
+            if (scopeType === 'tenant') {
+                if (loadingTextEl) loadingTextEl.textContent = `Analisi tenant in corso... (${currentAccount.tenantId})`;
+                const apiUrl = `${API_BASE_URL}${solConfig.apiEndpoint}?tenantId=${encodeURIComponent(currentAccount.tenantId)}`;
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Errore HTTP ${response.status}: ${errorText}`);
+                }
+
+                const data = await response.json();
+                window.lastPrecheckResponsesBySub = null;
+                window.lastPrecheckResponse = data;
+                setupResultSubscriptionPicker([], {}, '');
+
+                if (loadingTextEl && originalLoadingText) loadingTextEl.textContent = originalLoadingText;
+
+                document.getElementById('precheck-loading').style.display = 'none';
+                populatePrecheckResults(window.lastPrecheckResponse);
+                document.getElementById('precheck-results').style.display = 'block';
+                showTab('overview');
+                return;
+            }
 
             for (let i = 0; i < subscriptionIds.length; i++) {
                 const subId = subscriptionIds[i];
@@ -579,6 +650,20 @@ document.addEventListener('DOMContentLoaded', function() {
             setPaneTitle('overview', "Stato Update Manager");
             setPaneTitle('recommendations', 'Report');
             setOverviewLabels(['VM Totali', 'Auto patching', 'Manual patching', 'Critical pending']);
+            setTabVisible('virtual-machines', false);
+            setTabVisible('workspaces', false);
+            setTabVisible('dcr', false);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'zero-trust') {
+            setSummaryLabels('Tenant:', 'Readiness:');
+            setTabText('overview', 'Panoramica');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', "Zero Trust Assessment (Tenant)");
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['Security Defaults', 'CA Enabled', 'MFA Reg (%)', 'Legacy Auth']);
             setTabVisible('virtual-machines', false);
             setTabVisible('workspaces', false);
             setTabVisible('dcr', false);
@@ -863,6 +948,24 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
+    function renderZeroTrustPrecheck(data) {
+        const summary = data?.Summary || {};
+        const secDefaults = summary.SecurityDefaultsEnabled === true ? 'On' : (summary.SecurityDefaultsEnabled === false ? 'Off' : 'N/A');
+        const caEnabled = summary.ConditionalAccessEnabledCount ?? 0;
+        const mfaReg = Number(summary.MfaRegistrationPercent ?? 0);
+        const legacy = summary.LegacyAuthBlocked === true ? 'Blocked' : (summary.LegacyAuthBlocked === false ? 'Allowed' : 'N/A');
+
+        document.getElementById('overview-vm-total').textContent = secDefaults;
+        document.getElementById('overview-vm-monitored').textContent = caEnabled;
+        document.getElementById('overview-workspaces').textContent = `${Number.isFinite(mfaReg) ? mfaReg : 0}%`;
+        document.getElementById('overview-dcr').textContent = legacy;
+        document.getElementById('vm-count').textContent = summary.TenantDisplayName ?? 'Tenant';
+        document.getElementById('workspace-count').textContent = summary.ReadinessScore ?? 'N/A';
+
+        setStatusFromReadiness(summary);
+        renderReportHtmlInRecommendations(data);
+    }
+
     function populatePrecheckResults(data) {
         applyPrecheckUiForSolution(currentSolution);
 
@@ -888,6 +991,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (currentSolution === 'update-manager') {
             renderUpdatesPrecheck(data);
+            return;
+        }
+
+        if (currentSolution === 'zero-trust') {
+            renderZeroTrustPrecheck(data);
             return;
         }
 
@@ -1053,10 +1161,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Copia comando PowerShell
     document.getElementById('copy-precheck-command')?.addEventListener('click', function() {
+        const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
+        if (solConfig.scope === 'tenant') {
+            alert('ℹ️ Questa soluzione è tenant-scoped (assessment only): non è previsto un comando PowerShell di deploy.');
+            return;
+        }
         const subIds = getSubscriptionIdsForPrecheckRun();
         const subscriptionId = subIds.length > 0 ? subIds[0] : '';
         if (!subscriptionId) { alert('⚠️ Inserisci o seleziona prima una subscription'); return; }
-        const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
         const command = solConfig.psCommand.replace('YOUR-SUB-ID', subscriptionId);
         navigator.clipboard.writeText(command).then(() => {
             const orig = this.textContent;
@@ -1104,20 +1216,28 @@ function showPrecheckModal(solution) {
     document.getElementById('precheck-modal-title').textContent = solConfig.precheckTitle;
     document.getElementById('precheck-modal-desc').textContent  = solConfig.precheckDesc;
 
+    const isTenantScoped = solConfig.scope === 'tenant';
+    const subGroup = document.getElementById('subscription-form-group');
+    const rgGroup = document.getElementById('resourcegroup-form-group');
+    if (subGroup) subGroup.style.display = isTenantScoped ? 'none' : '';
+    if (rgGroup) rgGroup.style.display = isTenantScoped ? 'none' : '';
+
     // Reset state
     document.querySelector('.precheck-form').style.display = 'block';
     document.getElementById('precheck-loading').style.display = 'none';
     document.getElementById('precheck-results').style.display = 'none';
     document.getElementById('subscription-id').value = '';
 
-    // Prefill from setup "workload subscriptions" if available
-    try {
-        const saved = localStorage.getItem('asp.workloadSubIds');
-        const arr = saved ? JSON.parse(saved) : [];
-        if (Array.isArray(arr) && arr.length > 0) {
-            document.getElementById('subscription-id').value = arr.join('\n');
-        }
-    } catch {}
+    // Prefill from setup "workload subscriptions" if available (subscription-scoped only)
+    if (!isTenantScoped) {
+        try {
+            const saved = localStorage.getItem('asp.workloadSubIds');
+            const arr = saved ? JSON.parse(saved) : [];
+            if (Array.isArray(arr) && arr.length > 0) {
+                document.getElementById('subscription-id').value = arr.join('\n');
+            }
+        } catch {}
+    }
 
     // Reset multi-subscription UI
     const pickerWrap = document.getElementById('subscription-picker-wrap');

@@ -149,6 +149,26 @@
                     </div>
                 </div>
 
+                <!-- Zero Trust Assessment -->
+                <div class="solution-card" id="card-zero-trust">
+                    <div class="solution-icon" style="background: linear-gradient(135deg, #0f172a, #334155);">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <div class="solution-badge badge-available">Assessment</div>
+                    <h3>Zero Trust Assessment</h3>
+                    <p>Valutazione tenant-scoped (Entra ID) su controlli Zero Trust: MFA, Conditional Access baseline, legacy auth, identity protection e posture.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> Security Defaults e baseline Conditional Access</li>
+                        <li><i class="fas fa-check"></i> MFA registration e metodi consentiti</li>
+                        <li><i class="fas fa-check"></i> Blocchi legacy authentication</li>
+                        <li><i class="fas fa-check"></i> Governance e controlli di accesso</li>
+                    </ul>
+                    <div class="solution-actions">
+                        <button class="btn-details" data-solution="zero-trust">Dettagli</button>
+                        <button class="btn-precheck" data-solution="zero-trust">Assessment</button>
+                    </div>
+                </div>
+
             </div>
         </section>
     </main>
@@ -161,7 +181,7 @@
             <p id="precheck-modal-desc">Analizza il tuo tenant Azure per verificare la compatibilità:</p>
 
              <div class="precheck-form">
-                 <div class="form-group">
+                 <div class="form-group" id="subscription-form-group">
                      <label for="subscription-id">ID Sottoscrizione Azure:</label>
                     <input type="text" id="subscription-id" placeholder="Inserisci uno o più Subscription ID (GUID) separati da virgola o newline">
                     <div style="margin-top:10px">
@@ -173,7 +193,7 @@
                         </div>
                     </div>
                  </div>
-                 <div class="form-group">
+                 <div class="form-group" id="resourcegroup-form-group">
                      <label for="resource-group">Gruppo di Risorse (opzionale):</label>
                      <input type="text" id="resource-group" placeholder="Inserisci il nome del gruppo di risorse">
                  </div>

@@ -420,7 +420,8 @@ async function checkFunctionApp() {
         { name: 'precheck-avd',        path: '/api/precheck-avd' },
         { name: 'precheck-backup',     path: '/api/precheck-backup' },
         { name: 'precheck-defender',   path: '/api/precheck-defender' },
-        { name: 'precheck-updates',    path: '/api/precheck-updates' }
+        { name: 'precheck-updates',    path: '/api/precheck-updates' },
+        { name: 'precheck-zerotrust',  path: '/api/precheck-zerotrust' }
     ];
 
     const results = await Promise.all(endpoints.map(async ep => {
