@@ -21,6 +21,12 @@ function deployToAzureUrl(folderEncoded) {
     return `https://portal.azure.com/#create/Microsoft.Template/uri/${deployJsonUrl}/createUIDefinitionUri/${createUiUrl}`;
 }
 
+function deployToAzureUrlTemplateOnly(folderEncoded) {
+    const base = `${GITHUB_RAW}/${folderEncoded}`;
+    const deployJsonUrl = encodeURIComponent(`${base}/portal-ui/deploy.json`);
+    return `https://portal.azure.com/#create/Microsoft.Template/uri/${deployJsonUrl}`;
+}
+
 function psDownloadUrl(folderEncoded, scriptName) {
     return `${GITHUB_RAW}/${folderEncoded}/workload/scripts/${scriptName}`;
 }
@@ -32,7 +38,8 @@ const SOLUTIONS = {
         precheckDesc: 'Analizza VM, Log Analytics Workspace, DCR e agenti di monitoraggio nella sottoscrizione.',
         deployTitle: 'Deploy Azure Monitor Hub',
         deployDesc: 'Deploya Log Analytics Workspace, DCR, Alert Rules, AMA e dashboard di monitoraggio completo con 4 tab (Panoramica, Performance, Alert, Disponibilità).',
-        portalUrl: deployToAzureUrl('Solution%20-%20Azure%20Monitor/Azure%20Monitor%20Hub%20-%20Deploy%20to%20Azure'),
+        // Azure Portal CreateUiDefinition blade è instabile per questa solution: usa deploy template standard.
+        portalUrl: deployToAzureUrlTemplateOnly('Solution%20-%20Azure%20Monitor/Azure%20Monitor%20Hub%20-%20Deploy%20to%20Azure'),
         psDownload: psDownloadUrl('Solution%20-%20Azure%20Monitor/Azure%20Monitor%20Hub%20-%20Deploy%20to%20Azure', 'Deploy-MonitorHub.ps1'),
         psCommand: '.\\Deploy-MonitorHub.ps1 -SubscriptionId "YOUR-SUB-ID" -DeploymentName "my-monitoring"',
         apiEndpoint: '/api/precheck'
