@@ -124,7 +124,7 @@ function New-EnterpriseHtmlReport {
     if ($LegacyHtml) {
         $legacySection = @"
 <details class="legacy">
-  <summary>Dettaglio tecnico (legacy report)</summary>
+  <summary>Appendice tecnica</summary>
   <div class="legacy-body">$LegacyHtml</div>
 </details>
 "@

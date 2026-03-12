@@ -134,7 +134,8 @@ const SOLUTIONS = {
         portalUrl: deployToAzureUrl('Solution%20-%20Azure%20Monitor/Azure%20Monitor%20Hub%20-%20Deploy%20to%20Azure'),
         psDownload: psDownloadUrl('Solution%20-%20Azure%20Monitor/Azure%20Monitor%20Hub%20-%20Deploy%20to%20Azure', 'Deploy-MonitorHub.ps1'),
         psCommand: '.\\Deploy-MonitorHub.ps1 -SubscriptionId "YOUR-SUB-ID" -DeploymentName "my-monitoring"',
-        apiEndpoint: '/api/precheck'
+        apiEndpoint: '/api/precheck',
+        apiEndpointV2: '/api/precheck-monitor-v2'
     },
     'avd': {
         name: 'Azure Virtual Desktop',
@@ -476,10 +477,12 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const accessToken = await getAccessToken();
             const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
+            const useV2 = (currentSolution === 'azure-monitor') && document.getElementById('use-precheck2')?.checked && solConfig.apiEndpointV2;
+            const endpoint = useV2 ? solConfig.apiEndpointV2 : solConfig.apiEndpoint;
             const results = [];
 
             for (const subId of subscriptionIds) {
-                const apiUrl = `${API_BASE_URL}${solConfig.apiEndpoint}?subscriptionId=${encodeURIComponent(subId)}`;
+                const apiUrl = `${API_BASE_URL}${endpoint}?subscriptionId=${encodeURIComponent(subId)}`;
                 const response = await fetch(apiUrl, {
                     method: 'GET',
                     headers: {
@@ -1136,6 +1139,12 @@ function showPrecheckModal(solution) {
     document.getElementById('precheck-results').style.display = 'none';
     const saved = getSavedSubscriptionIds();
     document.getElementById('subscription-id').value = saved.length ? saved.join(',') : '';
+
+    // Show Precheck 2.0 toggle only for Azure Monitor
+    const toggleRow = document.getElementById('monitor-precheck2-toggle');
+    if (toggleRow) toggleRow.style.display = (solution === 'azure-monitor') ? 'block' : 'none';
+    const cb = document.getElementById('use-precheck2');
+    if (cb) cb.checked = false;
 
     modal.style.display = 'block';
 }
