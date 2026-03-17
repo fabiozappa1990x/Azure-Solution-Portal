@@ -2,7 +2,7 @@
 .SYNOPSIS
 Microsoft Intune Deep Analysis - App Inventory & Device Precheck
 .NOTES
-Version: 1.0
+Version: 1.1
 Uses Microsoft Graph API only (via X-Graph-Token from browser MSAL).
 Inventario dispositivi gestiti, app rilevate e app deployate.
 #>
@@ -55,6 +55,7 @@ $data = @{
     Tenant         = @{}
     Summary        = @{}
     ManagedDevices = @()
+    NonCompliantDevices = @()
     DetectedApps   = @()
     DeployedApps   = @()
     ReportHTML     = ""
@@ -77,7 +78,7 @@ if ($org -and $org.value -and $org.value.Count -gt 0) {
 # ----------------------------------------
 # [2] Dispositivi gestiti Intune
 # ----------------------------------------
-Write-Host "[2/5] Managed devices..."
+Write-Host "[2/6] Managed devices..."
 $devicesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?`$top=500&`$select=id,deviceName,operatingSystem,osVersion,complianceState,lastSyncDateTime,manufacturer,model,userPrincipalName,enrolledDateTime,managementAgent,deviceEnrollmentType"
 $rawDevices = @()
 if ($devicesResp -and $devicesResp.value) { $rawDevices = @($devicesResp.value) }
@@ -93,25 +94,93 @@ foreach ($d in $rawDevices) {
         try { $enrolled = ([datetime]$d.enrolledDateTime).ToString("yyyy-MM-dd") } catch { $enrolled = $d.enrolledDateTime }
     }
     $managedDevices += @{
+        Id               = $d.id
         Name             = $d.deviceName
         OS               = $d.operatingSystem
         OSVersion        = $d.osVersion
         Compliance       = $d.complianceState
         LastSync         = $lastSync
+        LastSyncRaw      = $d.lastSyncDateTime
         EnrolledDate     = $enrolled
         User             = $d.userPrincipalName
         Manufacturer     = $d.manufacturer
         Model            = $d.model
         ManagementAgent  = $d.managementAgent
+        EnrollmentType   = $d.deviceEnrollmentType
     }
 }
 $data.ManagedDevices = $managedDevices
 Write-Host "Devices found: $($managedDevices.Count)"
 
 # ----------------------------------------
-# [3] App rilevate sui dispositivi (detected apps)
+# [3] Analisi non conformita (dettagli policy)
 # ----------------------------------------
-Write-Host "[3/5] Detected apps..."
+Write-Host "[3/6] Non-compliance details..."
+$nonCompliantDevices = @($managedDevices | Where-Object { $_.Compliance -eq 'noncompliant' })
+$maxNonCompliantDetails = 50
+$nonCompliantTruncated = $false
+$reasonCounts = @{}
+$nonCompliantDetails = @()
+
+function Add-ReasonCount {
+    param([string]$ReasonKey)
+    if (-not $ReasonKey) { return }
+    if ($reasonCounts.ContainsKey($ReasonKey)) {
+        $reasonCounts[$ReasonKey] = [int]$reasonCounts[$ReasonKey] + 1
+    } else {
+        $reasonCounts[$ReasonKey] = 1
+    }
+}
+
+foreach ($device in $nonCompliantDevices) {
+    if ($nonCompliantDetails.Count -ge $maxNonCompliantDetails) { $nonCompliantTruncated = $true; break }
+    $reasons = @()
+    if ($device.Id) {
+        $policyStates = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($device.Id)/deviceCompliancePolicyStates?`$select=displayName,state,settingStates"
+        if ($policyStates -and $policyStates.value) {
+            foreach ($policy in $policyStates.value) {
+                $policyName = if ($policy.displayName) { $policy.displayName } else { "Policy" }
+                $policyState = if ($policy.state) { $policy.state } else { "unknown" }
+                if ($policy.settingStates) {
+                    foreach ($s in $policy.settingStates) {
+                        $state = if ($s.state) { $s.state } else { "unknown" }
+                        if ($state -in @("nonCompliant","error","conflict")) {
+                            $settingName = if ($s.settingName) { $s.settingName } elseif ($s.setting) { $s.setting } elseif ($s.settingDisplayName) { $s.settingDisplayName } else { "Setting" }
+                            $reasonLabel = "$policyName - $settingName"
+                            $reasons += "$policyName: $settingName ($state)"
+                            Add-ReasonCount -ReasonKey $reasonLabel
+                        }
+                    }
+                } elseif ($policyState -in @("nonCompliant","error","conflict")) {
+                    $reasons += "$policyName ($policyState)"
+                    Add-ReasonCount -ReasonKey $policyName
+                }
+            }
+        }
+    }
+    if (-not $reasons -or $reasons.Count -eq 0) {
+        $reasons = @("Motivo non disponibile")
+        Add-ReasonCount -ReasonKey "Motivo non disponibile"
+    }
+
+    $nonCompliantDetails += @{
+        Name            = $device.Name
+        OS              = $device.OS
+        OSVersion       = $device.OSVersion
+        User            = $device.User
+        Compliance      = $device.Compliance
+        LastSync        = $device.LastSync
+        EnrollmentType  = $device.EnrollmentType
+        ManagementAgent = $device.ManagementAgent
+        Reasons         = $reasons
+    }
+}
+$data.NonCompliantDevices = $nonCompliantDetails
+
+# ----------------------------------------
+# [4] App rilevate sui dispositivi (detected apps)
+# ----------------------------------------
+Write-Host "[4/6] Detected apps..."
 $detectedResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceAppManagement/detectedApps?`$top=500&`$select=id,displayName,version,publisher,deviceCount,platform,sizeInByte"
 $rawDetected = @()
 if ($detectedResp -and $detectedResp.value) { $rawDetected = @($detectedResp.value) }
@@ -132,9 +201,9 @@ $data.DetectedApps = @($detectedApps | Sort-Object { $_.DeviceCount } -Descendin
 Write-Host "Detected apps found: $($detectedApps.Count)"
 
 # ----------------------------------------
-# [4] App deployate (mobile apps / assignments)
+# [5] App deployate (mobile apps / assignments)
 # ----------------------------------------
-Write-Host "[4/5] Deployed apps (mobile apps)..."
+Write-Host "[5/6] Deployed apps (mobile apps)..."
 $mobileAppsResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceAppManagement/mobileApps?`$top=500&`$select=id,displayName,publisher,createdDateTime,lastModifiedDateTime,isAssigned,publishingState,@odata.type"
 $rawMobileApps = @()
 if ($mobileAppsResp -and $mobileAppsResp.value) { $rawMobileApps = @($mobileAppsResp.value) }
@@ -180,9 +249,9 @@ $data.DeployedApps = @($deployedApps | Sort-Object { if ($_.IsAssigned) { 0 } el
 Write-Host "Deployed apps found: $($deployedApps.Count)"
 
 # ----------------------------------------
-# [5] Summary
+# [6] Summary
 # ----------------------------------------
-Write-Host "[5/5] Computing summary..."
+Write-Host "[6/6] Computing summary..."
 
 $totalDevices     = $managedDevices.Count
 $compliantDevices = @($managedDevices | Where-Object { $_.Compliance -eq 'compliant' }).Count
@@ -197,6 +266,26 @@ $totalDeployed    = $deployedApps.Count
 $assignedApps     = @($deployedApps | Where-Object { $_.IsAssigned }).Count
 
 $compliancePct = if ($totalDevices -gt 0) { [math]::Round(($compliantDevices / $totalDevices) * 100, 1) } else { 0 }
+
+$staleThresholdDays = 30
+$staleDevices = 0
+foreach ($d in $managedDevices) {
+    if ($d.LastSyncRaw) {
+        try {
+            $last = [datetime]$d.LastSyncRaw
+            if ($last -lt (Get-Date).AddDays(-$staleThresholdDays)) { $staleDevices++ }
+        } catch {
+        }
+    }
+}
+
+# Top motivi non conformita
+$topReasons = @()
+if ($reasonCounts.Keys.Count -gt 0) {
+    $topReasons = $reasonCounts.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 10 | ForEach-Object {
+        @{ Reason = $_.Key; Count = $_.Value }
+    }
+}
 
 # ReadinessScore: considera conformità dispositivi e presenza app deployate
 $readiness = 50
@@ -216,6 +305,10 @@ $data.Summary = @{
     TotalDetectedApps     = $totalDetected
     TotalDeployedApps     = $totalDeployed
     AssignedApps          = $assignedApps
+    StaleDevicesOver30Days = $staleDevices
+    NonCompliantDetailsCollected = $nonCompliantDetails.Count
+    NonCompliantDetailsTruncated = $nonCompliantTruncated
+    TopNonCompliantReasons = $topReasons
     ReadinessScore        = $readiness
 }
 
@@ -247,6 +340,33 @@ foreach ($d in $devicesToShow) {
         <td>$([System.Web.HttpUtility]::HtmlEncode($d.LastSync))</td>
         <td>$([System.Web.HttpUtility]::HtmlEncode($d.User))</td>
     </tr>"
+}
+
+# Tabella non conformi (top 50)
+$nonCompliantRows = ""
+$nonCompliantToShow = if ($nonCompliantDetails.Count -gt 50) { $nonCompliantDetails[0..49] } else { $nonCompliantDetails }
+foreach ($d in $nonCompliantToShow) {
+    $reasonsText = if ($d.Reasons -and $d.Reasons.Count -gt 0) { ($d.Reasons | Select-Object -First 5) -join "; " } else { "N/A" }
+    $nonCompliantRows += "<tr>
+        <td>$([System.Web.HttpUtility]::HtmlEncode($d.Name))</td>
+        <td>$([System.Web.HttpUtility]::HtmlEncode($d.OS))</td>
+        <td>$([System.Web.HttpUtility]::HtmlEncode($d.OSVersion))</td>
+        <td>$([System.Web.HttpUtility]::HtmlEncode($d.User))</td>
+        <td>$([System.Web.HttpUtility]::HtmlEncode($d.LastSync))</td>
+        <td>$([System.Web.HttpUtility]::HtmlEncode($reasonsText))</td>
+    </tr>"
+}
+
+# Tabella top motivi non conformita
+$topReasonRows = ""
+foreach ($r in $topReasons) {
+    $topReasonRows += "<tr>
+        <td>$([System.Web.HttpUtility]::HtmlEncode($r.Reason))</td>
+        <td><strong>$($r.Count)</strong></td>
+    </tr>"
+}
+if (-not $topReasonRows) {
+    $topReasonRows = "<tr><td>N/A</td><td>0</td></tr>"
 }
 
 # Tabella app rilevate (top 50 per device count)
@@ -283,6 +403,7 @@ foreach ($app in $data.DeployedApps) {
 
 $deviceNote = if ($managedDevices.Count -gt 100) { "<p style='color:#666;font-size:12px'>Mostrati i primi 100 di $totalDevices dispositivi.</p>" } else { "" }
 $appNote    = if ($data.DetectedApps.Count -gt 50) { "<p style='color:#666;font-size:12px'>Mostrate le prime 50 app per numero di dispositivi (su $totalDetected totali).</p>" } else { "" }
+$nonCompliantNote = if ($nonCompliantDetails.Count -gt 50) { "<p style='color:#666;font-size:12px'>Mostrati i primi 50 dispositivi non conformi.</p>" } else { "" }
 
 $reportHtml = @"
 <!DOCTYPE html>
@@ -364,6 +485,10 @@ $reportHtml = @"
     <div class="kpi-value">$assignedApps</div>
     <div class="kpi-label">App Assegnate</div>
   </div>
+  <div class="kpi-card">
+    <div class="kpi-value" style="color:#d13438">$staleDevices</div>
+    <div class="kpi-label">Sync &gt; $staleThresholdDays g</div>
+  </div>
 </div>
 
 <div class="section">
@@ -372,6 +497,23 @@ $reportHtml = @"
   <table>
     <thead><tr><th>Nome Dispositivo</th><th>OS</th><th>Versione OS</th><th>Conformita</th><th>Ultimo Sync</th><th>Utente</th></tr></thead>
     <tbody>$deviceRows</tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Top Motivi di Non Conformita</h2>
+  <table>
+    <thead><tr><th>Motivo</th><th>Conteggio</th></tr></thead>
+    <tbody>$topReasonRows</tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Dispositivi Non Conformi (motivi principali)</h2>
+  $nonCompliantNote
+  <table>
+    <thead><tr><th>Nome Dispositivo</th><th>OS</th><th>Versione OS</th><th>Utente</th><th>Ultimo Sync</th><th>Motivi</th></tr></thead>
+    <tbody>$nonCompliantRows</tbody>
   </table>
 </div>
 
@@ -392,7 +534,7 @@ $reportHtml = @"
   </table>
 </div>
 
-<div class="footer">Report generato da Azure Solution Portal &mdash; Microsoft Intune Precheck v1.0</div>
+<div class="footer">Report generato da Azure Solution Portal &mdash; Microsoft Intune Precheck v1.1</div>
 </body>
 </html>
 "@
