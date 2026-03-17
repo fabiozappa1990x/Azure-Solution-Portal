@@ -212,6 +212,32 @@ const SOLUTIONS = {
         psCommand: '.\\Deploy-Defender.ps1 -SubscriptionId "YOUR-SUB-ID" -DeploymentName "defender-prod" -EmailRecipients "security@contoso.com"',
         apiEndpoint: '/api/precheck-defender'
     },
+    'intune': {
+        name: 'Microsoft Intune',
+        detailsTitle: 'Microsoft Intune — Dettagli',
+        details: {
+            whatIs: 'Microsoft Intune è la soluzione cloud di Microsoft per la gestione di dispositivi mobili (MDM) e applicazioni mobili (MAM). Questo precheck analizza il tenant Intune per fornire un inventario completo: dispositivi gestiti, app rilevate sui device e applicazioni deployate.',
+            features: [
+                'Inventario dispositivi gestiti: Windows, iOS, Android, macOS',
+                'App rilevate su ogni dispositivo con versione installata',
+                'App deployate in Intune con stato di assegnazione',
+                'Compliance score per piattaforma e readiness report'
+            ],
+            notes: [
+                'Richiede il consenso alle API Microsoft Graph (DeviceManagementApps.Read.All, DeviceManagementManagedDevices.Read.All).',
+                'Il precheck è tenant-wide: la subscription viene usata solo per l\'autenticazione.'
+            ],
+            docsAnchor: 'intune'
+        },
+        precheckTitle: 'Precheck Microsoft Intune',
+        precheckDesc: 'Analizza dispositivi gestiti, app rilevate e applicazioni deployate nel tenant Intune.',
+        deployTitle: 'Microsoft Intune',
+        deployDesc: 'Intune non richiede un deploy tramite questo portale. Usa il precheck per ottenere l\'inventario completo del tenant.',
+        portalUrl: '#',
+        psDownload: null,
+        psCommand: '# Nessun deploy necessario per Intune',
+        apiEndpoint: '/api/precheck-intune'
+    },
     'update-manager': {
         name: 'Azure Update Manager',
         detailsTitle: 'Azure Update Manager — Dettagli',
@@ -368,6 +394,26 @@ async function getAccessToken() {
     }
 }
 
+async function getGraphToken() {
+    if (!msalInstance) throw new Error("Autenticazione non inizializzata");
+    if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    const graphRequest = {
+        scopes: [
+            "https://graph.microsoft.com/DeviceManagementApps.Read.All",
+            "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+            "https://graph.microsoft.com/Organization.Read.All"
+        ],
+        account: currentAccount
+    };
+    try {
+        const response = await msalInstance.acquireTokenSilent(graphRequest);
+        return response.accessToken;
+    } catch {
+        const response = await msalInstance.acquireTokenPopup(graphRequest);
+        return response.accessToken;
+    }
+}
+
 function updateAuthUI(isAuthenticated, username = '') {
     const authIndicator = document.getElementById('auth-indicator');
     const authText = document.getElementById('auth-text');
@@ -481,14 +527,26 @@ document.addEventListener('DOMContentLoaded', function() {
             const endpoint = useV2 ? solConfig.apiEndpointV2 : solConfig.apiEndpoint;
             const results = [];
 
+            // Per Intune è necessario un token Graph separato (audience diverso)
+            let graphToken = null;
+            if (currentSolution === 'intune') {
+                try {
+                    graphToken = await getGraphToken();
+                } catch (e) {
+                    throw new Error(`Impossibile ottenere il token Microsoft Graph.\n\nAssicurati che l'App Registration abbia il consenso per DeviceManagementApps.Read.All e DeviceManagementManagedDevices.Read.All.\n\nDettaglio: ${e.message}`);
+                }
+            }
+
             for (const subId of subscriptionIds) {
                 const apiUrl = `${API_BASE_URL}${endpoint}?subscriptionId=${encodeURIComponent(subId)}`;
+                const reqHeaders = {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                };
+                if (graphToken) reqHeaders['X-Graph-Token'] = graphToken;
                 const response = await fetch(apiUrl, {
                     method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
+                    headers: reqHeaders
                 });
 
                 if (!response.ok) {
@@ -679,6 +737,29 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabVisible('virtual-machines', false);
             setTabVisible('workspaces', false);
             setTabVisible('dcr', false);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'intune') {
+            setSummaryLabels('Dispositivi Gestiti:', 'App Rilevate:');
+            setTabText('overview', 'Panoramica');
+            setTabText('virtual-machines', 'Dispositivi');
+            setTabText('workspaces', 'App Rilevate');
+            setTabText('dcr', 'App Deployate');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', 'Stato Microsoft Intune');
+            setPaneTitle('virtual-machines', 'Dispositivi Gestiti');
+            setPaneTitle('workspaces', 'App Rilevate sui Dispositivi');
+            setPaneTitle('dcr', 'App Deployate in Intune');
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['Dispositivi Gestiti', 'Conformi', 'App Rilevate', 'App Deployate']);
+            setTableHeaders('vm-table', ['Nome Dispositivo', 'OS', 'Versione OS', 'Conformità', 'Ultimo Sync', 'Utente']);
+            setTableHeaders('workspace-table', ['Nome App', 'Versione', 'Publisher', 'N° Dispositivi', 'Piattaforma']);
+            setTableHeaders('dcr-table', ['Nome App', 'Tipo', 'Publisher', 'Assegnata', 'Stato']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', true);
             setTabVisible('recommendations', true);
             return;
         }
@@ -960,6 +1041,96 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
+    function renderIntunePrecheck(data) {
+        const summary = data?.Summary || {};
+        const totalDevices   = summary.TotalManagedDevices ?? 0;
+        const compliant      = summary.CompliantDevices ?? 0;
+        const totalDetected  = summary.TotalDetectedApps ?? 0;
+        const totalDeployed  = summary.TotalDeployedApps ?? 0;
+        const compliancePct  = summary.CompliancePct ?? 0;
+
+        document.getElementById('overview-vm-total').textContent    = totalDevices;
+        document.getElementById('overview-vm-monitored').textContent = compliant;
+        document.getElementById('overview-workspaces').textContent   = totalDetected;
+        document.getElementById('overview-dcr').textContent          = totalDeployed;
+        document.getElementById('vm-count').textContent              = totalDevices;
+        document.getElementById('workspace-count').textContent       = totalDetected;
+
+        if (compliancePct >= 80) setOverallStatus(`Conformità ${compliancePct}% — Ambiente OK`, 'success');
+        else if (compliancePct >= 50) setOverallStatus(`Conformità ${compliancePct}% — Richiede attenzione`, 'warning');
+        else setOverallStatus(`Conformità ${compliancePct}% — Dispositivi non conformi`, 'danger');
+
+        // Tab Dispositivi
+        {
+            const tbody = document.querySelector('#vm-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.ManagedDevices) ? data.ManagedDevices : [];
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6">Nessun dispositivo gestito trovato.</td></tr>`;
+            } else {
+                rows.slice(0, 200).forEach(d => {
+                    const compClass = d.Compliance === 'compliant' ? 'status-success' : d.Compliance === 'noncompliant' ? 'status-danger' : '';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${escapeHtml(d.Name || 'N/A')}</td>
+                        <td>${escapeHtml(d.OS || 'N/A')}</td>
+                        <td>${escapeHtml(d.OSVersion || 'N/A')}</td>
+                        <td><span class="status-badge ${compClass}">${escapeHtml(d.Compliance || 'N/A')}</span></td>
+                        <td>${escapeHtml(d.LastSync || 'N/A')}</td>
+                        <td>${escapeHtml(d.User || '')}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Tab App Rilevate
+        {
+            const tbody = document.querySelector('#workspace-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.DetectedApps) ? data.DetectedApps : [];
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessuna app rilevata.</td></tr>`;
+            } else {
+                rows.slice(0, 100).forEach(app => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${escapeHtml(app.DisplayName || 'N/A')}</td>
+                        <td>${escapeHtml(app.Version || 'N/A')}</td>
+                        <td>${escapeHtml(app.Publisher || 'N/A')}</td>
+                        <td><strong>${app.DeviceCount ?? 0}</strong></td>
+                        <td>${escapeHtml(app.Platform || 'N/A')}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Tab App Deployate
+        {
+            const tbody = document.querySelector('#dcr-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.DeployedApps) ? data.DeployedApps : [];
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessuna app deployata trovata.</td></tr>`;
+            } else {
+                rows.forEach(app => {
+                    const assignedBadge = app.IsAssigned
+                        ? '<span class="status-badge status-success">Si</span>'
+                        : '<span class="status-badge">No</span>';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${escapeHtml(app.DisplayName || 'N/A')}</td>
+                        <td>${escapeHtml(app.Type || 'N/A')}</td>
+                        <td>${escapeHtml(app.Publisher || 'N/A')}</td>
+                        <td>${assignedBadge}</td>
+                        <td>${escapeHtml(app.PublishingState || 'N/A')}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        renderReportHtmlInRecommendations(data);
+    }
+
     function populatePrecheckResultsSingle(data) {
         applyPrecheckUiForSolution(currentSolution);
 
@@ -985,6 +1156,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (currentSolution === 'updates') {
             renderUpdatesPrecheck(data);
+            return;
+        }
+
+        if (currentSolution === 'intune') {
+            renderIntunePrecheck(data);
             return;
         }
 
