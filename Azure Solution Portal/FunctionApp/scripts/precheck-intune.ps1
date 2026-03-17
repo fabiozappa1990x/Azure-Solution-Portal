@@ -147,12 +147,12 @@ foreach ($device in $nonCompliantDevices) {
                         if ($state -in @("nonCompliant","error","conflict")) {
                             $settingName = if ($s.settingName) { $s.settingName } elseif ($s.setting) { $s.setting } elseif ($s.settingDisplayName) { $s.settingDisplayName } else { "Setting" }
                             $reasonLabel = "$policyName - $settingName"
-                            $reasons += "$policyName: $settingName ($state)"
+                            $reasons += "${policyName}: $settingName ($state)"
                             Add-ReasonCount -ReasonKey $reasonLabel
                         }
                     }
                 } elseif ($policyState -in @("nonCompliant","error","conflict")) {
-                    $reasons += "$policyName ($policyState)"
+                    $reasons += "${policyName} ($policyState)"
                     Add-ReasonCount -ReasonKey $policyName
                 }
             }
