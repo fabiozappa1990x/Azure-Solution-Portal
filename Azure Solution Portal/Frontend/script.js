@@ -2422,18 +2422,45 @@ document.addEventListener('DOMContentLoaded', function() {
             const tbody = document.querySelector('#vm-table tbody');
             tbody.innerHTML = '';
             const gaps = Array.isArray(data.PolicyGapAnalysis) ? data.PolicyGapAnalysis : [];
+
+            // Mappa descrizioni e why dal catalogo MDE_BASELINE (per gap analysis ID)
+            const GAP_INFO = {
+                'edr-onboarding':     { desc: 'Onboarding automatico degli endpoint a Defender for Endpoint tramite connettore Intune.', why: 'Senza onboarding gli endpoint non inviano telemetria a security.microsoft.com: niente alert, niente risposta agli incidenti, niente threat hunting. È il prerequisito di tutto.' },
+                'av-nextgen':         { desc: 'Protezione AV real-time con cloud block level High, behavior monitoring e blocco PUA.', why: 'Cloud protection High aumenta la detection rate al 99%+. Behavior monitoring rileva malware zero-day che le signature non vedono. Senza questa policy Defender AV opera con impostazioni default variabili per device.' },
+                'tamper-protection':  { desc: 'Impedisce che malware o utenti locali disabilitino Defender AV/EDR (valore 5 = gestito da Intune).', why: 'Uno dei primi obiettivi di un attaccante è disabilitare l\'antivirus. Tamper Protection blocca qualsiasi tentativo — incluse operazioni PowerShell e modifiche al registro — anche con privilegi di amministratore locale.' },
+                'network-protection': { desc: 'Blocca in tempo reale connessioni a C2, phishing, exploit kit e IOC caricati da MDE (Block mode).', why: 'Estende SmartScreen a tutto il traffico di rete, non solo al browser. Senza questo, un malware può comunicare liberamente con il suo server di comando anche se il file è stato rilevato.' },
+                'asr-rules':          { desc: 'Regole Attack Surface Reduction — riducono i vettori di attacco tipici del malware (Office, script, LSASS, USB).', why: 'Bloccano comportamenti usati quasi esclusivamente da malware: dump delle credenziali LSASS, script offuscati, Office che crea processi child, persistenza via WMI. Partire in Audit permette di valutare l\'impatto prima del Block.' },
+                'file-hash':          { desc: 'Calcolo automatico degli hash SHA-256 di tutti i file eseguiti sull\'endpoint.', why: 'Necessario per le regole custom IOC in MDE (blocca file con hash X) e per Advanced Hunting (tabella DeviceFileEvents). Senza hash non puoi correlare file sospetti con intelligence esterna.' }
+            };
+
             if (!gaps.length) {
                 tbody.innerHTML = '<tr><td colspan="3">Nessun dato gap analysis.</td></tr>';
             } else {
                 gaps.forEach(g => {
                     const statusClass = g.Present ? 'status-success' : 'status-danger';
-                    const statusLabel = g.Present ? 'PRESENTE' : 'MANCANTE';
-                    const priorita    = g.Critical ? '<span style="color:#856404;font-weight:700;">CRITICA</span>' : 'Consigliata';
+                    const statusLabel = g.Present ? '✓ PRESENTE' : '✗ MANCANTE';
+                    const priorita    = g.Critical ? '<span style="background:#fff3cd;color:#856404;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700;">CRITICA</span>' : '<span style="color:#888;font-size:12px;">Consigliata</span>';
+                    const info        = GAP_INFO[g.Id] || {};
+                    const detId       = `gap-why-${g.Id}`;
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td>${escapeHtml(g.Name)}</td>
-                        <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
-                        <td>${priorita}</td>`;
+                        <td style="padding:10px 8px;">
+                            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px;">
+                                <strong style="font-size:13px;">${escapeHtml(g.Name)}</strong>
+                                ${priorita}
+                            </div>
+                            ${info.desc ? `<div style="font-size:12px;color:#555;margin-bottom:4px;">${escapeHtml(info.desc)}</div>` : ''}
+                            ${info.why ? `
+                            <button onclick="var el=document.getElementById('${detId}');el.style.display=el.style.display==='none'?'block':'none'"
+                                style="background:none;border:none;color:#0078d4;font-size:11px;cursor:pointer;padding:0;text-decoration:underline;">
+                                Perché è importante?
+                            </button>
+                            <div id="${detId}" style="display:none;margin-top:6px;padding:8px 10px;background:#f0f6ff;border-left:3px solid #0078d4;border-radius:0 4px 4px 0;font-size:12px;color:#333;line-height:1.5;">
+                                ${escapeHtml(info.why)}
+                            </div>` : ''}
+                        </td>
+                        <td style="white-space:nowrap;padding:10px 8px;"><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                        <td style="white-space:nowrap;padding:10px 8px;">${priorita}</td>`;
                     tbody.appendChild(tr);
                 });
             }
