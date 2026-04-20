@@ -334,6 +334,15 @@ async function initializeAuth() {
                 const response = await msalInstance.acquireTokenSilent({ ...loginRequest, account: currentAccount });
                 currentAccessToken = response.accessToken;
                 updateAuthUI(true, currentAccount.username);
+
+                // Se stavamo aspettando il consenso Graph per Intune, riavvia il precheck
+                if (sessionStorage.getItem('intune_graph_consent_pending') === '1') {
+                    sessionStorage.removeItem('intune_graph_consent_pending');
+                    setTimeout(() => {
+                        showPrecheckModal('intune');
+                        document.getElementById('run-precheck')?.click();
+                    }, 800);
+                }
             } catch {
                 currentAccessToken = null;
                 updateAuthUI(false);
@@ -395,36 +404,25 @@ async function getAccessToken() {
     }
 }
 
+const GRAPH_SCOPES_INTUNE = [
+    "https://graph.microsoft.com/DeviceManagementApps.Read.All",
+    "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+    "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
+    "https://graph.microsoft.com/Organization.Read.All"
+];
+
 async function getGraphToken() {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
-    const scopes = [
-        "https://graph.microsoft.com/DeviceManagementApps.Read.All",
-        "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
-        "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
-        "https://graph.microsoft.com/Organization.Read.All"
-    ];
     try {
-        const response = await msalInstance.acquireTokenSilent({ scopes, account: currentAccount });
+        const response = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES_INTUNE, account: currentAccount });
         return response.accessToken;
     } catch {
-        // Scoppi admin-consent-required: forza popup con consenso esplicito
-        try {
-            const response = await msalInstance.acquireTokenPopup({ scopes, account: currentAccount, prompt: 'consent' });
-            return response.accessToken;
-        } catch (e) {
-            // Se DeviceManagementConfiguration fallisce, riprova senza quel scope (degraded mode)
-            if (e.message && (e.message.includes('400') || e.message.includes('consent') || e.message.includes('scope'))) {
-                const fallbackScopes = [
-                    "https://graph.microsoft.com/DeviceManagementApps.Read.All",
-                    "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
-                    "https://graph.microsoft.com/Organization.Read.All"
-                ];
-                const response = await msalInstance.acquireTokenPopup({ scopes: fallbackScopes, account: currentAccount });
-                return response.accessToken;
-            }
-            throw e;
-        }
+        // Popup bloccato da COOP → usa redirect flow che non usa finestre popup
+        sessionStorage.setItem('intune_graph_consent_pending', '1');
+        await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES_INTUNE, account: currentAccount, prompt: 'consent' });
+        // La riga seguente non viene mai raggiunta (pagina si ricarica dopo il redirect)
+        throw new Error('Redirect in corso per il consenso...');
     }
 }
 
