@@ -2516,9 +2516,12 @@ function showDeployModal(solution) {
     const portalLink   = document.getElementById('deploy-portal-link');
     const portalOption = document.getElementById('deploy-portal-option');
 
-    // Always show Deploy to Azure (URL will be correct once repo is published)
-    portalLink.href = solConfig.portalUrl;
-    portalOption.style.display = 'flex';
+    if (solConfig.portalUrl && solConfig.portalUrl !== '#') {
+        portalLink.href = solConfig.portalUrl;
+        portalOption.style.display = 'flex';
+    } else {
+        portalOption.style.display = 'none';
+    }
 
     // ── PowerShell — download opzionale ──
     const psBlock    = document.getElementById('deploy-ps-command');
