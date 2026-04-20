@@ -851,9 +851,7 @@ const MDE_BASELINE = [
             '@odata.type': '#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration',
             displayName: '[Baseline] MDE - EDR Onboarding',
             description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune',
-            advancedThreatProtectionAutoPopulateOnboardingBlob: true,
-            allowSampleSharing: true,
-            enableExpeditedTelemetryReporting: false
+            advancedThreatProtectionAutoPopulateOnboardingBlob: true
         }
     },
     {

@@ -156,28 +156,32 @@ $existingTypes = @($existingPolicies | ForEach-Object { $_.OdataType.ToLower() }
 $existingNames = @($existingPolicies | ForEach-Object { $_.DisplayName.ToLower() })
 
 $baselineChecks = @(
-    @{ Id = 'edr-onboarding';      Name = 'EDR Onboarding (Intune connector)'; Critical = $true;  OdataMatch = 'windowsdefenderadvancedthreatprotectionconfiguration'; KeywordMatch = 'edr|onboard|atp' }
-    @{ Id = 'av-nextgen';          Name = 'AV Next-Gen Protection';            Critical = $true;  OdataMatch = 'windows10endpointprotectionconfiguration';            KeywordMatch = 'av|antivirus|defender|protection|ngp' }
-    @{ Id = 'tamper-protection';   Name = 'Tamper Protection (OMA-URI)';       Critical = $true;  OdataMatch = 'windows10customconfiguration';                        KeywordMatch = 'tamper' }
-    @{ Id = 'network-protection';  Name = 'Network Protection (Block mode)';   Critical = $true;  OdataMatch = 'windows10customconfiguration';                        KeywordMatch = 'network.protect' }
-    @{ Id = 'asr-rules';           Name = 'ASR Rules (Attack Surface Reduction)'; Critical = $false; OdataMatch = 'windows10customconfiguration';                    KeywordMatch = 'asr|attack.surface' }
-    @{ Id = 'endpoint-protection'; Name = 'Endpoint Protection (firewall)';    Critical = $false; OdataMatch = 'windows10endpointprotectionconfiguration';            KeywordMatch = 'endpoint.protect|firewall' }
+    @{ Id = 'edr-onboarding';      Name = 'EDR Onboarding (Intune connector)'; Critical = $true;  KeywordMatch = 'edr|onboard|atp' }
+    @{ Id = 'av-nextgen';          Name = 'AV Next-Gen Protection';            Critical = $true;  KeywordMatch = 'av next|nextgen|next.gen|antivirus|ngp' }
+    @{ Id = 'tamper-protection';   Name = 'Tamper Protection (OMA-URI)';       Critical = $true;  KeywordMatch = 'tamper' }
+    @{ Id = 'network-protection';  Name = 'Network Protection (Block mode)';   Critical = $true;  KeywordMatch = 'network protect' }
+    @{ Id = 'asr-rules';           Name = 'ASR Rules (Attack Surface Reduction)'; Critical = $false; KeywordMatch = 'asr|attack surface' }
+    @{ Id = 'endpoint-protection'; Name = 'Endpoint Protection (firewall)';    Critical = $false; KeywordMatch = 'endpoint protect|firewall' }
 )
 
 $gapAnalysis = @()
 foreach ($check in $baselineChecks) {
-    $odataMatch = $check.OdataMatch.ToLower()
-    $kwMatch    = $check.KeywordMatch.ToLower()
+    $kwMatch = $check.KeywordMatch.ToLower()
 
-    # Match by display name keyword
+    # Match by display name keyword (regex via -match)
     $nameMatched = $existingNames | Where-Object {
-        foreach ($kw in ($kwMatch -split '\|')) { if ($_ -like "*$kw*") { return $true } }
+        $name = $_
+        foreach ($kw in ($kwMatch -split '\|')) { if ($name -match [regex]::Escape($kw)) { return $true } }
         return $false
     }
-    # Match by [Baseline] prefix specifically
-    $baselineNameMatched = $existingNames | Where-Object { $_ -like '*[baseline]*' -and ($_ -like "*$($check.Id.Replace('-','*'))*") }
+    # Match by literal [Baseline] prefix
+    $baselineNameMatched = $existingNames | Where-Object { $_ -match '\[baseline\]' }
 
-    $present = ($nameMatched.Count -gt 0) -or ($baselineNameMatched.Count -gt 0)
+    $present = ($nameMatched.Count -gt 0) -or ($baselineNameMatched | Where-Object {
+        $name = $_
+        foreach ($kw in ($kwMatch -split '\|')) { if ($name -match [regex]::Escape($kw)) { return $true } }
+        return $false
+    }).Count -gt 0
 
     $gapAnalysis += @{
         Id       = $check.Id
