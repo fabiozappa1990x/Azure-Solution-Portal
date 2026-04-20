@@ -239,6 +239,34 @@ const SOLUTIONS = {
         psCommand: '# Nessun deploy necessario per Intune',
         apiEndpoint: '/api/precheck-intune'
     },
+    'defender-xdr': {
+        name: 'Microsoft Defender XDR',
+        detailsTitle: 'Microsoft Defender XDR — Dettagli',
+        details: {
+            whatIs: 'Microsoft Defender XDR è la piattaforma EDR/XDR di Microsoft per la protezione degli endpoint. Integra Next-Gen Protection, Attack Surface Reduction, EDR, Threat & Vulnerability Management e Automated Investigation & Response.',
+            features: [
+                'AV Next-Gen Protection: cloud block High+, real-time, behavior, PUA block',
+                '16 regole ASR (Attack Surface Reduction) in audit/block mode',
+                'EDR onboarding via Intune connector (auto-populate onboarding blob)',
+                'Tamper Protection + Network Protection in Block mode',
+                'Secure Score M365 e alert attivi in tempo reale'
+            ],
+            notes: [
+                'Precheck: DeviceManagementConfiguration.Read.All (policy Intune) + SecurityEvents.Read.All (Secure Score/Alert, opzionale).',
+                'Deploy Baseline: DeviceManagementConfiguration.ReadWrite.All + DeviceManagementServiceConfig.ReadWrite.All.',
+                'Richiede che il connettore Intune-MDE sia attivo in security.microsoft.com → Endpoints → Advanced Features.'
+            ],
+            docsAnchor: 'defender-xdr'
+        },
+        precheckTitle: 'Precheck Microsoft Defender XDR',
+        precheckDesc: 'Analizza il tenant per gap analysis MDE: policy Intune esistenti, Secure Score, alert attivi e baseline missing.',
+        deployTitle: 'Microsoft Defender XDR',
+        deployDesc: 'Esegui prima il Precheck, poi usa il wizard "Configura Baseline MDE" per deployare le policy mancanti via Intune.',
+        portalUrl: '#',
+        psDownload: null,
+        psCommand: '# Deploy tramite wizard baseline nel portale',
+        apiEndpoint: '/api/precheck-defender-xdr'
+    },
     'update-manager': {
         name: 'Azure Update Manager',
         detailsTitle: 'Azure Update Manager — Dettagli',
@@ -806,6 +834,362 @@ const INTUNE_BASELINE = {
 // ============================================================
 // INTUNE BASELINE WIZARD
 // ============================================================
+// ============================================================
+// MDE / DEFENDER XDR BASELINE CATALOG
+// Fonte: Jeffrey Appel MDE Series + Microsoft Docs
+// ============================================================
+const MDE_BASELINE = [
+    {
+        id: 'mde-edr-onboarding',
+        name: 'MDE - EDR Onboarding (auto-connector)',
+        category: 'EDR',
+        critical: true,
+        description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune. Richiede connettore MDE-Intune attivo.',
+        odataType: '#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration',
+            displayName: '[Baseline] MDE - EDR Onboarding',
+            description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune',
+            advancedThreatProtectionAutoPopulateOnboardingBlob: true,
+            allowSampleSharing: true,
+            enableExpeditedTelemetryReporting: false
+        }
+    },
+    {
+        id: 'mde-av-nextgen',
+        name: 'MDE - AV Next-Gen Protection',
+        category: 'Antivirus',
+        critical: true,
+        description: 'Cloud block High, real-time, behavior, network inspection, PUA block, sample submission, firewall',
+        odataType: '#microsoft.graph.windows10EndpointProtectionConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windows10EndpointProtectionConfiguration',
+            displayName: '[Baseline] MDE - AV Next-Gen Protection',
+            description: 'Defender AV baseline MDE: cloud protection High, PUA block, tamper protection, network inspection',
+            defenderRequireRealTimeMonitoring: true,
+            defenderRequireBehaviorMonitoring: true,
+            defenderRequireCloudProtection: true,
+            defenderCloudBlockLevel: 'high',
+            defenderCloudExtendedTimeout: 50,
+            defenderScanArchiveFiles: true,
+            defenderScanDownloads: true,
+            defenderScanNetworkFiles: true,
+            defenderScanIncomingMail: true,
+            defenderScanRemovableDrivesDuringFullScan: true,
+            defenderPotentiallyUnwantedAppAction: 'block',
+            defenderRequireNetworkInspectionSystem: true,
+            defenderBlockEndUserAccess: false,
+            firewallEnabled: true
+        }
+    },
+    {
+        id: 'mde-tamper-protection',
+        name: 'MDE - Tamper Protection (OMA-URI)',
+        category: 'Protezione',
+        critical: true,
+        description: 'Tamper Protection = 5 via OMA-URI — impedisce che malware disabiliti Defender AV/EDR',
+        odataType: '#microsoft.graph.windows10CustomConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windows10CustomConfiguration',
+            displayName: '[Baseline] MDE - Tamper Protection',
+            description: 'Tamper Protection abilitata via OMA-URI (valore 5 = Enabled managed by Intune)',
+            omaSettings: [
+                {
+                    '@odata.type': '#microsoft.graph.omaSettingInteger',
+                    displayName: 'Tamper Protection - Enabled via Intune (5)',
+                    description: 'Prevents disabling Defender AV/EDR. Value 5 = Enabled, managed by Intune.',
+                    omaUri: './Vendor/MSFT/Defender/Configuration/TamperProtection',
+                    value: 5
+                }
+            ]
+        }
+    },
+    {
+        id: 'mde-network-protection',
+        name: 'MDE - Network Protection (Block mode)',
+        category: 'Network',
+        critical: true,
+        description: 'Network Protection in Block mode — blocca connessioni a IP/domini malevoli e IOC',
+        odataType: '#microsoft.graph.windows10CustomConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windows10CustomConfiguration',
+            displayName: '[Baseline] MDE - Network Protection (Block)',
+            description: 'Network Protection in Block mode per MDE (valore 1 = Enabled/Block)',
+            omaSettings: [
+                {
+                    '@odata.type': '#microsoft.graph.omaSettingInteger',
+                    displayName: 'Enable Network Protection - Block mode',
+                    description: '1 = Block mode, 2 = Audit mode. Block is recommended by Jeffrey Appel.',
+                    omaUri: './Vendor/MSFT/Policy/Config/Defender/EnableNetworkProtection',
+                    value: 1
+                }
+            ]
+        }
+    },
+    {
+        id: 'mde-asr-audit',
+        name: 'MDE - ASR Rules (tutte in Audit mode)',
+        category: 'Attack Surface Reduction',
+        critical: false,
+        description: 'Tutte le 16 regole ASR in Audit (2) — primo step: monitora impatto prima di passare a Block',
+        odataType: '#microsoft.graph.windows10CustomConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windows10CustomConfiguration',
+            displayName: '[Baseline] MDE - ASR Rules (Audit)',
+            description: 'Tutte le 16 regole Attack Surface Reduction in modalità Audit (2) per assessment impatto',
+            omaSettings: [
+                {
+                    '@odata.type': '#microsoft.graph.omaSettingString',
+                    displayName: 'ASR Rules - All in Audit mode (2)',
+                    description: 'All 16 ASR rules: 56a863a9=signed drivers | 7674ba52=Adobe Reader | d4f940ab=Office child process | 9e6c4e1f=LSASS | be9ba2d9=email executable | 01443614=untrusted exe | 5beb7efe=obfuscated script | d3e037e1=JS/VBS download | 3b576869=Office executable content | 75668c1f=Office inject | 26190899=Office comm child | e6db77e5=WMI persistence | d1e49aac=PSExec/WMI | b2b3f03d=USB untrusted | 92e97fa1=Win32 from Office macro | c1db55ab=ransomware',
+                    omaUri: './Vendor/MSFT/Policy/Config/Defender/AttackSurfaceReductionRules',
+                    value: '56a863a9-875e-4185-98a7-b882c64b5ce5=2|7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c=2|d4f940ab-401b-4efc-aadc-ad5f3c50688a=2|9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2=2|be9ba2d9-53ea-4cdc-84e5-9b1eeee46550=2|01443614-cd74-433a-b99e-2ecdc07bfc25=2|5beb7efe-fd9a-4556-801d-275e5ffc04cc=2|d3e037e1-3eb8-44c8-a917-57927947596d=2|3b576869-a4ec-4529-8536-b80a7769e899=2|75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84=2|26190899-1602-49e8-8b27-eb1d0a1ce869=2|e6db77e5-3df2-4cf1-b95a-636979351e5b=2|d1e49aac-8f56-4280-b9ba-993a6d77406c=2|b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4=2|92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b=2|c1db55ab-c21a-4637-bb3f-a12568109d35=2'
+                }
+            ]
+        }
+    },
+    {
+        id: 'mde-asr-block-safe',
+        name: 'MDE - ASR Rules critiche (Block mode)',
+        category: 'Attack Surface Reduction',
+        critical: true,
+        description: '4 regole ASR a basso impatto in Block: LSASS, signed drivers, WMI persistence, ransomware',
+        odataType: '#microsoft.graph.windows10CustomConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windows10CustomConfiguration',
+            displayName: '[Baseline] MDE - ASR Rules (Block - critiche)',
+            description: 'Regole ASR critiche e sicure in Block mode (1): LSASS, signed vulnerable drivers, WMI persistence, ransomware',
+            omaSettings: [
+                {
+                    '@odata.type': '#microsoft.graph.omaSettingString',
+                    displayName: 'ASR Rules - Critical block (LSASS, signed drivers, WMI, ransomware)',
+                    description: 'Safe to block immediately: LSASS credential stealing, vulnerable signed drivers, WMI event subscription, ransomware protection',
+                    omaUri: './Vendor/MSFT/Policy/Config/Defender/AttackSurfaceReductionRules',
+                    value: '9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2=1|56a863a9-875e-4185-98a7-b882c64b5ce5=1|e6db77e5-3df2-4cf1-b95a-636979351e5b=1|c1db55ab-c21a-4637-bb3f-a12568109d35=1'
+                }
+            ]
+        }
+    },
+    {
+        id: 'mde-asr-block-full',
+        name: 'MDE - ASR Rules complete (Block mode)',
+        category: 'Attack Surface Reduction',
+        critical: false,
+        description: 'Tutte le 16 regole ASR in Block (1) — dopo validazione audit, massima protezione',
+        odataType: '#microsoft.graph.windows10CustomConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windows10CustomConfiguration',
+            displayName: '[Baseline] MDE - ASR Rules (Block - complete)',
+            description: 'Tutte le 16 regole ASR in Block mode (1) — deployrare dopo validazione in Audit',
+            omaSettings: [
+                {
+                    '@odata.type': '#microsoft.graph.omaSettingString',
+                    displayName: 'ASR Rules - All in Block mode (1)',
+                    omaUri: './Vendor/MSFT/Policy/Config/Defender/AttackSurfaceReductionRules',
+                    value: '56a863a9-875e-4185-98a7-b882c64b5ce5=1|7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c=1|d4f940ab-401b-4efc-aadc-ad5f3c50688a=1|9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2=1|be9ba2d9-53ea-4cdc-84e5-9b1eeee46550=1|01443614-cd74-433a-b99e-2ecdc07bfc25=1|5beb7efe-fd9a-4556-801d-275e5ffc04cc=1|d3e037e1-3eb8-44c8-a917-57927947596d=1|3b576869-a4ec-4529-8536-b80a7769e899=1|75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84=1|26190899-1602-49e8-8b27-eb1d0a1ce869=1|e6db77e5-3df2-4cf1-b95a-636979351e5b=1|d1e49aac-8f56-4280-b9ba-993a6d77406c=1|b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4=1|92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b=1|c1db55ab-c21a-4637-bb3f-a12568109d35=1'
+                }
+            ]
+        }
+    },
+    {
+        id: 'mde-filehash',
+        name: 'MDE - File Hash Computation',
+        category: 'Telemetry',
+        critical: false,
+        description: 'Abilita il calcolo hash dei file eseguiti — migliora hunting e indicatori IOC',
+        odataType: '#microsoft.graph.windows10CustomConfiguration',
+        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        body: {
+            '@odata.type': '#microsoft.graph.windows10CustomConfiguration',
+            displayName: '[Baseline] MDE - File Hash Computation',
+            description: 'EnableFileHashComputation = 1 per migliorare Advanced Hunting e IOC matching',
+            omaSettings: [
+                {
+                    '@odata.type': '#microsoft.graph.omaSettingInteger',
+                    displayName: 'Enable File Hash Computation',
+                    description: 'Required for custom indicators matching in MDE. Test performance impact on endpoints.',
+                    omaUri: './Vendor/MSFT/Defender/Configuration/EnableFileHashComputation',
+                    value: 1
+                }
+            ]
+        }
+    }
+];
+
+// ============================================================
+// MDE BASELINE WIZARD
+// ============================================================
+function openMdeBaselineWizard() {
+    const modal = document.getElementById('mde-baseline-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    initMdeBaselineWizard();
+}
+
+function initMdeBaselineWizard() {
+    document.getElementById('mde-step-1').style.display = '';
+    document.getElementById('mde-step-2').style.display = 'none';
+    updateMdeStepIndicator(1);
+
+    // Close X
+    const closeX = document.getElementById('mde-baseline-close');
+    const newCloseX = closeX.cloneNode(true);
+    closeX.parentNode.replaceChild(newCloseX, closeX);
+    newCloseX.addEventListener('click', () => { document.getElementById('mde-baseline-modal').style.display = 'none'; });
+
+    // Step2 close
+    const closeBtn = document.getElementById('mde-step2-close');
+    const newClose = closeBtn.cloneNode(true);
+    closeBtn.parentNode.replaceChild(newClose, closeBtn);
+    newClose.addEventListener('click', () => { document.getElementById('mde-baseline-modal').style.display = 'none'; });
+
+    // Deploy button
+    const deployBtn = document.getElementById('mde-step1-deploy');
+    const newDeploy = deployBtn.cloneNode(true);
+    deployBtn.parentNode.replaceChild(newDeploy, deployBtn);
+    newDeploy.addEventListener('click', () => runMdeBaselineDeploy());
+
+    renderMdePolicyList();
+}
+
+function updateMdeStepIndicator(activeStep) {
+    document.querySelectorAll('.mde-step-indicator').forEach(el => {
+        const step = parseInt(el.dataset.step);
+        el.style.background = step === activeStep ? '#0a2342' : (step < activeStep ? '#107c10' : '#e0e7ef');
+        el.style.color = step <= activeStep ? 'white' : '#666';
+    });
+}
+
+function renderMdePolicyList() {
+    const data = window.lastPrecheckResponse || {};
+    const existing = Array.isArray(data.ExistingMdePolicies) ? data.ExistingMdePolicies : [];
+    const existingNames = existing.map(p => (p.DisplayName || '').toLowerCase());
+    const existingTypes = new Set(existing.map(p => (p.OdataType || '').toLowerCase()));
+
+    const container = document.getElementById('mde-policy-list');
+    container.innerHTML = '';
+
+    const categoryColors = { 'EDR': '#6f42c1', 'Antivirus': '#0078d4', 'Protezione': '#107c10', 'Network': '#0a2342', 'Attack Surface Reduction': '#d13438', 'Telemetry': '#666' };
+
+    let lastCategory = '';
+    MDE_BASELINE.forEach(policy => {
+        if (policy.category !== lastCategory) {
+            lastCategory = policy.category;
+            const hdr = document.createElement('div');
+            hdr.style.cssText = `padding:8px 14px;background:${categoryColors[policy.category] || '#333'};color:white;font-size:12px;font-weight:700;letter-spacing:.5px;`;
+            hdr.textContent = policy.category.toUpperCase();
+            container.appendChild(hdr);
+        }
+
+        const bName = policy.body.displayName.toLowerCase();
+        const present = existingNames.includes(bName) || existingTypes.has(policy.odataType.toLowerCase());
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid #f0f0f0;';
+        row.innerHTML = `
+            <input type="checkbox" class="mde-policy-check" data-id="${policy.id}" ${present ? 'disabled' : ''} style="width:16px;height:16px;flex-shrink:0;margin-top:2px;">
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span style="font-weight:600;font-size:13px;">${escapeHtml(policy.name)}</span>
+                    ${policy.critical ? '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">CRITICA</span>' : ''}
+                </div>
+                <div style="font-size:12px;color:#666;margin-top:2px;">${escapeHtml(policy.description)}</div>
+            </div>
+            <span style="flex-shrink:0;background:${present ? '#107c10' : '#d13438'};color:white;border-radius:4px;padding:2px 10px;font-size:11px;font-weight:700;">${present ? 'PRESENTE' : 'MANCANTE'}</span>`;
+        container.appendChild(row);
+    });
+
+    // Select missing critical by default
+    container.querySelectorAll('.mde-policy-check:not([disabled])').forEach(cb => {
+        const policy = MDE_BASELINE.find(p => p.id === cb.dataset.id);
+        cb.checked = policy?.critical ?? true;
+    });
+    updateMdeDeployCount();
+    container.addEventListener('change', updateMdeDeployCount);
+}
+
+function updateMdeDeployCount() {
+    const checked = document.querySelectorAll('.mde-policy-check:checked:not([disabled])').length;
+    const countEl = document.getElementById('mde-selected-count');
+    const deployBtn = document.getElementById('mde-step1-deploy');
+    if (countEl) countEl.textContent = `${checked} policy selezionate`;
+    if (deployBtn) deployBtn.disabled = checked === 0;
+}
+
+async function runMdeBaselineDeploy() {
+    document.getElementById('mde-step-1').style.display = 'none';
+    document.getElementById('mde-step-2').style.display = '';
+    updateMdeStepIndicator(2);
+
+    const logEl = document.getElementById('mde-deploy-log');
+    const summaryEl = document.getElementById('mde-deploy-summary');
+    const closeBtn = document.getElementById('mde-step2-close');
+    logEl.innerHTML = '';
+
+    function log(msg, color) {
+        const line = document.createElement('div');
+        line.style.color = color || '#d4d4d4';
+        line.textContent = msg;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    log('Acquisizione token Graph con permessi di scrittura...', '#569cd6');
+    let token;
+    try {
+        token = await getGraphTokenWithWrite();
+        log('✓ Token acquisito.', '#4ec9b0');
+    } catch (e) {
+        log(`✗ Errore token: ${e.message}`, '#f44747');
+        summaryEl.textContent = '❌ Impossibile acquisire il token. Verifica i permessi nell\'App Registration.';
+        summaryEl.style.color = '#d13438';
+        closeBtn.style.display = '';
+        return;
+    }
+
+    const selectedIds = Array.from(document.querySelectorAll('.mde-policy-check:checked:not([disabled])')).map(cb => cb.dataset.id);
+    let deployed = 0, failed = 0;
+
+    for (const policy of MDE_BASELINE) {
+        if (!selectedIds.includes(policy.id)) continue;
+        log(`→ Deploy: ${policy.name}`, '#9cdcfe');
+        try {
+            const resp = await fetch(policy.endpoint, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(policy.body)
+            });
+            if (resp.ok) {
+                const result = await resp.json();
+                log(`  ✓ Creata: ${result.displayName || policy.name} (id: ${result.id || '?'})`, '#4ec9b0');
+                deployed++;
+            } else {
+                const errText = await resp.text();
+                let errMsg = errText;
+                try { errMsg = JSON.parse(errText)?.error?.message || errText; } catch {}
+                log(`  ✗ Errore HTTP ${resp.status}: ${errMsg}`, '#f44747');
+                failed++;
+            }
+        } catch (e) {
+            log(`  ✗ Errore rete: ${e.message}`, '#f44747');
+            failed++;
+        }
+    }
+
+    log('', '');
+    log(`=== COMPLETATO: ${deployed} policy create, ${failed} errori ===`, failed > 0 ? '#ff8c00' : '#4ec9b0');
+    summaryEl.textContent = `${deployed} policy MDE deployate${failed > 0 ? `, ${failed} errori` : ''}.`;
+    summaryEl.style.color = failed > 0 ? '#d13438' : '#107c10';
+    closeBtn.style.display = '';
+}
+
 function openIntuneBaselineWizard() {
     const modal = document.getElementById('intune-baseline-modal');
     if (!modal) return;
@@ -1153,9 +1537,9 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
 
-        // Intune è tenant-wide: non richiede una subscription Azure
+        // Intune e Defender XDR sono tenant-wide: non richiedono subscription Azure
         let subscriptionIds;
-        if (currentSolution === 'intune') {
+        if (currentSolution === 'intune' || currentSolution === 'defender-xdr') {
             subscriptionIds = ['tenant-only'];
         } else {
             const subscriptionInput = document.getElementById('subscription-id').value.trim();
@@ -1176,9 +1560,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const endpoint = useV2 ? solConfig.apiEndpointV2 : solConfig.apiEndpoint;
             const results = [];
 
-            // Per Intune è necessario un token Graph separato (audience diverso)
+            // Per Intune e Defender XDR è necessario un token Graph separato
             let graphToken = null;
-            if (currentSolution === 'intune') {
+            if (currentSolution === 'intune' || currentSolution === 'defender-xdr') {
                 try {
                     graphToken = await getGraphToken();
                 } catch (e) {
@@ -1409,6 +1793,26 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabVisible('virtual-machines', true);
             setTabVisible('workspaces', true);
             setTabVisible('dcr', true);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'defender-xdr') {
+            setSummaryLabels('MDE Readiness:', 'Policy Mancanti:');
+            setTabText('overview', 'Panoramica');
+            setTabText('virtual-machines', 'Gap Analysis');
+            setTabText('workspaces', 'Policy Esistenti');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', 'Stato Microsoft Defender XDR');
+            setPaneTitle('virtual-machines', 'Gap Analysis — Baseline MDE');
+            setPaneTitle('workspaces', 'Policy Intune Esistenti');
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['Readiness Score', 'Policy Critiche Missing', 'Secure Score M365', 'Alert High']);
+            setTableHeaders('vm-table', ['Policy', 'Stato', 'Priorità']);
+            setTableHeaders('workspace-table', ['Nome Policy', 'Tipo']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', false);
             setTabVisible('recommendations', true);
             return;
         }
@@ -1801,6 +2205,84 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
+    function renderDefenderXdrPrecheck(data) {
+        const summary = data?.Summary || {};
+        const readiness       = summary.ReadinessScore ?? 0;
+        const critMissing     = summary.CriticalMissing ?? 0;
+        const ssPercent       = summary.SecureScorePercent ?? 0;
+        const alertsHigh      = summary.AlertsHigh ?? 0;
+
+        document.getElementById('overview-vm-total').textContent    = readiness + '%';
+        document.getElementById('overview-vm-monitored').textContent = critMissing;
+        document.getElementById('overview-workspaces').textContent   = data?.SecureScore?.Available ? ssPercent + '%' : 'N/D';
+        document.getElementById('overview-dcr').textContent          = data?.Alerts?.Available ? alertsHigh : 'N/D';
+        document.getElementById('vm-count').textContent              = readiness + '%';
+        document.getElementById('workspace-count').textContent       = summary.TotalExistingPolicies ?? 0;
+
+        const rdColor = readiness >= 80 ? '#107c10' : readiness >= 50 ? '#ff8c00' : '#d13438';
+        if (readiness >= 80)      setOverallStatus(`Readiness ${readiness}% — Baseline MDE OK`, 'success');
+        else if (readiness >= 50) setOverallStatus(`Readiness ${readiness}% — Policy critiche mancanti`, 'warning');
+        else                      setOverallStatus(`Readiness ${readiness}% — Baseline MDE incompleta`, 'danger');
+
+        // Gap analysis tab
+        {
+            const tbody = document.querySelector('#vm-table tbody');
+            tbody.innerHTML = '';
+            const gaps = Array.isArray(data.PolicyGapAnalysis) ? data.PolicyGapAnalysis : [];
+            if (!gaps.length) {
+                tbody.innerHTML = '<tr><td colspan="3">Nessun dato gap analysis.</td></tr>';
+            } else {
+                gaps.forEach(g => {
+                    const statusClass = g.Present ? 'status-success' : 'status-danger';
+                    const statusLabel = g.Present ? 'PRESENTE' : 'MANCANTE';
+                    const priorita    = g.Critical ? '<span style="color:#856404;font-weight:700;">CRITICA</span>' : 'Consigliata';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${escapeHtml(g.Name)}</td>
+                        <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                        <td>${priorita}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Existing policies tab
+        {
+            const tbody = document.querySelector('#workspace-table tbody');
+            tbody.innerHTML = '';
+            const policies = Array.isArray(data.ExistingMdePolicies) ? data.ExistingMdePolicies : [];
+            if (!policies.length) {
+                tbody.innerHTML = '<tr><td colspan="2">Nessuna policy MDE Intune trovata.</td></tr>';
+            } else {
+                policies.slice(0, 200).forEach(p => {
+                    const type = (p.OdataType || '').replace('#microsoft.graph.', '');
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(p.DisplayName || 'N/A')}</td><td>${escapeHtml(type)}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Baseline button in overview
+        const overviewPane = document.getElementById('overview');
+        document.getElementById('mde-baseline-btn-overview')?.remove();
+        const critMissingCount = Array.isArray(data.PolicyGapAnalysis) ? data.PolicyGapAnalysis.filter(g => g.Critical && !g.Present).length : 0;
+        const banner = document.createElement('div');
+        banner.id = 'mde-baseline-btn-overview';
+        banner.style.cssText = 'margin-top:20px;padding:16px;background:linear-gradient(135deg,#0a2342,#1a4a8a);color:white;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;';
+        banner.innerHTML = `
+            <div>
+                <div style="font-weight:700;font-size:15px;margin-bottom:4px;">🛡 Baseline Microsoft Defender XDR</div>
+                <div style="font-size:13px;opacity:.9;">Policy critiche mancanti: <strong>${critMissingCount}</strong> &nbsp;|&nbsp; Policy totali Intune: <strong>${summary.TotalExistingPolicies ?? 0}</strong></div>
+                <div style="font-size:12px;opacity:.75;margin-top:4px;">Deploya le policy MDE standard (Jeffrey Appel baseline) nel tenant.</div>
+            </div>
+            <button id="open-mde-baseline-wizard" style="background:white;color:#0a2342;border:none;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;flex-shrink:0;">Configura Baseline MDE →</button>`;
+        overviewPane.appendChild(banner);
+        document.getElementById('open-mde-baseline-wizard')?.addEventListener('click', () => openMdeBaselineWizard());
+
+        renderReportHtmlInRecommendations(data);
+    }
+
     function populatePrecheckResultsSingle(data) {
         applyPrecheckUiForSolution(currentSolution);
 
@@ -1831,6 +2313,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (currentSolution === 'intune') {
             renderIntunePrecheck(data);
+            return;
+        }
+
+        if (currentSolution === 'defender-xdr') {
+            renderDefenderXdrPrecheck(data);
             return;
         }
 
@@ -1995,18 +2482,18 @@ function showPrecheckModal(solution) {
     // Intune è tenant-wide: nascondi il campo subscription
     const subGroup = document.getElementById('subscription-id')?.closest('.form-group');
     const rgGroup = document.getElementById('resource-group')?.closest('.form-group');
-    if (solution === 'intune') {
+    if (solution === 'intune' || solution === 'defender-xdr') {
         if (subGroup) subGroup.style.display = 'none';
         if (rgGroup) rgGroup.style.display = 'none';
-        // Mostra nota tenant-wide se non già presente
         let note = document.getElementById('intune-tenant-note');
         if (!note) {
             note = document.createElement('div');
             note.id = 'intune-tenant-note';
             note.style.cssText = 'padding:12px 14px;background:#f0f6ff;border:1px solid #c0d4f5;border-radius:8px;margin-bottom:14px;font-size:13px;color:#0078d4;';
-            note.innerHTML = '<strong>ℹ️ Intune è tenant-wide</strong> — non richiede una subscription Azure. Il precheck verrà eseguito direttamente sul tenant associato al tuo account.';
             document.querySelector('.precheck-form').insertBefore(note, document.getElementById('run-precheck'));
         }
+        const label = solution === 'defender-xdr' ? 'Defender XDR' : 'Intune';
+        note.innerHTML = `<strong>ℹ️ ${label} è tenant-wide</strong> — non richiede una subscription Azure. Il precheck verrà eseguito direttamente sul tenant associato al tuo account.`;
         note.style.display = '';
     } else {
         if (subGroup) subGroup.style.display = '';
