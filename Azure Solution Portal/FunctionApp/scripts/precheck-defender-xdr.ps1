@@ -152,36 +152,55 @@ Write-Host "Found $($existingPolicies.Count) existing Intune policies"
 # ----------------------------------------
 Write-Host "[5/6] Gap analysis..."
 
-$existingTypes = @($existingPolicies | ForEach-Object { $_.OdataType.ToLower() })
 $existingNames = @($existingPolicies | ForEach-Object { $_.DisplayName.ToLower() })
 
+# Exact display names deployed by the MDE baseline wizard
 $baselineChecks = @(
-    @{ Id = 'edr-onboarding';      Name = 'EDR Onboarding (Intune connector)'; Critical = $true;  KeywordMatch = 'edr|onboard|atp' }
-    @{ Id = 'av-nextgen';          Name = 'AV Next-Gen Protection';            Critical = $true;  KeywordMatch = 'av next|nextgen|next.gen|antivirus|ngp' }
-    @{ Id = 'tamper-protection';   Name = 'Tamper Protection (OMA-URI)';       Critical = $true;  KeywordMatch = 'tamper' }
-    @{ Id = 'network-protection';  Name = 'Network Protection (Block mode)';   Critical = $true;  KeywordMatch = 'network protect' }
-    @{ Id = 'asr-rules';           Name = 'ASR Rules (Attack Surface Reduction)'; Critical = $false; KeywordMatch = 'asr|attack surface' }
-    @{ Id = 'endpoint-protection'; Name = 'Endpoint Protection (firewall)';    Critical = $false; KeywordMatch = 'endpoint protect|firewall' }
+    @{
+        Id       = 'edr-onboarding'
+        Name     = 'EDR Onboarding (Intune connector)'
+        Critical = $true
+        # matches any of these exact names (lowercase)
+        ExactNames = @('[baseline] mde - edr onboarding')
+    }
+    @{
+        Id       = 'av-nextgen'
+        Name     = 'AV Next-Gen Protection'
+        Critical = $true
+        ExactNames = @('[baseline] mde - av next-gen protection')
+    }
+    @{
+        Id       = 'tamper-protection'
+        Name     = 'Tamper Protection (OMA-URI)'
+        Critical = $true
+        ExactNames = @('[baseline] mde - tamper protection')
+    }
+    @{
+        Id       = 'network-protection'
+        Name     = 'Network Protection (Block mode)'
+        Critical = $true
+        ExactNames = @('[baseline] mde - network protection (block)')
+    }
+    @{
+        Id       = 'asr-rules'
+        Name     = 'ASR Rules (Attack Surface Reduction)'
+        Critical = $false
+        ExactNames = @('[baseline] mde - asr rules (audit)', '[baseline] mde - asr rules (block - critiche)', '[baseline] mde - asr rules (block - complete)')
+    }
+    @{
+        Id       = 'file-hash'
+        Name     = 'File Hash Computation'
+        Critical = $false
+        ExactNames = @('[baseline] mde - file hash computation')
+    }
 )
 
 $gapAnalysis = @()
 foreach ($check in $baselineChecks) {
-    $kwMatch = $check.KeywordMatch.ToLower()
-
-    # Match by display name keyword (regex via -match)
-    $nameMatched = $existingNames | Where-Object {
-        $name = $_
-        foreach ($kw in ($kwMatch -split '\|')) { if ($name -match [regex]::Escape($kw)) { return $true } }
-        return $false
+    $present = $false
+    foreach ($exactName in $check.ExactNames) {
+        if ($existingNames -contains $exactName) { $present = $true; break }
     }
-    # Match by literal [Baseline] prefix
-    $baselineNameMatched = $existingNames | Where-Object { $_ -match '\[baseline\]' }
-
-    $present = ($nameMatched.Count -gt 0) -or ($baselineNameMatched | Where-Object {
-        $name = $_
-        foreach ($kw in ($kwMatch -split '\|')) { if ($name -match [regex]::Escape($kw)) { return $true } }
-        return $false
-    }).Count -gt 0
 
     $gapAnalysis += @{
         Id       = $check.Id

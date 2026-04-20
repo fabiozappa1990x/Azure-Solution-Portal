@@ -1170,9 +1170,14 @@ async function runMdeBaselineDeploy() {
                 deployed++;
             } else {
                 const errText = await resp.text();
-                let errMsg = errText;
-                try { errMsg = JSON.parse(errText)?.error?.message || errText; } catch {}
-                log(`  ✗ Errore HTTP ${resp.status}: ${errMsg}`, '#f44747');
+                let errMsg = '';
+                try { errMsg = JSON.parse(errText)?.error?.message || JSON.parse(errText)?.Message || ''; } catch {}
+                if (!errMsg) errMsg = errText.substring(0, 200);
+                if (resp.status === 400 && policy.id === 'mde-edr-onboarding') {
+                    log(`  ✗ EDR Onboarding non disponibile (HTTP 400) — Verifica che il connettore MDE-Intune sia attivo in security.microsoft.com → Impostazioni → Endpoint → Funzionalità avanzate → Microsoft Intune connection`, '#ff8c00');
+                } else {
+                    log(`  ✗ Errore HTTP ${resp.status}: ${errMsg}`, '#f44747');
+                }
                 failed++;
             }
         } catch (e) {
