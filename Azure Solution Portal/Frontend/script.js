@@ -402,7 +402,6 @@ async function getGraphToken() {
         scopes: [
             "https://graph.microsoft.com/DeviceManagementApps.Read.All",
             "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
-            "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
             "https://graph.microsoft.com/Organization.Read.All"
         ],
         account: currentAccount
