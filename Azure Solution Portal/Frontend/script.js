@@ -1489,6 +1489,11 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.btn-deploy').forEach(btn => {
         btn.addEventListener('click', function() {
             currentSolution = this.getAttribute('data-solution');
+            if (currentSolution === 'defender-xdr' || currentSolution === 'intune') {
+                // Per queste solution il deploy avviene tramite wizard baseline
+                showPrecheckModal(currentSolution);
+                return;
+            }
             showDeployModal(currentSolution);
         });
     });
@@ -1539,6 +1544,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
+
+        // Defender XDR: precheck diretto browser → Graph API (no Azure Function)
+        if (currentSolution === 'defender-xdr') {
+            await runDefenderXdrPrecheckClientSide();
+            return;
+        }
 
         // Intune e Defender XDR sono tenant-wide: non richiedono subscription Azure
         let subscriptionIds;
@@ -2208,6 +2219,115 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
+    async function runDefenderXdrPrecheckClientSide() {
+        document.querySelector('.precheck-form').style.display = 'none';
+        document.getElementById('precheck-loading').style.display = 'block';
+        document.getElementById('precheck-results').style.display = 'none';
+
+        try {
+            const token = await getGraphToken();
+            const headers = { 'Authorization': `Bearer ${token}` };
+
+            // Tutte le deviceConfigurations (paginato)
+            let allConfigs = [];
+            let url = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=500&$select=id,displayName,lastModifiedDateTime';
+            while (url) {
+                const r = await fetch(url, { headers });
+                if (!r.ok) break;
+                const j = await r.json();
+                allConfigs = allConfigs.concat(j.value || []);
+                url = j['@odata.nextLink'] || null;
+            }
+
+            // Endpoint Security Intents
+            let allIntents = [];
+            const ir = await fetch('https://graph.microsoft.com/v1.0/deviceManagement/intents?$select=id,displayName', { headers });
+            if (ir.ok) { allIntents = (await ir.json()).value || []; }
+
+            // Settings Catalog (configurationPolicies)
+            let catalogPolicies = [];
+            const cr = await fetch('https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies?$top=500&$select=id,name', { headers });
+            if (cr.ok) { catalogPolicies = (await cr.json()).value || []; }
+
+            // Nomi di tutte le policy esistenti (lowercase)
+            const allNames = [
+                ...allConfigs.map(p => (p.displayName || '').toLowerCase().trim()),
+                ...allIntents.map(p => (p.displayName || '').toLowerCase().trim()),
+                ...catalogPolicies.map(p => (p.name || '').toLowerCase().trim())
+            ];
+
+            // Gap analysis — match esatto sui displayName del wizard
+            const BASELINE_CHECKS = [
+                { id: 'edr-onboarding',     name: 'EDR Onboarding (Intune connector)',       critical: true,  names: ['[baseline] mde - edr onboarding'] },
+                { id: 'av-nextgen',         name: 'AV Next-Gen Protection',                  critical: true,  names: ['[baseline] mde - av next-gen protection'] },
+                { id: 'tamper-protection',  name: 'Tamper Protection (OMA-URI)',              critical: true,  names: ['[baseline] mde - tamper protection'] },
+                { id: 'network-protection', name: 'Network Protection (Block mode)',          critical: true,  names: ['[baseline] mde - network protection (block)'] },
+                { id: 'asr-rules',          name: 'ASR Rules (Attack Surface Reduction)',     critical: false, names: ['[baseline] mde - asr rules (audit)', '[baseline] mde - asr rules (block - critiche)', '[baseline] mde - asr rules (block - complete)'] },
+                { id: 'file-hash',          name: 'File Hash Computation',                   critical: false, names: ['[baseline] mde - file hash computation'] }
+            ];
+            const gapAnalysis = BASELINE_CHECKS.map(c => {
+                const present = c.names.some(n => allNames.includes(n));
+                return { Id: c.id, Name: c.name, Critical: c.critical, Present: present, Status: present ? 'OK' : 'MISSING' };
+            });
+
+            // Secure Score (opzionale, può mancare il permesso)
+            let secureScore = { Available: false, Percentage: 0 };
+            try {
+                const ssr = await fetch('https://graph.microsoft.com/v1.0/security/secureScores?$top=1&$select=currentScore,maxScore', { headers });
+                if (ssr.ok) {
+                    const ssj = await ssr.json();
+                    if (ssj.value?.length > 0) {
+                        const ss = ssj.value[0];
+                        const pct = ss.maxScore > 0 ? Math.round(ss.currentScore / ss.maxScore * 100) : 0;
+                        secureScore = { Available: true, Current: ss.currentScore, Max: ss.maxScore, Percentage: pct };
+                    }
+                }
+            } catch {}
+
+            // Alerts (opzionale)
+            let alerts = { Available: false, Total: 0, High: 0 };
+            try {
+                const alr = await fetch("https://graph.microsoft.com/v1.0/security/alerts_v2?$top=100&$filter=status ne 'resolved'&$select=id,severity", { headers });
+                if (alr.ok) {
+                    const alj = await alr.json();
+                    const list = alj.value || [];
+                    alerts = { Available: true, Total: list.length, High: list.filter(a => a.severity === 'high').length };
+                }
+            } catch {}
+
+            const critMissing = gapAnalysis.filter(g => g.Critical && !g.Present).length;
+            const critTotal   = gapAnalysis.filter(g => g.Critical).length;
+            const readiness   = critTotal > 0 ? Math.round((critTotal - critMissing) / critTotal * 100) : 100;
+
+            const data = {
+                Summary: {
+                    ReadinessScore: readiness,
+                    CriticalMissing: critMissing,
+                    TotalExistingPolicies: allConfigs.length + allIntents.length,
+                    SecureScorePercent: secureScore.Percentage,
+                    AlertsHigh: alerts.High,
+                    AlertsTotal: alerts.Total
+                },
+                PolicyGapAnalysis: gapAnalysis,
+                ExistingMdePolicies: allConfigs.map(p => ({ Id: p.id, DisplayName: p.displayName, OdataType: '', LastModified: p.lastModifiedDateTime || '' })),
+                SecureScore: secureScore,
+                Alerts: alerts
+            };
+
+            window.lastPrecheckResponse = data;
+            document.getElementById('precheck-loading').style.display = 'none';
+            applyPrecheckUiForSolution('defender-xdr');
+            renderDefenderXdrPrecheck(data);
+            document.getElementById('precheck-results').style.display = 'block';
+            showTab('overview');
+
+        } catch (err) {
+            document.getElementById('precheck-loading').style.display = 'none';
+            document.querySelector('.precheck-form').style.display = 'block';
+            alert(`❌ Errore precheck Defender XDR:\n\n${err.message}`);
+        }
+    }
+
     function renderDefenderXdrPrecheck(data) {
         const summary = data?.Summary || {};
         const readiness       = summary.ReadinessScore ?? 0;
@@ -2412,6 +2532,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Procedi con deployment
     document.getElementById('proceed-to-deploy')?.addEventListener('click', function() {
         document.getElementById('precheck-modal').style.display = 'none';
+        if (currentSolution === 'defender-xdr') {
+            openMdeBaselineWizard();
+            return;
+        }
+        if (currentSolution === 'intune') {
+            openIntuneBaselineWizard();
+            return;
+        }
         showDeployModal(currentSolution);
     });
 
