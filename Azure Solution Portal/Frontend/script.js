@@ -2258,9 +2258,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const token = await getGraphToken();
             const headers = { 'Authorization': `Bearer ${token}` };
 
-            // Fetch COMPLETO (no $select) per leggere i settings reali di ogni policy
+            // Usa /beta per avere tutti i campi (v1.0 taglia proprietà come advancedThreatProtectionAutoPopulateOnboardingBlob)
             let allConfigs = [];
-            let url = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=100';
+            let url = 'https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?$top=100';
             while (url) {
                 const r = await fetch(url, { headers });
                 if (!r.ok) break;
@@ -2269,13 +2269,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 url = j['@odata.nextLink'] || null;
             }
 
-            // Endpoint Security Intents (con templateId per riconoscere il tipo)
+            // Endpoint Security Intents
             let allIntents = [];
-            const ir = await fetch('https://graph.microsoft.com/v1.0/deviceManagement/intents?$select=id,displayName,templateId', { headers });
+            const ir = await fetch('https://graph.microsoft.com/beta/deviceManagement/intents?$select=id,displayName,templateId', { headers });
             if (ir.ok) { allIntents = (await ir.json()).value || []; }
 
             // -------------------------------------------------------
-            // Rilevamento funzionale: controlla settings, non il nome
+            // Rilevamento funzionale: controlla tipo e settings reali
             // -------------------------------------------------------
             function detectMdeFeatures(configs, intents) {
                 const found = { edr: false, av: false, tamper: false, network: false, asr: false, fileHash: false };
@@ -2283,17 +2283,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 for (const p of configs) {
                     const type = (p['@odata.type'] || '').toLowerCase();
 
-                    // EDR Onboarding: tipo ATP + autoPopulate abilitato
+                    // EDR Onboarding: il solo fatto che esista una policy di questo tipo = EDR configurato
+                    // (non esiste altro motivo per creare windowsDefenderAdvancedThreatProtectionConfiguration)
                     if (type.includes('windowsdefenderadvancedthreatprotectionconfiguration')) {
-                        if (p.advancedThreatProtectionAutoPopulateOnboardingBlob === true) found.edr = true;
+                        found.edr = true;
                     }
 
-                    // AV Next-Gen: tipo EndpointProtection con almeno una impostazione AV attiva
+                    // AV Next-Gen: tipo EndpointProtection con almeno una proprietà defender configurata
+                    // Accetta true, stringhe non-vuote e valori non-null/notConfigured
                     if (type.includes('windows10endpointprotectionconfiguration')) {
-                        if (p.defenderRequireRealTimeMonitoring === true ||
-                            p.defenderRequireCloudProtection === true ||
-                            p.defenderRequireBehaviorMonitoring === true ||
-                            (p.defenderCloudBlockLevel && p.defenderCloudBlockLevel !== 'notConfigured')) {
+                        const avProps = [p.defenderRequireRealTimeMonitoring, p.defenderRequireCloudProtection,
+                            p.defenderRequireBehaviorMonitoring, p.defenderCloudBlockLevel,
+                            p.defenderPotentiallyUnwantedAppAction, p.defenderRequireNetworkInspectionSystem];
+                        if (avProps.some(v => v === true || (v && v !== 'notConfigured' && v !== 'userDefined'))) {
                             found.av = true;
                         }
                     }
