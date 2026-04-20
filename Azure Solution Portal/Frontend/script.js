@@ -240,10 +240,10 @@ const SOLUTIONS = {
         apiEndpoint: '/api/precheck-intune'
     },
     'defender-xdr': {
-        name: 'Microsoft Defender XDR',
-        detailsTitle: 'Microsoft Defender XDR — Dettagli',
+        name: 'Microsoft Defender for Endpoint',
+        detailsTitle: 'Microsoft Defender for Endpoint — Dettagli',
         details: {
-            whatIs: 'Microsoft Defender XDR è la piattaforma EDR/XDR di Microsoft per la protezione degli endpoint. Integra Next-Gen Protection, Attack Surface Reduction, EDR, Threat & Vulnerability Management e Automated Investigation & Response.',
+            whatIs: 'Microsoft Defender for Endpoint (MDE) è la piattaforma EDR di Microsoft per la protezione degli endpoint. Integra Next-Gen AV, Attack Surface Reduction, EDR onboarding via Intune, Threat & Vulnerability Management e Automated Investigation & Response.',
             features: [
                 'AV Next-Gen Protection: cloud block High+, real-time, behavior, PUA block',
                 '16 regole ASR (Attack Surface Reduction) in audit/block mode',
@@ -258,9 +258,9 @@ const SOLUTIONS = {
             ],
             docsAnchor: 'defender-xdr'
         },
-        precheckTitle: 'Precheck Microsoft Defender XDR',
+        precheckTitle: 'Precheck Microsoft Defender for Endpoint',
         precheckDesc: 'Analizza il tenant per gap analysis MDE: policy Intune esistenti, Secure Score, alert attivi e baseline missing.',
-        deployTitle: 'Microsoft Defender XDR',
+        deployTitle: 'Microsoft Defender for Endpoint',
         deployDesc: 'Esegui prima il Precheck, poi usa il wizard "Configura Baseline MDE" per deployare le policy mancanti via Intune.',
         portalUrl: '#',
         psDownload: null,
@@ -1847,7 +1847,7 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabText('virtual-machines', 'Gap Analysis');
             setTabText('workspaces', 'Policy Esistenti');
             setTabText('recommendations', 'Report');
-            setPaneTitle('overview', 'Stato Microsoft Defender XDR');
+            setPaneTitle('overview', 'Stato Microsoft Defender for Endpoint');
             setPaneTitle('virtual-machines', 'Gap Analysis — Baseline MDE');
             setPaneTitle('workspaces', 'Policy Intune Esistenti');
             setPaneTitle('recommendations', 'Report');
@@ -2138,6 +2138,118 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
+    function classifyIntuneDevicePlatform(osName) {
+        const os = String(osName || '').toLowerCase();
+        if (os.includes('windows')) return 'windows';
+        if (os.includes('ios') || os.includes('ipad')) return 'ios';
+        if (os.includes('android')) return 'android';
+        if (os.includes('mac')) return 'macos';
+        return 'other';
+    }
+
+    function buildIntuneBaselineGap(data, managedRows) {
+        const existingTypes = getBaselineExistingTypes();
+        const seenPlatforms = new Set(
+            (managedRows || [])
+                .map(d => classifyIntuneDevicePlatform(d.OS))
+                .filter(p => p !== 'other' && INTUNE_BASELINE[p])
+        );
+
+        const targetPlatforms = seenPlatforms.size
+            ? Array.from(seenPlatforms)
+            : Object.keys(INTUNE_BASELINE);
+
+        const missingPolicies = [];
+        const presentPolicies = [];
+
+        targetPlatforms.forEach(platform => {
+            const cfg = INTUNE_BASELINE[platform];
+            if (!cfg || !Array.isArray(cfg.policies)) return;
+            cfg.policies.forEach(policy => {
+                const present = isPolicyPresent(policy, existingTypes);
+                const item = {
+                    platform,
+                    platformLabel: cfg.label,
+                    name: policy.name,
+                    category: policy.category,
+                    critical: Boolean(policy.critical),
+                    present
+                };
+                if (present) presentPolicies.push(item);
+                else missingPolicies.push(item);
+            });
+        });
+
+        return {
+            targetPlatforms,
+            missingPolicies,
+            presentPolicies,
+            totalPolicies: missingPolicies.length + presentPolicies.length,
+            criticalMissing: missingPolicies.filter(p => p.critical).length
+        };
+    }
+
+    function renderIntuneRecommendations(data, gap) {
+        const recContainer = document.getElementById('recommendations-content');
+        if (!recContainer) return;
+        recContainer.innerHTML = '';
+
+        const diagnostics = data?.Diagnostics || {};
+        const hints = Array.isArray(diagnostics.PermissionHints) ? diagnostics.PermissionHints : [];
+        const graphErrors = Array.isArray(diagnostics.GraphErrors) ? diagnostics.GraphErrors : [];
+
+        if (hints.length || graphErrors.length) {
+            const box = document.createElement('div');
+            box.style.cssText = 'margin-bottom:14px;padding:12px 14px;border:1px solid #f1c27d;background:#fff8eb;border-radius:8px;';
+            const topErrors = graphErrors.slice(0, 8).map(e => {
+                const ep = escapeHtml(e.Endpoint || 'endpoint');
+                const code = Number(e.StatusCode || 0);
+                return `<li><strong>${ep}</strong>${code ? ` (HTTP ${code})` : ''}</li>`;
+            }).join('');
+            box.innerHTML = `
+                <div style="font-weight:700;color:#8a5200;margin-bottom:6px;">Diagnostica accesso Graph</div>
+                ${hints.length ? `<ul style="margin:0 0 0 18px;color:#6f4a12;">${hints.map(h => `<li>${escapeHtml(h)}</li>`).join('')}</ul>` : ''}
+                ${topErrors ? `<div style="margin-top:8px;color:#6f4a12;font-size:12px;">Endpoint con errore:</div><ul style="margin:4px 0 0 18px;color:#6f4a12;font-size:12px;">${topErrors}</ul>` : ''}
+            `;
+            recContainer.appendChild(box);
+        }
+
+        const gapBox = document.createElement('div');
+        gapBox.style.cssText = 'margin-bottom:14px;padding:12px 14px;border:1px solid #c0d4f5;background:#f0f6ff;border-radius:8px;';
+        const missingTop = (gap?.missingPolicies || []).slice(0, 16);
+        const missingRows = missingTop.map(m => {
+            const critical = m.critical ? '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">CRITICA</span>' : '';
+            return `<li><strong>${escapeHtml(m.name)}</strong> (${escapeHtml(m.platformLabel)}${m.category ? ` · ${escapeHtml(m.category)}` : ''}) ${critical}</li>`;
+        }).join('');
+        gapBox.innerHTML = `
+            <div style="font-weight:700;color:#0a3f78;margin-bottom:6px;">Gap Analysis Baseline Intune</div>
+            <div style="font-size:13px;color:#2d4f7a;">
+                Policy baseline analizzate: <strong>${gap?.totalPolicies ?? 0}</strong> ·
+                Presenti: <strong>${gap?.presentPolicies?.length ?? 0}</strong> ·
+                Mancanti: <strong>${gap?.missingPolicies?.length ?? 0}</strong> ·
+                Critiche mancanti: <strong>${gap?.criticalMissing ?? 0}</strong>
+            </div>
+            ${(gap?.missingPolicies?.length ?? 0) > 0 ? `<ul style="margin:8px 0 0 18px;color:#2d4f7a;font-size:13px;">${missingRows}</ul>` : '<div style="margin-top:8px;color:#107c10;font-weight:600;">Nessuna policy baseline mancante sulle piattaforme rilevate.</div>'}
+        `;
+        recContainer.appendChild(gapBox);
+
+        if (!data?.ReportHTML) {
+            const p = document.createElement('p');
+            p.textContent = 'Report HTML non disponibile per questa esecuzione.';
+            recContainer.appendChild(p);
+            return;
+        }
+
+        const iframe = document.createElement('iframe');
+        iframe.style.width = '100%';
+        iframe.style.height = '720px';
+        iframe.style.border = '1px solid #e1e1e1';
+        iframe.style.borderRadius = '8px';
+        iframe.setAttribute('sandbox', 'allow-same-origin');
+        iframe.srcdoc = data.ReportHTML;
+        recContainer.appendChild(iframe);
+    }
+
     function renderIntunePrecheck(data) {
         const summary = data?.Summary || {};
         const totalDevices   = summary.TotalManagedDevices ?? 0;
@@ -2159,13 +2271,55 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Tab Dispositivi
         {
-            const tbody = document.querySelector('#vm-table tbody');
-            tbody.innerHTML = '';
             const rows = Array.isArray(data.ManagedDevices) ? data.ManagedDevices : [];
-            if (rows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6">Nessun dispositivo gestito trovato.</td></tr>`;
-            } else {
-                rows.slice(0, 200).forEach(d => {
+            const tbody = document.querySelector('#vm-table tbody');
+            const vmPane = document.getElementById('virtual-machines');
+            let filterWrap = document.getElementById('intune-device-filter-wrap');
+            if (vmPane && !filterWrap) {
+                filterWrap = document.createElement('div');
+                filterWrap.id = 'intune-device-filter-wrap';
+                filterWrap.style.cssText = 'margin:8px 0 10px;display:flex;justify-content:flex-end;';
+                const tableContainer = vmPane.querySelector('.resource-table-container');
+                if (tableContainer) vmPane.insertBefore(filterWrap, tableContainer);
+            }
+
+            const platformCounts = { windows: 0, ios: 0, android: 0, macos: 0, other: 0 };
+            rows.forEach(d => { platformCounts[classifyIntuneDevicePlatform(d.OS)]++; });
+            const selectedBefore = document.getElementById('intune-device-filter')?.value || 'all';
+            if (filterWrap) {
+                filterWrap.innerHTML = `
+                    <label for="intune-device-filter" style="font-size:12px;color:#555;display:flex;align-items:center;gap:8px;">
+                        Filtra piattaforma:
+                        <select id="intune-device-filter" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;">
+                            <option value="all">Tutti (${rows.length})</option>
+                            <option value="windows">Windows (${platformCounts.windows})</option>
+                            <option value="ios">iOS/iPadOS (${platformCounts.ios})</option>
+                            <option value="android">Android (${platformCounts.android})</option>
+                            <option value="macos">macOS (${platformCounts.macos})</option>
+                            <option value="other">Altri (${platformCounts.other})</option>
+                        </select>
+                    </label>
+                `;
+            }
+
+            const filterSelect = document.getElementById('intune-device-filter');
+            if (filterSelect && Array.from(filterSelect.options).some(o => o.value === selectedBefore)) {
+                filterSelect.value = selectedBefore;
+            }
+
+            const renderDeviceRows = () => {
+                tbody.innerHTML = '';
+                const platform = document.getElementById('intune-device-filter')?.value || 'all';
+                const filteredRows = (platform === 'all')
+                    ? rows
+                    : rows.filter(d => classifyIntuneDevicePlatform(d.OS) === platform);
+
+                if (filteredRows.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6">Nessun dispositivo trovato per il filtro selezionato.</td></tr>`;
+                    return;
+                }
+
+                filteredRows.slice(0, 300).forEach(d => {
                     const compClass = d.Compliance === 'compliant' ? 'status-success' : d.Compliance === 'noncompliant' ? 'status-danger' : '';
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
@@ -2177,7 +2331,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         <td>${escapeHtml(d.User || '')}</td>`;
                     tbody.appendChild(tr);
                 });
-            }
+
+                if (filteredRows.length > 300) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td colspan="6" style="color:#666;font-size:12px;">Mostrati i primi 300 dispositivi su ${filteredRows.length} del filtro corrente.</td>`;
+                    tbody.appendChild(tr);
+                }
+            };
+
+            filterSelect?.addEventListener('change', renderDeviceRows);
+            renderDeviceRows();
         }
 
         // Tab App Rilevate
@@ -2186,7 +2349,8 @@ document.addEventListener('DOMContentLoaded', function() {
             tbody.innerHTML = '';
             const rows = Array.isArray(data.DetectedApps) ? data.DetectedApps : [];
             if (rows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5">Nessuna app rilevata.</td></tr>`;
+                const hasErrors = Array.isArray(data?.Diagnostics?.EndpointStatus) && data.Diagnostics.EndpointStatus.some(e => String(e.Label || '').startsWith('DetectedApps') && e.Status === 'error');
+                tbody.innerHTML = `<tr><td colspan="5">${hasErrors ? 'Nessuna app rilevata (endpoint Graph non accessibile con i permessi correnti).' : 'Nessuna app rilevata.'}</td></tr>`;
             } else {
                 rows.slice(0, 100).forEach(app => {
                     const tr = document.createElement('tr');
@@ -2207,7 +2371,8 @@ document.addEventListener('DOMContentLoaded', function() {
             tbody.innerHTML = '';
             const rows = Array.isArray(data.DeployedApps) ? data.DeployedApps : [];
             if (rows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5">Nessuna app deployata trovata.</td></tr>`;
+                const hasErrors = Array.isArray(data?.Diagnostics?.EndpointStatus) && data.Diagnostics.EndpointStatus.some(e => String(e.Label || '').startsWith('MobileApps') && e.Status === 'error');
+                tbody.innerHTML = `<tr><td colspan="5">${hasErrors ? 'Nessuna app deployata rilevata (endpoint Graph non accessibile con i permessi correnti).' : 'Nessuna app deployata trovata.'}</td></tr>`;
             } else {
                 rows.forEach(app => {
                     const assignedBadge = app.IsAssigned
@@ -2232,6 +2397,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const existingComp = Array.isArray(data.ExistingCompliancePolicies) ? data.ExistingCompliancePolicies.length : '?';
         const existingConf = Array.isArray(data.ExistingConfigProfiles) ? data.ExistingConfigProfiles.length : '?';
+        const gap = buildIntuneBaselineGap(data, Array.isArray(data.ManagedDevices) ? data.ManagedDevices : []);
+        const endpointErrors = Number(data?.Diagnostics?.EndpointErrorCount ?? 0);
         const baselineBanner = document.createElement('div');
         baselineBanner.id = 'intune-baseline-btn-overview';
         baselineBanner.style.cssText = 'margin-top:20px;padding:16px;background:linear-gradient(135deg,#f0f6ff,#e8f0fe);border:1px solid #c0d4f5;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;';
@@ -2239,14 +2406,15 @@ document.addEventListener('DOMContentLoaded', function() {
             <div>
                 <div style="font-weight:700;font-size:15px;color:#0078d4;margin-bottom:4px;">🛡 Baseline Sicurezza Intune</div>
                 <div style="font-size:13px;color:#444;">Policy di compliance trovate: <strong>${existingComp}</strong> &nbsp;|&nbsp; Configuration profile trovati: <strong>${existingConf}</strong></div>
-                <div style="font-size:12px;color:#666;margin-top:4px;">Configura le policy standard di sicurezza mancanti per il tuo tenant.</div>
+                <div style="font-size:13px;color:#444;margin-top:3px;">Baseline mancanti: <strong>${gap.missingPolicies.length}</strong> (${gap.criticalMissing} critiche) &nbsp;|&nbsp; Endpoint Graph in errore: <strong>${endpointErrors}</strong></div>
+                <div style="font-size:12px;color:#666;margin-top:4px;">Configura le policy standard mancanti e verifica i permessi Graph se alcuni conteggi risultano a zero.</div>
             </div>
             <button id="open-intune-baseline-wizard" class="btn-primary" style="flex-shrink:0;">Configura Baseline →</button>`;
         overviewPane.appendChild(baselineBanner);
 
         document.getElementById('open-intune-baseline-wizard')?.addEventListener('click', () => openIntuneBaselineWizard());
 
-        renderReportHtmlInRecommendations(data);
+        renderIntuneRecommendations(data, gap);
     }
 
     async function runDefenderXdrPrecheckClientSide() {

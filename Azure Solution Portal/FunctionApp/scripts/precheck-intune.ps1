@@ -15,12 +15,36 @@ param(
 $graphToken = $env:AZURE_GRAPH_TOKEN
 if (-not $graphToken) { Write-Error "AZURE_GRAPH_TOKEN not found."; exit 1 }
 
+$script:GraphErrors = @()
+$script:EndpointStatus = @{}
+
+function Set-EndpointStatus {
+    param(
+        [string]$Label,
+        [string]$Status,
+        [int]$StatusCode = 0,
+        [int]$Records = 0
+    )
+    if (-not $Label) { return }
+    $script:EndpointStatus[$Label] = @{
+        Label      = $Label
+        Status     = $Status
+        StatusCode = $StatusCode
+        Records    = $Records
+    }
+}
+
 # ----------------------------------------
 # Helper: Graph API call con paginazione
 # ----------------------------------------
 function Invoke-GraphAPI {
-    param([string]$Uri, [string]$Method = "GET")
+    param(
+        [string]$Uri,
+        [string]$Method = "GET",
+        [string]$Label = ""
+    )
     $headers = @{ "Authorization" = "Bearer $graphToken"; "Content-Type" = "application/json" }
+    if (-not $Label) { $Label = $Uri }
     try {
         $response = Invoke-RestMethod -Uri $Uri -Headers $headers -Method $Method -ErrorAction Stop
         # Paginazione automatica (@odata.nextLink)
@@ -39,9 +63,19 @@ function Invoke-GraphAPI {
             $response.value = $all
             $response.'@odata.nextLink' = $null
         }
+        $records = if ($response -and $response.value) { @($response.value).Count } elseif ($null -ne $response) { 1 } else { 0 }
+        Set-EndpointStatus -Label $Label -Status 'ok' -StatusCode 200 -Records $records
         return $response
     } catch {
-        $statusCode = $_.Exception.Response.StatusCode.value__
+        $statusCode = 0
+        try { $statusCode = [int]$_.Exception.Response.StatusCode.value__ } catch { $statusCode = 0 }
+        Set-EndpointStatus -Label $Label -Status 'error' -StatusCode $statusCode -Records 0
+        $script:GraphErrors += @{
+            Endpoint   = $Label
+            Uri        = $Uri
+            StatusCode = $statusCode
+            Message    = $_.Exception.Message
+        }
         Write-Warning "Graph API failed [$statusCode]: $Uri - $($_.Exception.Message)"
         return $null
     }
@@ -67,7 +101,7 @@ $data = @{
 # [1] Tenant info
 # ----------------------------------------
 Write-Host "[1/5] Tenant info..."
-$org = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/organization?`$select=id,displayName,verifiedDomains"
+$org = Invoke-GraphAPI -Label "Organization" -Uri "https://graph.microsoft.com/v1.0/organization?`$select=id,displayName,verifiedDomains"
 if ($org -and $org.value -and $org.value.Count -gt 0) {
     $tenantObj = $org.value[0]
     $data.Tenant = @{
@@ -81,7 +115,7 @@ if ($org -and $org.value -and $org.value.Count -gt 0) {
 # [2] Dispositivi gestiti Intune
 # ----------------------------------------
 Write-Host "[2/6] Managed devices..."
-$devicesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?`$top=500&`$select=id,deviceName,operatingSystem,osVersion,complianceState,lastSyncDateTime,manufacturer,model,userPrincipalName,enrolledDateTime,managementAgent,deviceEnrollmentType"
+$devicesResp = Invoke-GraphAPI -Label "ManagedDevices" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?`$top=500&`$select=id,deviceName,operatingSystem,osVersion,complianceState,lastSyncDateTime,manufacturer,model,userPrincipalName,enrolledDateTime,managementAgent,deviceEnrollmentType"
 $rawDevices = @()
 if ($devicesResp -and $devicesResp.value) { $rawDevices = @($devicesResp.value) }
 
@@ -138,7 +172,7 @@ foreach ($device in $nonCompliantDevices) {
     if ($nonCompliantDetails.Count -ge $maxNonCompliantDetails) { $nonCompliantTruncated = $true; break }
     $reasons = @()
     if ($device.Id) {
-        $policyStates = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($device.Id)/deviceCompliancePolicyStates?`$select=displayName,state,settingStates"
+        $policyStates = Invoke-GraphAPI -Label "CompliancePolicyStates/$($device.Id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($device.Id)/deviceCompliancePolicyStates?`$select=displayName,state,settingStates"
         if ($policyStates -and $policyStates.value) {
             foreach ($policy in $policyStates.value) {
                 $policyName = if ($policy.displayName) { $policy.displayName } else { "Policy" }
@@ -183,7 +217,10 @@ $data.NonCompliantDevices = $nonCompliantDetails
 # [4] App rilevate sui dispositivi (detected apps)
 # ----------------------------------------
 Write-Host "[4/6] Detected apps..."
-$detectedResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceAppManagement/detectedApps?`$top=500&`$select=id,displayName,version,publisher,deviceCount,platform,sizeInByte"
+$detectedResp = Invoke-GraphAPI -Label "DetectedApps(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceAppManagement/detectedApps?`$top=500&`$select=id,displayName,version,publisher,deviceCount,platform,sizeInByte"
+if (-not $detectedResp -or -not $detectedResp.value -or @($detectedResp.value).Count -eq 0) {
+    $detectedResp = Invoke-GraphAPI -Label "DetectedApps(beta)" -Uri "https://graph.microsoft.com/beta/deviceAppManagement/detectedApps?`$top=500&`$select=id,displayName,version,publisher,deviceCount,platform,sizeInByte"
+}
 $rawDetected = @()
 if ($detectedResp -and $detectedResp.value) { $rawDetected = @($detectedResp.value) }
 
@@ -206,7 +243,10 @@ Write-Host "Detected apps found: $($detectedApps.Count)"
 # [5] App deployate (mobile apps / assignments)
 # ----------------------------------------
 Write-Host "[5/6] Deployed apps (mobile apps)..."
-$mobileAppsResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceAppManagement/mobileApps?`$top=500&`$select=id,displayName,publisher,createdDateTime,lastModifiedDateTime,isAssigned,publishingState,@odata.type"
+$mobileAppsResp = Invoke-GraphAPI -Label "MobileApps(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceAppManagement/mobileApps?`$top=500&`$select=id,displayName,publisher,createdDateTime,lastModifiedDateTime,isAssigned,publishingState,@odata.type"
+if (-not $mobileAppsResp -or -not $mobileAppsResp.value -or @($mobileAppsResp.value).Count -eq 0) {
+    $mobileAppsResp = Invoke-GraphAPI -Label "MobileApps(beta)" -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$top=500&`$select=id,displayName,publisher,createdDateTime,lastModifiedDateTime,isAssigned,publishingState,@odata.type"
+}
 $rawMobileApps = @()
 if ($mobileAppsResp -and $mobileAppsResp.value) { $rawMobileApps = @($mobileAppsResp.value) }
 
@@ -254,7 +294,10 @@ Write-Host "Deployed apps found: $($deployedApps.Count)"
 # [5b] Compliance policy esistenti nel tenant
 # ----------------------------------------
 Write-Host "[5b] Existing compliance policies..."
-$compPoliciesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type"
+$compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type"
+if (-not $compPoliciesResp -or -not $compPoliciesResp.value -or @($compPoliciesResp.value).Count -eq 0) {
+    $compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type"
+}
 $existingCompPolicies = @()
 if ($compPoliciesResp -and $compPoliciesResp.value) {
     foreach ($p in $compPoliciesResp.value) {
@@ -272,9 +315,18 @@ Write-Host "Existing compliance policies: $($existingCompPolicies.Count)"
 # [5c] Configuration profile esistenti nel tenant
 # ----------------------------------------
 Write-Host "[5c] Existing config profiles..."
-$legacyConfigProfilesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type"
-$settingsCatalogResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies?`$top=500&`$select=id,name,@odata.type"
-$adminTemplatesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations?`$top=500&`$select=id,displayName"
+$legacyConfigProfilesResp = Invoke-GraphAPI -Label "DeviceConfigurations(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
+if (-not $legacyConfigProfilesResp -or -not $legacyConfigProfilesResp.value -or @($legacyConfigProfilesResp.value).Count -eq 0) {
+    $legacyConfigProfilesResp = Invoke-GraphAPI -Label "DeviceConfigurations(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
+}
+$settingsCatalogResp = Invoke-GraphAPI -Label "ConfigurationPolicies(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies?`$top=500&`$select=id,name,@odata.type,platforms,technologies,lastModifiedDateTime"
+if (-not $settingsCatalogResp -or -not $settingsCatalogResp.value -or @($settingsCatalogResp.value).Count -eq 0) {
+    $settingsCatalogResp = Invoke-GraphAPI -Label "ConfigurationPolicies(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?`$top=500&`$select=id,name,@odata.type,platforms,technologies,lastModifiedDateTime"
+}
+$adminTemplatesResp = Invoke-GraphAPI -Label "GroupPolicyConfigurations(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations?`$top=500&`$select=id,displayName,lastModifiedDateTime"
+if (-not $adminTemplatesResp -or -not $adminTemplatesResp.value -or @($adminTemplatesResp.value).Count -eq 0) {
+    $adminTemplatesResp = Invoke-GraphAPI -Label "GroupPolicyConfigurations(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations?`$top=500&`$select=id,displayName,lastModifiedDateTime"
+}
 $existingConfigProfiles = @()
 if ($legacyConfigProfilesResp -and $legacyConfigProfilesResp.value) {
     foreach ($p in $legacyConfigProfilesResp.value) {
@@ -283,6 +335,7 @@ if ($legacyConfigProfilesResp -and $legacyConfigProfilesResp.value) {
             DisplayName = $p.displayName
             OdataType   = $p.'@odata.type'
             Source      = 'deviceConfigurations'
+            LastModified = $p.lastModifiedDateTime
         }
     }
 }
@@ -293,6 +346,9 @@ if ($settingsCatalogResp -and $settingsCatalogResp.value) {
             DisplayName = if ($p.name) { $p.name } else { $p.displayName }
             OdataType   = if ($p.'@odata.type') { $p.'@odata.type' } else { '#microsoft.graph.deviceManagementConfigurationPolicy' }
             Source      = 'configurationPolicies'
+            Platforms   = if ($p.platforms) { @($p.platforms) } else { @() }
+            Technologies = if ($p.technologies) { @($p.technologies) } else { @() }
+            LastModified = $p.lastModifiedDateTime
         }
     }
 }
@@ -303,6 +359,7 @@ if ($adminTemplatesResp -and $adminTemplatesResp.value) {
             DisplayName = $p.displayName
             OdataType   = '#microsoft.graph.groupPolicyConfiguration'
             Source      = 'groupPolicyConfigurations'
+            LastModified = $p.lastModifiedDateTime
         }
     }
 }
@@ -314,6 +371,24 @@ foreach ($p in $existingConfigProfiles) {
 }
 $data.ExistingConfigProfiles = @($dedupById.Values)
 Write-Host "Existing config profiles: $($data.ExistingConfigProfiles.Count)"
+
+$statusValues = @($script:EndpointStatus.Values)
+$status403 = @($statusValues | Where-Object { $_.StatusCode -eq 403 }).Count
+$status401 = @($statusValues | Where-Object { $_.StatusCode -eq 401 }).Count
+$hints = @()
+if ($status403 -gt 0) { $hints += "Alcuni endpoint Graph hanno risposto 403 (permessi mancanti su Intune/Graph o admin consent non concesso)." }
+if ($status401 -gt 0) { $hints += "Alcuni endpoint Graph hanno risposto 401 (token scaduto/non valido)." }
+if ($data.ManagedDevices.Count -eq 0 -and $statusValues.Count -gt 0 -and @($statusValues | Where-Object { $_.Label -like 'ManagedDevices*' -and $_.Status -eq 'error' }).Count -gt 0) { $hints += "Nessun dispositivo rilevato perché la lettura ManagedDevices fallisce." }
+if ($data.DetectedApps.Count -eq 0 -and @($statusValues | Where-Object { $_.Label -like 'DetectedApps*' -and $_.Status -eq 'error' }).Count -gt 0) { $hints += "Nessuna app rilevata perché l'endpoint DetectedApps non è accessibile." }
+if ($data.DeployedApps.Count -eq 0 -and @($statusValues | Where-Object { $_.Label -like 'MobileApps*' -and $_.Status -eq 'error' }).Count -gt 0) { $hints += "Nessuna app deployata rilevata perché l'endpoint MobileApps non è accessibile." }
+
+$data.Diagnostics = @{
+    GraphErrors         = $script:GraphErrors
+    EndpointStatus      = $statusValues
+    PermissionHints     = $hints
+    ErrorCount          = @($script:GraphErrors).Count
+    EndpointErrorCount  = @($statusValues | Where-Object { $_.Status -eq 'error' }).Count
+}
 
 # ----------------------------------------
 # [6] Summary
@@ -372,10 +447,13 @@ $data.Summary = @{
     TotalDetectedApps     = $totalDetected
     TotalDeployedApps     = $totalDeployed
     AssignedApps          = $assignedApps
+    ExistingCompliancePolicies = $existingCompPolicies.Count
+    ExistingConfigProfiles     = $data.ExistingConfigProfiles.Count
     StaleDevicesOver30Days = $staleDevices
     NonCompliantDetailsCollected = $nonCompliantDetails.Count
     NonCompliantDetailsTruncated = $nonCompliantTruncated
     TopNonCompliantReasons = $topReasons
+    GraphEndpointErrors   = $data.Diagnostics.EndpointErrorCount
     ReadinessScore        = $readiness
 }
 
