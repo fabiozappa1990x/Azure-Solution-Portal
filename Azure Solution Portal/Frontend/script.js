@@ -2197,6 +2197,24 @@ document.addEventListener('DOMContentLoaded', function() {
         const diagnostics = data?.Diagnostics || {};
         const hints = Array.isArray(diagnostics.PermissionHints) ? diagnostics.PermissionHints : [];
         const graphErrors = Array.isArray(diagnostics.GraphErrors) ? diagnostics.GraphErrors : [];
+        const inventory = data?.Inventory || {};
+        const checks = Array.isArray(data?.BestPracticeChecks) ? data.BestPracticeChecks : [];
+
+        const platformSnapshot = document.createElement('div');
+        platformSnapshot.style.cssText = 'margin-bottom:14px;padding:12px 14px;border:1px solid #d5e2f3;background:#f8fbff;border-radius:8px;';
+        const devicesByPlatform = inventory.DevicesByPlatform || {};
+        const compByPlatform = inventory.ComplianceByPlatform || {};
+        const confByPlatform = inventory.ConfigProfilesByPlatform || {};
+        platformSnapshot.innerHTML = `
+            <div style="font-weight:700;color:#0a3f78;margin-bottom:8px;">Fotografia Tenant Intune (snapshot)</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;font-size:12px;color:#334;">
+                <div><strong>Windows</strong><br>Device: ${Number(devicesByPlatform.windows || 0)} · Compliance: ${Number(compByPlatform.windows || 0)} · Config: ${Number(confByPlatform.windows || 0)}</div>
+                <div><strong>iOS/iPadOS</strong><br>Device: ${Number(devicesByPlatform.ios || 0)} · Compliance: ${Number(compByPlatform.ios || 0)} · Config: ${Number(confByPlatform.ios || 0)}</div>
+                <div><strong>Android</strong><br>Device: ${Number(devicesByPlatform.android || 0)} · Compliance: ${Number(compByPlatform.android || 0)} · Config: ${Number(confByPlatform.android || 0)}</div>
+                <div><strong>macOS</strong><br>Device: ${Number(devicesByPlatform.macos || 0)} · Compliance: ${Number(compByPlatform.macos || 0)} · Config: ${Number(confByPlatform.macos || 0)}</div>
+            </div>
+        `;
+        recContainer.appendChild(platformSnapshot);
 
         if (hints.length || graphErrors.length) {
             const box = document.createElement('div');
@@ -2212,6 +2230,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${topErrors ? `<div style="margin-top:8px;color:#6f4a12;font-size:12px;">Endpoint con errore:</div><ul style="margin:4px 0 0 18px;color:#6f4a12;font-size:12px;">${topErrors}</ul>` : ''}
             `;
             recContainer.appendChild(box);
+        }
+
+        if (checks.length) {
+            const failed = checks.filter(c => !c.Passed);
+            const checksBox = document.createElement('div');
+            checksBox.style.cssText = 'margin-bottom:14px;padding:12px 14px;border:1px solid #cfd8dc;background:#f9fbfc;border-radius:8px;';
+            const rows = checks.map(c => {
+                const ok = Boolean(c.Passed);
+                const sev = String(c.Severity || '').toLowerCase();
+                const sevBadge = ok
+                    ? '<span style="background:#e6f4ea;color:#137333;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">OK</span>'
+                    : sev === 'critical'
+                        ? '<span style="background:#fce8e6;color:#b3261e;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">CRITICO</span>'
+                        : '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">ATTENZIONE</span>';
+                const recommendation = ok ? '' : `<div style="font-size:12px;color:#666;margin-top:3px;">${escapeHtml(c.Recommendation || '')}${c.DeployHint ? ` · <strong>${escapeHtml(c.DeployHint)}</strong>` : ''}</div>`;
+                return `
+                    <tr>
+                        <td style="padding:7px 8px;vertical-align:top;">${sevBadge}</td>
+                        <td style="padding:7px 8px;vertical-align:top;">
+                            <div style="font-weight:600;">${escapeHtml(c.Title || '')}</div>
+                            <div style="font-size:12px;color:#4f6472;">${escapeHtml(c.Area || '')}</div>
+                            ${recommendation}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            checksBox.innerHTML = `
+                <div style="font-weight:700;color:#0f3d56;margin-bottom:6px;">Best Practice Microsoft (valutazione tenant)</div>
+                <div style="font-size:13px;color:#37566b;margin-bottom:8px;">
+                    Check totali: <strong>${checks.length}</strong> · OK: <strong>${checks.length - failed.length}</strong> · Gap: <strong>${failed.length}</strong>
+                </div>
+                <div style="max-height:320px;overflow:auto;border:1px solid #dde6ea;border-radius:6px;background:white;">
+                    <table style="width:100%;border-collapse:collapse;">${rows}</table>
+                </div>
+            `;
+            recContainer.appendChild(checksBox);
         }
 
         const gapBox = document.createElement('div');

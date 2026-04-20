@@ -34,6 +34,40 @@ function Set-EndpointStatus {
     }
 }
 
+function Get-CompliancePlatform {
+    param($Policy)
+    $t = ""
+    try { $t = "$($Policy.OdataType)".ToLowerInvariant() } catch { $t = "" }
+    if ($t -like '*windows*') { return 'windows' }
+    if ($t -like '*ios*' -or $t -like '*ipad*') { return 'ios' }
+    if ($t -like '*android*') { return 'android' }
+    if ($t -like '*mac*') { return 'macos' }
+    return 'other'
+}
+
+function Get-ConfigPlatform {
+    param($Profile)
+    $src = ""
+    $type = ""
+    try { $src = "$($Profile.Source)".ToLowerInvariant() } catch { $src = "" }
+    try { $type = "$($Profile.OdataType)".ToLowerInvariant() } catch { $type = "" }
+
+    if ($Profile.Platforms -and @($Profile.Platforms).Count -gt 0) {
+        $all = @($Profile.Platforms) | ForEach-Object { "$_".ToLowerInvariant() }
+        if ($all -contains 'windows10' -or $all -contains 'windows11' -or $all -contains 'windows') { return 'windows' }
+        if ($all -contains 'ios' -or $all -contains 'ipados') { return 'ios' }
+        if ($all -contains 'android' -or $all -contains 'androidforwork') { return 'android' }
+        if ($all -contains 'macos') { return 'macos' }
+    }
+
+    if ($src -eq 'grouppolicyconfigurations') { return 'windows' }
+    if ($type -like '*windows*') { return 'windows' }
+    if ($type -like '*ios*' -or $type -like '*ipad*') { return 'ios' }
+    if ($type -like '*android*') { return 'android' }
+    if ($type -like '*mac*') { return 'macos' }
+    return 'other'
+}
+
 # ----------------------------------------
 # Helper: Graph API call con paginazione
 # ----------------------------------------
@@ -294,9 +328,9 @@ Write-Host "Deployed apps found: $($deployedApps.Count)"
 # [5b] Compliance policy esistenti nel tenant
 # ----------------------------------------
 Write-Host "[5b] Existing compliance policies..."
-$compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type"
+$compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
 if (-not $compPoliciesResp -or -not $compPoliciesResp.value -or @($compPoliciesResp.value).Count -eq 0) {
-    $compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type"
+    $compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
 }
 $existingCompPolicies = @()
 if ($compPoliciesResp -and $compPoliciesResp.value) {
@@ -305,6 +339,7 @@ if ($compPoliciesResp -and $compPoliciesResp.value) {
             Id          = $p.id
             DisplayName = $p.displayName
             OdataType   = $p.'@odata.type'
+            LastModified = $p.lastModifiedDateTime
         }
     }
 }
@@ -390,6 +425,83 @@ $data.Diagnostics = @{
     EndpointErrorCount  = @($statusValues | Where-Object { $_.Status -eq 'error' }).Count
 }
 
+$deviceByPlatform = @{
+    windows = [int]$windowsDevices
+    ios     = [int]$iosDevices
+    android = [int]$androidDevices
+    macos   = [int]$macDevices
+    other   = [int]($totalDevices - $windowsDevices - $iosDevices - $androidDevices - $macDevices)
+}
+
+$complianceByPlatform = @{ windows = 0; ios = 0; android = 0; macos = 0; other = 0 }
+foreach ($p in $existingCompPolicies) {
+    $k = Get-CompliancePlatform -Policy $p
+    if (-not $complianceByPlatform.ContainsKey($k)) { $k = 'other' }
+    $complianceByPlatform[$k] = [int]$complianceByPlatform[$k] + 1
+}
+
+$configByPlatform = @{ windows = 0; ios = 0; android = 0; macos = 0; other = 0 }
+$configBySource = @{ deviceConfigurations = 0; configurationPolicies = 0; groupPolicyConfigurations = 0; other = 0 }
+foreach ($p in $data.ExistingConfigProfiles) {
+    $k = Get-ConfigPlatform -Profile $p
+    if (-not $configByPlatform.ContainsKey($k)) { $k = 'other' }
+    $configByPlatform[$k] = [int]$configByPlatform[$k] + 1
+
+    $src = "$($p.Source)"
+    if ([string]::IsNullOrWhiteSpace($src)) { $src = 'other' }
+    if (-not $configBySource.ContainsKey($src)) { $src = 'other' }
+    $configBySource[$src] = [int]$configBySource[$src] + 1
+}
+
+$requiredPlatforms = @()
+foreach ($pk in @('windows','ios','android','macos')) {
+    if ([int]$deviceByPlatform[$pk] -gt 0) { $requiredPlatforms += $pk }
+}
+if ($requiredPlatforms.Count -eq 0) { $requiredPlatforms = @('windows','ios','android','macos') }
+
+$bestPracticeChecks = @()
+function Add-BpCheck {
+    param(
+        [string]$Id,
+        [string]$Area,
+        [string]$Title,
+        [bool]$Passed,
+        [string]$Severity = 'warning',
+        [string]$Recommendation = '',
+        [string]$DeployHint = ''
+    )
+    $bestPracticeChecks += @{
+        Id             = $Id
+        Area           = $Area
+        Title          = $Title
+        Passed         = $Passed
+        Severity       = $Severity
+        Status         = if ($Passed) { 'OK' } else { 'MISSING' }
+        Recommendation = $Recommendation
+        DeployHint     = $DeployHint
+    }
+}
+
+Add-BpCheck -Id 'graph-endpoints' -Area 'Permissions' -Title 'Endpoint Graph accessibili per il precheck' -Passed ($data.Diagnostics.EndpointErrorCount -eq 0) -Severity 'critical' -Recommendation 'Concedere admin consent alle permission Intune Graph richieste e riautenticarsi.' -DeployHint 'Verifica App Registration e consenso admin.'
+Add-BpCheck -Id 'has-compliance-policies' -Area 'Compliance' -Title 'Almeno una Compliance Policy presente nel tenant' -Passed ($existingCompPolicies.Count -gt 0) -Severity 'critical' -Recommendation 'Creare almeno una compliance policy baseline per piattaforma.' -DeployHint 'Usare Configura Baseline Intune.'
+Add-BpCheck -Id 'has-config-profiles' -Area 'Configuration' -Title 'Almeno un Configuration Profile presente nel tenant' -Passed ($data.ExistingConfigProfiles.Count -gt 0) -Severity 'critical' -Recommendation 'Creare configuration profiles (Settings Catalog / templates) baseline.' -DeployHint 'Usare Configura Baseline Intune.'
+Add-BpCheck -Id 'has-assigned-apps' -Area 'Applications' -Title 'Almeno una app assegnata in Intune' -Passed ($assignedApps -gt 0) -Severity 'warning' -Recommendation 'Pubblicare e assegnare app core (M365, browser, agent, security tooling).' -DeployHint 'Rivedere tab App Deployate e assignments.'
+Add-BpCheck -Id 'device-compliance-target' -Area 'Compliance' -Title 'Conformità dispositivi >= 80%' -Passed ($compliancePct -ge 80) -Severity 'warning' -Recommendation 'Indagare i motivi di non conformità e correggere policy/assegnazioni.' -DeployHint 'Controllare tab dispositivi e motivi non conformità.'
+
+foreach ($pk in $requiredPlatforms) {
+    Add-BpCheck -Id "platform-$pk-compliance" -Area "Platform/$pk" -Title "Policy di compliance presenti per piattaforma $pk" -Passed ([int]$complianceByPlatform[$pk] -gt 0) -Severity 'critical' -Recommendation "Definire almeno una compliance policy per $pk." -DeployHint 'Usare Configura Baseline Intune (platform-aware).'
+    Add-BpCheck -Id "platform-$pk-config" -Area "Platform/$pk" -Title "Configuration profile presenti per piattaforma $pk" -Passed ([int]$configByPlatform[$pk] -gt 0) -Severity 'warning' -Recommendation "Definire almeno un configuration profile per $pk." -DeployHint 'Usare Configura Baseline Intune (platform-aware).'
+}
+
+$data.Inventory = @{
+    DevicesByPlatform      = $deviceByPlatform
+    ComplianceByPlatform   = $complianceByPlatform
+    ConfigProfilesByPlatform = $configByPlatform
+    ConfigProfilesBySource = $configBySource
+    RequiredPlatforms      = $requiredPlatforms
+}
+$data.BestPracticeChecks = $bestPracticeChecks
+
 # ----------------------------------------
 # [6] Summary
 # ----------------------------------------
@@ -449,6 +561,9 @@ $data.Summary = @{
     AssignedApps          = $assignedApps
     ExistingCompliancePolicies = $existingCompPolicies.Count
     ExistingConfigProfiles     = $data.ExistingConfigProfiles.Count
+    BestPracticeChecksTotal    = $bestPracticeChecks.Count
+    BestPracticeChecksPassed   = @($bestPracticeChecks | Where-Object { $_.Passed }).Count
+    BestPracticeChecksMissing  = @($bestPracticeChecks | Where-Object { -not $_.Passed }).Count
     StaleDevicesOver30Days = $staleDevices
     NonCompliantDetailsCollected = $nonCompliantDetails.Count
     NonCompliantDetailsTruncated = $nonCompliantTruncated
