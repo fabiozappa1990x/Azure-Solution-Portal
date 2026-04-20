@@ -272,19 +272,48 @@ Write-Host "Existing compliance policies: $($existingCompPolicies.Count)"
 # [5c] Configuration profile esistenti nel tenant
 # ----------------------------------------
 Write-Host "[5c] Existing config profiles..."
-$configProfilesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type"
+$legacyConfigProfilesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type"
+$settingsCatalogResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies?`$top=500&`$select=id,name,@odata.type"
+$adminTemplatesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations?`$top=500&`$select=id,displayName"
 $existingConfigProfiles = @()
-if ($configProfilesResp -and $configProfilesResp.value) {
-    foreach ($p in $configProfilesResp.value) {
+if ($legacyConfigProfilesResp -and $legacyConfigProfilesResp.value) {
+    foreach ($p in $legacyConfigProfilesResp.value) {
         $existingConfigProfiles += @{
             Id          = $p.id
             DisplayName = $p.displayName
             OdataType   = $p.'@odata.type'
+            Source      = 'deviceConfigurations'
         }
     }
 }
-$data.ExistingConfigProfiles = $existingConfigProfiles
-Write-Host "Existing config profiles: $($existingConfigProfiles.Count)"
+if ($settingsCatalogResp -and $settingsCatalogResp.value) {
+    foreach ($p in $settingsCatalogResp.value) {
+        $existingConfigProfiles += @{
+            Id          = $p.id
+            DisplayName = if ($p.name) { $p.name } else { $p.displayName }
+            OdataType   = if ($p.'@odata.type') { $p.'@odata.type' } else { '#microsoft.graph.deviceManagementConfigurationPolicy' }
+            Source      = 'configurationPolicies'
+        }
+    }
+}
+if ($adminTemplatesResp -and $adminTemplatesResp.value) {
+    foreach ($p in $adminTemplatesResp.value) {
+        $existingConfigProfiles += @{
+            Id          = $p.id
+            DisplayName = $p.displayName
+            OdataType   = '#microsoft.graph.groupPolicyConfiguration'
+            Source      = 'groupPolicyConfigurations'
+        }
+    }
+}
+
+$dedupById = @{}
+foreach ($p in $existingConfigProfiles) {
+    if (-not $p.Id) { continue }
+    if (-not $dedupById.ContainsKey($p.Id)) { $dedupById[$p.Id] = $p }
+}
+$data.ExistingConfigProfiles = @($dedupById.Values)
+Write-Host "Existing config profiles: $($data.ExistingConfigProfiles.Count)"
 
 # ----------------------------------------
 # [6] Summary
