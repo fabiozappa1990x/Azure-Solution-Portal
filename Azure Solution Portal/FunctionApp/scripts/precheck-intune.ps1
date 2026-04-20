@@ -68,6 +68,57 @@ function Get-ConfigPlatform {
     return 'other'
 }
 
+function Is-ConfiguredValue {
+    param($Value)
+    if ($null -eq $Value) { return $false }
+
+    if ($Value -is [bool]) { return [bool]$Value }
+
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal]) {
+        return ([double]$Value -gt 0)
+    }
+
+    if ($Value -is [string]) {
+        $v = $Value.Trim()
+        if (-not $v) { return $false }
+        $n = $v.ToLowerInvariant()
+        if ($n -in @('notconfigured','none','unknown','false','0','disabled','notset')) { return $false }
+        return $true
+    }
+
+    if ($Value -is [System.Collections.IEnumerable] -and -not ($Value -is [string])) {
+        try { return (@($Value).Count -gt 0) } catch { return $false }
+    }
+
+    return $true
+}
+
+function Get-ConfiguredSettingsCount {
+    param(
+        $Object,
+        [string[]]$ExcludeProperties = @()
+    )
+    if (-not $Object) { return 0 }
+    $count = 0
+    foreach ($prop in $Object.PSObject.Properties) {
+        $name = $prop.Name
+        if ($ExcludeProperties -contains $name) { continue }
+        if ($name -like '@odata*') { continue }
+        if (Is-ConfiguredValue -Value $prop.Value) { $count++ }
+    }
+    return $count
+}
+
+function Get-EndpointValueCount {
+    param(
+        [string]$Label,
+        [string]$Uri
+    )
+    $r = Invoke-GraphAPI -Label $Label -Uri $Uri
+    if ($r -and $r.value) { return @($r.value).Count }
+    return 0
+}
+
 # ----------------------------------------
 # Helper: Graph API call con paginazione
 # ----------------------------------------
@@ -335,11 +386,57 @@ if (-not $compPoliciesResp -or -not $compPoliciesResp.value -or @($compPoliciesR
 $existingCompPolicies = @()
 if ($compPoliciesResp -and $compPoliciesResp.value) {
     foreach ($p in $compPoliciesResp.value) {
+        $platform = Get-CompliancePlatform -Policy @{ OdataType = $p.'@odata.type' }
+        $assignUriV1 = "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies/$($p.id)/assignments?`$top=200&`$select=id"
+        $assignUriBeta = "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies/$($p.id)/assignments?`$top=200&`$select=id"
+        $assignCount = Get-EndpointValueCount -Label "ComplianceAssignments(v1)/$($p.id)" -Uri $assignUriV1
+        if ($assignCount -eq 0) {
+            $assignCount = Get-EndpointValueCount -Label "ComplianceAssignments(beta)/$($p.id)" -Uri $assignUriBeta
+        }
+
+        $detail = Invoke-GraphAPI -Label "ComplianceDetail(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies/$($p.id)"
+        if (-not $detail) {
+            $detail = Invoke-GraphAPI -Label "ComplianceDetail(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies/$($p.id)"
+        }
+        $excludeComp = @('id','displayName','description','version','createdDateTime','lastModifiedDateTime','roleScopeTagIds','scheduledActionsForRule')
+        $configuredSettings = Get-ConfiguredSettingsCount -Object $detail -ExcludeProperties $excludeComp
+
+        $hasPasswordControl = $false
+        if ($detail) {
+            foreach ($prop in $detail.PSObject.Properties) {
+                if ($prop.Name -match 'password' -and (Is-ConfiguredValue -Value $prop.Value)) {
+                    $hasPasswordControl = $true
+                    break
+                }
+            }
+        }
+
+        $assessment = 'OK'
+        $notes = @()
+        if ($assignCount -le 0) {
+            $assessment = 'WARN'
+            $notes += 'Policy non assegnata'
+        }
+        if ($configuredSettings -lt 3) {
+            if ($assessment -eq 'OK') { $assessment = 'WARN' }
+            $notes += 'Pochi setting configurati'
+        }
+        if (-not $hasPasswordControl -and $platform -eq 'windows') {
+            if ($assessment -eq 'OK') { $assessment = 'WARN' }
+            $notes += 'Nessun controllo password rilevato'
+        }
+
         $existingCompPolicies += @{
             Id          = $p.id
             DisplayName = $p.displayName
             OdataType   = $p.'@odata.type'
             LastModified = $p.lastModifiedDateTime
+            Platform    = $platform
+            AssignmentCount = $assignCount
+            IsAssigned  = ($assignCount -gt 0)
+            ConfiguredSettings = $configuredSettings
+            Assessment  = $assessment
+            Findings    = ($notes -join '; ')
         }
     }
 }
@@ -365,17 +462,48 @@ if (-not $adminTemplatesResp -or -not $adminTemplatesResp.value -or @($adminTemp
 $existingConfigProfiles = @()
 if ($legacyConfigProfilesResp -and $legacyConfigProfilesResp.value) {
     foreach ($p in $legacyConfigProfilesResp.value) {
+        $assignCount = Get-EndpointValueCount -Label "ConfigAssignments(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
+        if ($assignCount -eq 0) {
+            $assignCount = Get-EndpointValueCount -Label "ConfigAssignments(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
+        }
+        $detail = Invoke-GraphAPI -Label "ConfigDetail(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations/$($p.id)"
+        if (-not $detail) {
+            $detail = Invoke-GraphAPI -Label "ConfigDetail(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations/$($p.id)"
+        }
+        $excludeCfg = @('id','displayName','description','version','createdDateTime','lastModifiedDateTime','roleScopeTagIds')
+        $configuredSettings = Get-ConfiguredSettingsCount -Object $detail -ExcludeProperties $excludeCfg
+        $assessment = if ($assignCount -gt 0 -and $configuredSettings -gt 0) { 'OK' } elseif ($configuredSettings -gt 0) { 'WARN' } else { 'WARN' }
+        $findings = @()
+        if ($assignCount -le 0) { $findings += 'Profile non assegnato' }
+        if ($configuredSettings -le 0) { $findings += 'Nessun setting rilevato' }
         $existingConfigProfiles += @{
             Id          = $p.id
             DisplayName = $p.displayName
             OdataType   = $p.'@odata.type'
             Source      = 'deviceConfigurations'
             LastModified = $p.lastModifiedDateTime
+            AssignmentCount = $assignCount
+            IsAssigned  = ($assignCount -gt 0)
+            ConfiguredSettings = $configuredSettings
+            Assessment  = $assessment
+            Findings    = ($findings -join '; ')
         }
     }
 }
 if ($settingsCatalogResp -and $settingsCatalogResp.value) {
     foreach ($p in $settingsCatalogResp.value) {
+        $assignCount = Get-EndpointValueCount -Label "ConfigPolicyAssignments(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies/$($p.id)/assignments?`$top=200&`$select=id"
+        if ($assignCount -eq 0) {
+            $assignCount = Get-EndpointValueCount -Label "ConfigPolicyAssignments(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies/$($p.id)/assignments?`$top=200&`$select=id"
+        }
+        $settingsCount = Get-EndpointValueCount -Label "ConfigPolicySettings(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies/$($p.id)/settings?`$top=1000"
+        if ($settingsCount -eq 0) {
+            $settingsCount = Get-EndpointValueCount -Label "ConfigPolicySettings(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies/$($p.id)/settings?`$top=1000"
+        }
+        $assessment = if ($assignCount -gt 0 -and $settingsCount -gt 0) { 'OK' } elseif ($settingsCount -gt 0) { 'WARN' } else { 'WARN' }
+        $findings = @()
+        if ($assignCount -le 0) { $findings += 'Policy non assegnata' }
+        if ($settingsCount -le 0) { $findings += 'Nessun setting rilevato' }
         $existingConfigProfiles += @{
             Id          = $p.id
             DisplayName = if ($p.name) { $p.name } else { $p.displayName }
@@ -384,17 +512,39 @@ if ($settingsCatalogResp -and $settingsCatalogResp.value) {
             Platforms   = if ($p.platforms) { @($p.platforms) } else { @() }
             Technologies = if ($p.technologies) { @($p.technologies) } else { @() }
             LastModified = $p.lastModifiedDateTime
+            AssignmentCount = $assignCount
+            IsAssigned  = ($assignCount -gt 0)
+            ConfiguredSettings = $settingsCount
+            Assessment  = $assessment
+            Findings    = ($findings -join '; ')
         }
     }
 }
 if ($adminTemplatesResp -and $adminTemplatesResp.value) {
     foreach ($p in $adminTemplatesResp.value) {
+        $assignCount = Get-EndpointValueCount -Label "GpoAssignments(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
+        if ($assignCount -eq 0) {
+            $assignCount = Get-EndpointValueCount -Label "GpoAssignments(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
+        }
+        $settingsCount = Get-EndpointValueCount -Label "GpoSettings(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations/$($p.id)/definitionValues?`$top=1000"
+        if ($settingsCount -eq 0) {
+            $settingsCount = Get-EndpointValueCount -Label "GpoSettings(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations/$($p.id)/definitionValues?`$top=1000"
+        }
+        $assessment = if ($assignCount -gt 0 -and $settingsCount -gt 0) { 'OK' } elseif ($settingsCount -gt 0) { 'WARN' } else { 'WARN' }
+        $findings = @()
+        if ($assignCount -le 0) { $findings += 'Template non assegnato' }
+        if ($settingsCount -le 0) { $findings += 'Nessun setting rilevato' }
         $existingConfigProfiles += @{
             Id          = $p.id
             DisplayName = $p.displayName
             OdataType   = '#microsoft.graph.groupPolicyConfiguration'
             Source      = 'groupPolicyConfigurations'
             LastModified = $p.lastModifiedDateTime
+            AssignmentCount = $assignCount
+            IsAssigned  = ($assignCount -gt 0)
+            ConfiguredSettings = $settingsCount
+            Assessment  = $assessment
+            Findings    = ($findings -join '; ')
         }
     }
 }

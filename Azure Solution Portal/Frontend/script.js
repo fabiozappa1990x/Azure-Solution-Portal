@@ -436,6 +436,7 @@ const GRAPH_SCOPES_INTUNE = [
     "https://graph.microsoft.com/DeviceManagementApps.Read.All",
     "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
     "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
+    "https://graph.microsoft.com/DeviceManagementServiceConfig.Read.All",
     "https://graph.microsoft.com/Organization.Read.All"
 ];
 
@@ -1730,6 +1731,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function applyPrecheckUiForSolution(solution) {
+        setTabVisible('intune-compliance', false);
+        setTabVisible('intune-configuration', false);
+
         if (solution === 'azure-monitor') {
             setSummaryLabels('VM Analizzate:', 'Workspace Esistenti:');
             setTabText('overview', 'Panoramica');
@@ -1824,11 +1828,15 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabText('virtual-machines', 'Dispositivi');
             setTabText('workspaces', 'App Rilevate');
             setTabText('dcr', 'App Deployate');
+            setTabText('intune-compliance', 'Compliance');
+            setTabText('intune-configuration', 'Configuration');
             setTabText('recommendations', 'Report');
             setPaneTitle('overview', 'Stato Microsoft Intune');
             setPaneTitle('virtual-machines', 'Dispositivi Gestiti');
             setPaneTitle('workspaces', 'App Rilevate sui Dispositivi');
             setPaneTitle('dcr', 'App Deployate in Intune');
+            setPaneTitle('intune-compliance', 'Compliance Policies');
+            setPaneTitle('intune-configuration', 'Configuration Profiles');
             setPaneTitle('recommendations', 'Report');
             setOverviewLabels(['Dispositivi Gestiti', 'Conformi', 'App Rilevate', 'App Deployate']);
             setTableHeaders('vm-table', ['Nome Dispositivo', 'OS', 'Versione OS', 'Conformità', 'Ultimo Sync', 'Utente']);
@@ -1837,6 +1845,8 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabVisible('virtual-machines', true);
             setTabVisible('workspaces', true);
             setTabVisible('dcr', true);
+            setTabVisible('intune-compliance', true);
+            setTabVisible('intune-configuration', true);
             setTabVisible('recommendations', true);
             return;
         }
@@ -2147,6 +2157,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return 'other';
     }
 
+    function labelPlatform(platform) {
+        const p = String(platform || '').toLowerCase();
+        if (p === 'windows') return 'Windows';
+        if (p === 'ios') return 'iOS/iPadOS';
+        if (p === 'android') return 'Android';
+        if (p === 'macos') return 'macOS';
+        return 'Other';
+    }
+
+    function normalizeConfigSource(src) {
+        const s = String(src || '').toLowerCase();
+        if (s === 'deviceconfigurations') return 'Device Configurations';
+        if (s === 'configurationpolicies') return 'Settings Catalog';
+        if (s === 'grouppolicyconfigurations') return 'Admin Templates';
+        return 'Other';
+    }
+
     function buildIntuneBaselineGap(data, managedRows) {
         const existingTypes = getBaselineExistingTypes();
         const seenPlatforms = new Set(
@@ -2441,6 +2468,71 @@ document.addEventListener('DOMContentLoaded', function() {
                         <td>${escapeHtml(app.PublishingState || 'N/A')}</td>`;
                     tbody.appendChild(tr);
                 });
+            }
+        }
+
+        // Tab Compliance
+        {
+            const tbody = document.querySelector('#intune-compliance-table tbody');
+            if (tbody) {
+                tbody.innerHTML = '';
+                const rows = Array.isArray(data.ExistingCompliancePolicies) ? data.ExistingCompliancePolicies : [];
+                if (!rows.length) {
+                    tbody.innerHTML = `<tr><td colspan="5">Nessuna compliance policy rilevata.</td></tr>`;
+                } else {
+                    rows.forEach(p => {
+                        const assigned = p.IsAssigned
+                            ? '<span class="status-badge status-success">Si</span>'
+                            : '<span class="status-badge status-warning">No</span>';
+                        const assessment = String(p.Assessment || 'WARN').toUpperCase();
+                        const assessmentBadge = assessment === 'OK'
+                            ? '<span class="status-badge status-success">OK</span>'
+                            : '<span class="status-badge status-warning">Da rivedere</span>';
+                        const settings = Number(p.ConfiguredSettings || 0);
+                        const notes = p.Findings ? `<div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(p.Findings)}</div>` : '';
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${escapeHtml(p.DisplayName || 'N/A')}${notes}</td>
+                            <td>${escapeHtml(labelPlatform(p.Platform))}</td>
+                            <td>${assigned}</td>
+                            <td>${settings}</td>
+                            <td>${assessmentBadge}</td>`;
+                        tbody.appendChild(tr);
+                    });
+                }
+            }
+        }
+
+        // Tab Configuration
+        {
+            const tbody = document.querySelector('#intune-configuration-table tbody');
+            if (tbody) {
+                tbody.innerHTML = '';
+                const rows = Array.isArray(data.ExistingConfigProfiles) ? data.ExistingConfigProfiles : [];
+                if (!rows.length) {
+                    tbody.innerHTML = `<tr><td colspan="5">Nessun configuration profile rilevato.</td></tr>`;
+                } else {
+                    rows.forEach(p => {
+                        const assigned = p.IsAssigned
+                            ? '<span class="status-badge status-success">Si</span>'
+                            : '<span class="status-badge status-warning">No</span>';
+                        const assessment = String(p.Assessment || 'WARN').toUpperCase();
+                        const assessmentBadge = assessment === 'OK'
+                            ? '<span class="status-badge status-success">OK</span>'
+                            : '<span class="status-badge status-warning">Da rivedere</span>';
+                        const platform = p.Platform || (Array.isArray(p.Platforms) && p.Platforms.length ? p.Platforms[0] : '');
+                        const settings = Number(p.ConfiguredSettings || 0);
+                        const notes = p.Findings ? `<div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(p.Findings)}</div>` : '';
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${escapeHtml(p.DisplayName || 'N/A')}${notes}<div style="font-size:11px;color:#888;">Setting: ${settings}</div></td>
+                            <td>${escapeHtml(normalizeConfigSource(p.Source))}</td>
+                            <td>${escapeHtml(labelPlatform(platform))}</td>
+                            <td>${assigned}</td>
+                            <td>${assessmentBadge}</td>`;
+                        tbody.appendChild(tr);
+                    });
+                }
             }
         }
 

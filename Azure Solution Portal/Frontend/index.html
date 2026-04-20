@@ -149,13 +149,13 @@
                     </div>
                 </div>
 
-                <!-- Microsoft Defender XDR -->
+                <!-- Microsoft Defender for Endpoint -->
                 <div class="solution-card" id="card-defender-xdr">
                     <div class="solution-icon" style="background: linear-gradient(135deg, #0a2342, #1a4a8a);">
                         <i class="fas fa-shield-halved"></i>
                     </div>
                     <div class="solution-badge badge-available">Disponibile</div>
-                    <h3>Microsoft Defender XDR</h3>
+                    <h3>Microsoft Defender for Endpoint</h3>
                     <p>Gap analysis completo del tenant MDE/XDR: verifica policy AV, regole ASR, EDR onboarding, tamper protection e Secure Score rispetto alla baseline Jeffrey Appel.</p>
                     <ul class="solution-features">
                         <li><i class="fas fa-check"></i> AV Next-Gen Protection baseline (cloud block High+)</li>
@@ -271,6 +271,8 @@
                         <button class="tab-button" data-tab="virtual-machines">Macchine Virtuali</button>
                         <button class="tab-button" data-tab="workspaces">Log Analytics</button>
                         <button class="tab-button" data-tab="dcr">Data Collection Rules</button>
+                        <button class="tab-button" data-tab="intune-compliance" style="display:none;">Compliance</button>
+                        <button class="tab-button" data-tab="intune-configuration" style="display:none;">Configuration</button>
                         <button class="tab-button" data-tab="recommendations">Raccomandazioni</button>
                     </div>
 
@@ -348,6 +350,42 @@
                                             <th>Tipo</th>
                                             <th>Destinazione</th>
                                             <th>VM Associate</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="intune-compliance" class="tab-pane" style="display:none;">
+                            <h4>Compliance Policies</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="intune-compliance-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Policy</th>
+                                            <th>Piattaforma</th>
+                                            <th>Assegnata</th>
+                                            <th>Setting</th>
+                                            <th>Valutazione</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="intune-configuration" class="tab-pane" style="display:none;">
+                            <h4>Configuration Profiles</h4>
+                            <div class="resource-table-container">
+                                <table class="resource-table" id="intune-configuration-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Profile</th>
+                                            <th>Fonte</th>
+                                            <th>Piattaforma</th>
+                                            <th>Assegnato</th>
+                                            <th>Valutazione</th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -520,7 +558,7 @@
     <div id="mde-baseline-modal" class="modal" style="display:none;">
         <div class="modal-content modal-large" style="max-width:860px;">
             <span class="close-modal" id="mde-baseline-close">&times;</span>
-            <h2 style="margin-bottom:4px;">Configura Baseline Microsoft Defender XDR</h2>
+            <h2 style="margin-bottom:4px;">Configura Baseline Microsoft Defender for Endpoint</h2>
             <p style="color:#666;margin-bottom:20px;font-size:14px;">Deploya le policy MDE standard (Jeffrey Appel baseline) nel tenant via Intune.</p>
             <div id="mde-steps" style="display:flex;gap:0;margin-bottom:24px;border-radius:8px;overflow:hidden;">
                 <div class="mde-step-indicator active" data-step="1" style="flex:1;padding:10px;text-align:center;background:#0a2342;color:white;font-size:13px;font-weight:600;">1. Seleziona Policy</div>
