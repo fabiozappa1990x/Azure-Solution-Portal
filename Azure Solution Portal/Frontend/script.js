@@ -398,20 +398,33 @@ async function getAccessToken() {
 async function getGraphToken() {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
-    const graphRequest = {
-        scopes: [
-            "https://graph.microsoft.com/DeviceManagementApps.Read.All",
-            "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
-            "https://graph.microsoft.com/Organization.Read.All"
-        ],
-        account: currentAccount
-    };
+    const scopes = [
+        "https://graph.microsoft.com/DeviceManagementApps.Read.All",
+        "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+        "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
+        "https://graph.microsoft.com/Organization.Read.All"
+    ];
     try {
-        const response = await msalInstance.acquireTokenSilent(graphRequest);
+        const response = await msalInstance.acquireTokenSilent({ scopes, account: currentAccount });
         return response.accessToken;
     } catch {
-        const response = await msalInstance.acquireTokenPopup(graphRequest);
-        return response.accessToken;
+        // Scoppi admin-consent-required: forza popup con consenso esplicito
+        try {
+            const response = await msalInstance.acquireTokenPopup({ scopes, account: currentAccount, prompt: 'consent' });
+            return response.accessToken;
+        } catch (e) {
+            // Se DeviceManagementConfiguration fallisce, riprova senza quel scope (degraded mode)
+            if (e.message && (e.message.includes('400') || e.message.includes('consent') || e.message.includes('scope'))) {
+                const fallbackScopes = [
+                    "https://graph.microsoft.com/DeviceManagementApps.Read.All",
+                    "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+                    "https://graph.microsoft.com/Organization.Read.All"
+                ];
+                const response = await msalInstance.acquireTokenPopup({ scopes: fallbackScopes, account: currentAccount });
+                return response.accessToken;
+            }
+            throw e;
+        }
     }
 }
 
