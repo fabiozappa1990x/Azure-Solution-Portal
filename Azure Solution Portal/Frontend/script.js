@@ -847,12 +847,14 @@ const MDE_BASELINE = [
         description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune.',
         why: 'Senza onboarding, gli endpoint non inviano segnali telemetrici al portale security.microsoft.com: niente alert, niente risposta automatica agli incidenti, niente threat hunting. È il prerequisito di tutto. Il connettore Intune elimina la necessità di script di onboarding manuali e garantisce che ogni device gestito sia automaticamente protetto da EDR.',
         odataType: '#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration',
-        endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+        endpoint: 'https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations',
         body: {
             '@odata.type': '#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration',
             displayName: '[Baseline] MDE - EDR Onboarding',
             description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune',
-            advancedThreatProtectionAutoPopulateOnboardingBlob: true
+            advancedThreatProtectionAutoPopulateOnboardingBlob: true,
+            allowSampleSharing: true,
+            enableExpeditedTelemetryReporting: false
         }
     },
     {
@@ -1205,11 +1207,7 @@ async function runMdeBaselineDeploy() {
                 let errMsg = '';
                 try { errMsg = JSON.parse(errText)?.error?.message || JSON.parse(errText)?.Message || ''; } catch {}
                 if (!errMsg) errMsg = errText.substring(0, 200);
-                if (resp.status === 400 && policy.id === 'mde-edr-onboarding') {
-                    log(`  ✗ EDR Onboarding non disponibile (HTTP 400) — Verifica che il connettore MDE-Intune sia attivo in security.microsoft.com → Impostazioni → Endpoint → Funzionalità avanzate → Microsoft Intune connection`, '#ff8c00');
-                } else {
-                    log(`  ✗ Errore HTTP ${resp.status}: ${errMsg}`, '#f44747');
-                }
+                log(`  ✗ Errore HTTP ${resp.status}: ${errMsg}`, '#f44747');
                 failed++;
             }
         } catch (e) {
