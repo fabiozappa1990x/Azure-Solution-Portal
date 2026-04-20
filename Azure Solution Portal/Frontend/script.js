@@ -1067,9 +1067,23 @@ function updateMdeStepIndicator(activeStep) {
 
 function renderMdePolicyList() {
     const data = window.lastPrecheckResponse || {};
-    const existing = Array.isArray(data.ExistingMdePolicies) ? data.ExistingMdePolicies : [];
-    const existingNames = existing.map(p => (p.DisplayName || '').toLowerCase());
-    const existingTypes = new Set(existing.map(p => (p.OdataType || '').toLowerCase()));
+    // Usa la gap analysis funzionale già calcolata dal precheck, se disponibile
+    const gapMap = {};
+    if (Array.isArray(data.PolicyGapAnalysis)) {
+        data.PolicyGapAnalysis.forEach(g => { gapMap[g.Id] = g.Present; });
+    }
+
+    // Map: policy.id → gap analysis ID
+    const POLICY_TO_GAP = {
+        'mde-edr-onboarding':       'edr-onboarding',
+        'mde-av-nextgen':           'av-nextgen',
+        'mde-tamper-protection':    'tamper-protection',
+        'mde-network-protection':   'network-protection',
+        'mde-asr-audit':            'asr-rules',
+        'mde-asr-block-critical':   'asr-rules',
+        'mde-asr-block-complete':   'asr-rules',
+        'mde-file-hash':            'file-hash'
+    };
 
     const container = document.getElementById('mde-policy-list');
     container.innerHTML = '';
@@ -1086,8 +1100,9 @@ function renderMdePolicyList() {
             container.appendChild(hdr);
         }
 
-        const bName = policy.body.displayName.toLowerCase();
-        const present = existingNames.includes(bName) || existingTypes.has(policy.odataType.toLowerCase());
+        const gapId = POLICY_TO_GAP[policy.id];
+        // Se il precheck ha già rilevato la funzionalità, la policy è presente
+        const present = gapId !== undefined ? (gapMap[gapId] === true) : false;
 
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid #f0f0f0;';
@@ -2228,9 +2243,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const token = await getGraphToken();
             const headers = { 'Authorization': `Bearer ${token}` };
 
-            // Tutte le deviceConfigurations (paginato)
+            // Fetch COMPLETO (no $select) per leggere i settings reali di ogni policy
             let allConfigs = [];
-            let url = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=500&$select=id,displayName,lastModifiedDateTime';
+            let url = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?$top=100';
             while (url) {
                 const r = await fetch(url, { headers });
                 if (!r.ok) break;
@@ -2239,36 +2254,74 @@ document.addEventListener('DOMContentLoaded', function() {
                 url = j['@odata.nextLink'] || null;
             }
 
-            // Endpoint Security Intents
+            // Endpoint Security Intents (con templateId per riconoscere il tipo)
             let allIntents = [];
-            const ir = await fetch('https://graph.microsoft.com/v1.0/deviceManagement/intents?$select=id,displayName', { headers });
+            const ir = await fetch('https://graph.microsoft.com/v1.0/deviceManagement/intents?$select=id,displayName,templateId', { headers });
             if (ir.ok) { allIntents = (await ir.json()).value || []; }
 
-            // Settings Catalog (configurationPolicies)
-            let catalogPolicies = [];
-            const cr = await fetch('https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies?$top=500&$select=id,name', { headers });
-            if (cr.ok) { catalogPolicies = (await cr.json()).value || []; }
+            // -------------------------------------------------------
+            // Rilevamento funzionale: controlla settings, non il nome
+            // -------------------------------------------------------
+            function detectMdeFeatures(configs, intents) {
+                const found = { edr: false, av: false, tamper: false, network: false, asr: false, fileHash: false };
 
-            // Nomi di tutte le policy esistenti (lowercase)
-            const allNames = [
-                ...allConfigs.map(p => (p.displayName || '').toLowerCase().trim()),
-                ...allIntents.map(p => (p.displayName || '').toLowerCase().trim()),
-                ...catalogPolicies.map(p => (p.name || '').toLowerCase().trim())
-            ];
+                for (const p of configs) {
+                    const type = (p['@odata.type'] || '').toLowerCase();
 
-            // Gap analysis — match esatto sui displayName del wizard
-            const BASELINE_CHECKS = [
-                { id: 'edr-onboarding',     name: 'EDR Onboarding (Intune connector)',       critical: true,  names: ['[baseline] mde - edr onboarding'] },
-                { id: 'av-nextgen',         name: 'AV Next-Gen Protection',                  critical: true,  names: ['[baseline] mde - av next-gen protection'] },
-                { id: 'tamper-protection',  name: 'Tamper Protection (OMA-URI)',              critical: true,  names: ['[baseline] mde - tamper protection'] },
-                { id: 'network-protection', name: 'Network Protection (Block mode)',          critical: true,  names: ['[baseline] mde - network protection (block)'] },
-                { id: 'asr-rules',          name: 'ASR Rules (Attack Surface Reduction)',     critical: false, names: ['[baseline] mde - asr rules (audit)', '[baseline] mde - asr rules (block - critiche)', '[baseline] mde - asr rules (block - complete)'] },
-                { id: 'file-hash',          name: 'File Hash Computation',                   critical: false, names: ['[baseline] mde - file hash computation'] }
-            ];
-            const gapAnalysis = BASELINE_CHECKS.map(c => {
-                const present = c.names.some(n => allNames.includes(n));
-                return { Id: c.id, Name: c.name, Critical: c.critical, Present: present, Status: present ? 'OK' : 'MISSING' };
-            });
+                    // EDR Onboarding: tipo ATP + autoPopulate abilitato
+                    if (type.includes('windowsdefenderadvancedthreatprotectionconfiguration')) {
+                        if (p.advancedThreatProtectionAutoPopulateOnboardingBlob === true) found.edr = true;
+                    }
+
+                    // AV Next-Gen: tipo EndpointProtection con almeno una impostazione AV attiva
+                    if (type.includes('windows10endpointprotectionconfiguration')) {
+                        if (p.defenderRequireRealTimeMonitoring === true ||
+                            p.defenderRequireCloudProtection === true ||
+                            p.defenderRequireBehaviorMonitoring === true ||
+                            (p.defenderCloudBlockLevel && p.defenderCloudBlockLevel !== 'notConfigured')) {
+                            found.av = true;
+                        }
+                    }
+
+                    // Custom OMA-URI: ispeziona ogni impostazione
+                    if (type.includes('windows10customconfiguration') && Array.isArray(p.omaSettings)) {
+                        for (const oma of p.omaSettings) {
+                            const uri = (oma.omaUri || '').toLowerCase();
+                            const val = oma.value ?? oma.integerValue ?? oma.stringValue ?? '';
+
+                            if (uri.includes('tamperprotection') && (val == 5 || val === '5')) found.tamper = true;
+                            if (uri.includes('enablenetworkprotection') && (val == 1 || val === '1' || val == 2 || val === '2')) found.network = true;
+                            if (uri.includes('attacksurfacereductionrules')) found.asr = true;
+                            if (uri.includes('enablefilehashcomputation') && (val == 1 || val === '1')) found.fileHash = true;
+                        }
+                    }
+                }
+
+                // Endpoint Security Intents: templateId noti per MDE
+                const EDR_TEMPLATES  = ['e44c2ca3-2f9a-400a-a113-6cc88efd773d', 'a239407c-698d-4ef6-b525-8f0f50b4ecf6'];
+                const ASR_TEMPLATES  = ['0e237410-1367-4844-bd7f-15fb0f08943b', 'e8c053d6-9f6e-41c9-b196-6e4fa8c9d0e4'];
+                const AV_TEMPLATES   = ['4356d05c-a4ab-4a07-9ece-739f7c792910', 'windows10antivirus'];
+                for (const i of intents) {
+                    const tid = (i.templateId || '').toLowerCase();
+                    if (EDR_TEMPLATES.includes(tid)) found.edr = true;
+                    if (ASR_TEMPLATES.includes(tid)) found.asr = true;
+                    if (AV_TEMPLATES.some(t => tid.includes(t))) found.av = true;
+                }
+
+                return found;
+            }
+
+            const detected = detectMdeFeatures(allConfigs, allIntents);
+
+            // Gap analysis basata su funzionalità rilevate
+            const gapAnalysis = [
+                { Id: 'edr-onboarding',     Name: 'EDR Onboarding (Intune connector)',       Critical: true,  Present: detected.edr },
+                { Id: 'av-nextgen',         Name: 'AV Next-Gen Protection',                  Critical: true,  Present: detected.av },
+                { Id: 'tamper-protection',  Name: 'Tamper Protection',                        Critical: true,  Present: detected.tamper },
+                { Id: 'network-protection', Name: 'Network Protection (Block mode)',          Critical: true,  Present: detected.network },
+                { Id: 'asr-rules',          Name: 'ASR Rules (Attack Surface Reduction)',     Critical: false, Present: detected.asr },
+                { Id: 'file-hash',          Name: 'File Hash Computation',                   Critical: false, Present: detected.fileHash }
+            ].map(g => ({ ...g, Status: g.Present ? 'OK' : 'MISSING' }));
 
             // Secure Score (opzionale, può mancare il permesso)
             let secureScore = { Available: false, Percentage: 0 };
