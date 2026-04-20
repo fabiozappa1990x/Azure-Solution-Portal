@@ -841,10 +841,11 @@ const INTUNE_BASELINE = {
 const MDE_BASELINE = [
     {
         id: 'mde-edr-onboarding',
-        name: 'MDE - EDR Onboarding (auto-connector)',
+        name: 'EDR Onboarding — Connettore Intune',
         category: 'EDR',
         critical: true,
-        description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune. Richiede connettore MDE-Intune attivo.',
+        description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune.',
+        why: 'Senza onboarding, gli endpoint non inviano segnali telemetrici al portale security.microsoft.com: niente alert, niente risposta automatica agli incidenti, niente threat hunting. È il prerequisito di tutto. Il connettore Intune elimina la necessità di script di onboarding manuali e garantisce che ogni device gestito sia automaticamente protetto da EDR.',
         odataType: '#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -856,10 +857,11 @@ const MDE_BASELINE = [
     },
     {
         id: 'mde-av-nextgen',
-        name: 'MDE - AV Next-Gen Protection',
+        name: 'AV Next-Gen Protection',
         category: 'Antivirus',
         critical: true,
-        description: 'Cloud block High, real-time, behavior, network inspection, PUA block, sample submission, firewall',
+        description: 'Protezione real-time, cloud block level High, behavior monitoring, blocco PUA.',
+        why: 'Configura Defender AV con le impostazioni raccomandate da Microsoft e Jeffrey Appel: cloud protection High aumenta la detection rate fino al 99%+, behavior monitoring rileva malware zero-day che l\'AV signature-based non vede, il blocco PUA (Potentially Unwanted Apps) elimina adware e bundleware, network inspection analizza il traffico in real-time. Senza questa policy, Defender AV opera con impostazioni default che possono variare per device.',
         odataType: '#microsoft.graph.windows10EndpointProtectionConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -884,10 +886,11 @@ const MDE_BASELINE = [
     },
     {
         id: 'mde-tamper-protection',
-        name: 'MDE - Tamper Protection (OMA-URI)',
+        name: 'Tamper Protection',
         category: 'Protezione',
         critical: true,
-        description: 'Tamper Protection = 5 via OMA-URI — impedisce che malware disabiliti Defender AV/EDR',
+        description: 'Impedisce che malware o utenti locali disabilitino Defender AV/EDR (OMA-URI valore 5).',
+        why: 'Uno dei primi obiettivi di un attaccante è disabilitare l\'antivirus prima di eseguire il payload. Tamper Protection blocca qualsiasi tentativo di modificare le impostazioni di Defender — incluse operazioni PowerShell, modifiche al registro, e strumenti di terze parti — anche con privilegi di amministratore locale. Il valore 5 significa "gestito da Intune": solo Intune può modificarlo, non l\'utente o un malware.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -907,10 +910,11 @@ const MDE_BASELINE = [
     },
     {
         id: 'mde-network-protection',
-        name: 'MDE - Network Protection (Block mode)',
+        name: 'Network Protection',
         category: 'Network',
         critical: true,
-        description: 'Network Protection in Block mode — blocca connessioni a IP/domini malevoli e IOC',
+        description: 'Blocca connessioni a IP, domini e URL malevoli in Block mode (OMA-URI valore 1).',
+        why: 'Network Protection estende SmartScreen a tutto il traffico di rete, non solo al browser. Blocca in tempo reale le connessioni verso C2 (Command & Control), phishing, exploit kit e IOC (Indicators of Compromise) caricati da MDE. In modalità Block (valore 1), la connessione viene interrotta prima che il payload raggiunga il device. Valore 2 = Audit (solo log), valore 1 = Block (raccomandato per produzione).',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -930,10 +934,11 @@ const MDE_BASELINE = [
     },
     {
         id: 'mde-asr-audit',
-        name: 'MDE - ASR Rules (tutte in Audit mode)',
+        name: 'ASR Rules — Tutte in Audit mode',
         category: 'Attack Surface Reduction',
         critical: false,
-        description: 'Tutte le 16 regole ASR in Audit (2) — primo step: monitora impatto prima di passare a Block',
+        description: 'Tutte le 16 regole ASR in modalità Audit (2) — monitora senza bloccare.',
+        why: 'Le Attack Surface Reduction Rules riducono la superficie d\'attacco bloccando comportamenti tipici del malware (es. Office che crea processi child, LSASS dump, script offuscati, USB non autorizzati). Prima di passare a Block è essenziale fare un periodo di Audit per verificare che nessuna applicazione legittima venga impattata. Il report in security.microsoft.com → Reports → Attack Surface Reduction mostra quali regole avrebbero bloccato cosa.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -953,10 +958,11 @@ const MDE_BASELINE = [
     },
     {
         id: 'mde-asr-block-safe',
-        name: 'MDE - ASR Rules critiche (Block mode)',
+        name: 'ASR Rules — Critiche in Block mode',
         category: 'Attack Surface Reduction',
         critical: true,
-        description: '4 regole ASR a basso impatto in Block: LSASS, signed drivers, WMI persistence, ransomware',
+        description: '4 regole ASR ad alto impatto di sicurezza e basso rischio di falsi positivi in Block mode.',
+        why: 'Queste 4 regole sono considerate sicure da mettere in Block anche senza periodo di audit: (1) LSASS credential dump — blocca Mimikatz e simili, (2) Vulnerable signed drivers — previene driver-based escalation, (3) WMI event subscription persistence — tecnica comune per persistenza fileless, (4) Ransomware protection avanzata. Secondo Jeffrey Appel, queste 4 hanno un impatto minimo su applicazioni legittime e possono essere deployate subito in Block.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -976,10 +982,11 @@ const MDE_BASELINE = [
     },
     {
         id: 'mde-asr-block-full',
-        name: 'MDE - ASR Rules complete (Block mode)',
+        name: 'ASR Rules — Complete in Block mode',
         category: 'Attack Surface Reduction',
         critical: false,
-        description: 'Tutte le 16 regole ASR in Block (1) — dopo validazione audit, massima protezione',
+        description: 'Tutte le 16 regole ASR in Block mode — deployrare dopo aver validato l\'Audit.',
+        why: 'Dopo aver analizzato il report Audit e confermato che nessuna app legittima viene bloccata, questa policy porta tutte le 16 regole in modalità Block per la massima protezione. Copre scenari come: Office che scarica executable, script offuscati, processi da USB non autorizzati, iniezioni di codice nei processi Office, child process da client email. Attenzione: valutare esclusioni per software specifici prima del deploy in produzione.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -998,10 +1005,11 @@ const MDE_BASELINE = [
     },
     {
         id: 'mde-filehash',
-        name: 'MDE - File Hash Computation',
+        name: 'File Hash Computation',
         category: 'Telemetry',
         critical: false,
-        description: 'Abilita il calcolo hash dei file eseguiti — migliora hunting e indicatori IOC',
+        description: 'Calcolo automatico degli hash SHA-256 di tutti i file eseguiti sull\'endpoint.',
+        why: 'MDE usa gli hash per abbinare i file agli indicatori di compromissione (IOC) personalizzati che puoi caricare in security.microsoft.com. Senza questa impostazione, non puoi creare regole "blocca file con hash X" né vedere gli hash degli eseguibili nei log di Advanced Hunting (tabella DeviceFileEvents). Essenziale per threat hunting e response. Attenzione: può aumentare leggermente il carico CPU su macchine con alto I/O di file.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -1106,16 +1114,25 @@ function renderMdePolicyList() {
 
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid #f0f0f0;';
+        const detailsId = `mde-details-${policy.id}`;
         row.innerHTML = `
-            <input type="checkbox" class="mde-policy-check" data-id="${policy.id}" ${present ? 'disabled' : ''} style="width:16px;height:16px;flex-shrink:0;margin-top:2px;">
+            <input type="checkbox" class="mde-policy-check" data-id="${policy.id}" ${present ? 'disabled' : ''} style="width:16px;height:16px;flex-shrink:0;margin-top:3px;">
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <span style="font-weight:600;font-size:13px;">${escapeHtml(policy.name)}</span>
                     ${policy.critical ? '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">CRITICA</span>' : ''}
+                    <span style="flex-shrink:0;background:${present ? '#107c10' : '#d13438'};color:white;border-radius:4px;padding:1px 8px;font-size:10px;font-weight:700;">${present ? 'PRESENTE' : 'MANCANTE'}</span>
                 </div>
-                <div style="font-size:12px;color:#666;margin-top:2px;">${escapeHtml(policy.description)}</div>
-            </div>
-            <span style="flex-shrink:0;background:${present ? '#107c10' : '#d13438'};color:white;border-radius:4px;padding:2px 10px;font-size:11px;font-weight:700;">${present ? 'PRESENTE' : 'MANCANTE'}</span>`;
+                <div style="font-size:12px;color:#555;margin-top:3px;">${escapeHtml(policy.description)}</div>
+                ${policy.why ? `
+                <button onclick="document.getElementById('${detailsId}').style.display=document.getElementById('${detailsId}').style.display==='none'?'block':'none'"
+                    style="background:none;border:none;color:#0078d4;font-size:11px;cursor:pointer;padding:3px 0;text-decoration:underline;">
+                    Perché è importante?
+                </button>
+                <div id="${detailsId}" style="display:none;margin-top:6px;padding:10px 12px;background:#f0f6ff;border-left:3px solid #0078d4;border-radius:0 6px 6px 0;font-size:12px;color:#333;line-height:1.5;">
+                    ${escapeHtml(policy.why)}
+                </div>` : ''}
+            </div>`;
         container.appendChild(row);
     });
 
