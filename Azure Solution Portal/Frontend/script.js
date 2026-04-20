@@ -224,7 +224,8 @@ const SOLUTIONS = {
                 'Compliance score per piattaforma e readiness report'
             ],
             notes: [
-                'Richiede il consenso alle API Microsoft Graph (DeviceManagementApps.Read.All, DeviceManagementManagedDevices.Read.All).',
+                'Precheck: DeviceManagementApps.Read.All, DeviceManagementManagedDevices.Read.All, DeviceManagementConfiguration.Read.All.',
+                'Deploy Baseline: richiede anche DeviceManagementConfiguration.ReadWrite.All e DeviceManagementServiceConfig.ReadWrite.All.',
                 'Il precheck è tenant-wide: la subscription viene usata solo per l\'autenticazione.'
             ],
             docsAnchor: 'intune'
@@ -232,7 +233,7 @@ const SOLUTIONS = {
         precheckTitle: 'Precheck Microsoft Intune',
         precheckDesc: 'Analizza dispositivi gestiti, app rilevate e applicazioni deployate nel tenant Intune.',
         deployTitle: 'Microsoft Intune',
-        deployDesc: 'Intune non richiede un deploy tramite questo portale. Usa il precheck per ottenere l\'inventario completo del tenant.',
+        deployDesc: 'Esegui prima il Precheck, poi usa il wizard "Configura Baseline Sicurezza" per deployare le policy standard mancanti nel tenant.',
         portalUrl: '#',
         psDownload: null,
         psCommand: '# Nessun deploy necessario per Intune',
@@ -401,6 +402,7 @@ async function getGraphToken() {
         scopes: [
             "https://graph.microsoft.com/DeviceManagementApps.Read.All",
             "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+            "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
             "https://graph.microsoft.com/Organization.Read.All"
         ],
         account: currentAccount
@@ -412,6 +414,637 @@ async function getGraphToken() {
         const response = await msalInstance.acquireTokenPopup(graphRequest);
         return response.accessToken;
     }
+}
+
+async function getGraphTokenWithWrite() {
+    if (!msalInstance) throw new Error("Autenticazione non inizializzata");
+    if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    const graphRequest = {
+        scopes: [
+            "https://graph.microsoft.com/DeviceManagementApps.Read.All",
+            "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+            "https://graph.microsoft.com/DeviceManagementConfiguration.ReadWrite.All",
+            "https://graph.microsoft.com/DeviceManagementServiceConfig.ReadWrite.All",
+            "https://graph.microsoft.com/Organization.Read.All"
+        ],
+        account: currentAccount
+    };
+    try {
+        const response = await msalInstance.acquireTokenSilent(graphRequest);
+        return response.accessToken;
+    } catch {
+        const response = await msalInstance.acquireTokenPopup(graphRequest);
+        return response.accessToken;
+    }
+}
+
+// ============================================================
+// INTUNE BASELINE CATALOG
+// ============================================================
+const INTUNE_BASELINE = {
+    windows: {
+        label: 'Windows 10/11',
+        icon: '🪟',
+        policies: [
+            {
+                id: 'win-compliance',
+                name: 'Windows - Compliance Baseline',
+                category: 'Compliance',
+                critical: true,
+                description: 'Password 12+, BitLocker, Defender attivo, Firewall, OS minimo',
+                type: 'compliancePolicy',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies',
+                odataType: '#microsoft.graph.windows10CompliancePolicy',
+                body: {
+                    '@odata.type': '#microsoft.graph.windows10CompliancePolicy',
+                    displayName: '[Baseline] Windows - Compliance',
+                    description: 'Policy di conformità minima per dispositivi Windows gestiti da Intune',
+                    passwordRequired: true,
+                    passwordMinimumLength: 12,
+                    passwordRequiredType: 'alphanumeric',
+                    passwordPreviousPasswordBlockCount: 5,
+                    storageRequireEncryption: true,
+                    bitLockerEnabled: true,
+                    secureBootEnabled: true,
+                    codeIntegrityEnabled: true,
+                    activeFirewallRequired: true,
+                    defenderEnabled: true,
+                    rtpEnabled: true,
+                    antivirusRequired: true,
+                    antiSpywareRequired: true,
+                    scheduledActionsForRule: [{ ruleName: 'MarkAsNoncompliant', scheduledActionConfigurations: [{ actionType: 'block', gracePeriodHours: 0 }] }]
+                }
+            },
+            {
+                id: 'win-endpoint-protection',
+                name: 'Windows - Endpoint Protection',
+                category: 'Sicurezza',
+                critical: true,
+                description: 'Defender AV, real-time protection, cloud protection, PUA block, Firewall',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.windows10EndpointProtectionConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.windows10EndpointProtectionConfiguration',
+                    displayName: '[Baseline] Windows - Endpoint Protection',
+                    description: 'Defender Antivirus, Firewall e protezione avanzata',
+                    defenderBlockEndUserAccess: false,
+                    defenderRequireBehaviorMonitoring: true,
+                    defenderRequireCloudProtection: true,
+                    defenderRequireNetworkInspectionSystem: true,
+                    defenderRequireRealTimeMonitoring: true,
+                    defenderScanArchiveFiles: true,
+                    defenderScanDownloads: true,
+                    defenderScanNetworkFiles: true,
+                    defenderScanIncomingMail: true,
+                    defenderScanRemovableDrivesDuringFullScan: true,
+                    defenderCloudBlockLevel: 'high',
+                    defenderCloudExtendedTimeout: 50,
+                    defenderPotentiallyUnwantedAppAction: 'block',
+                    firewallEnabled: true
+                }
+            },
+            {
+                id: 'win-bitlocker',
+                name: 'Windows - BitLocker',
+                category: 'Encryption',
+                critical: true,
+                description: 'BitLocker OS drive AES-256, recovery key in Azure AD',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.windows10GeneralConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.windows10GeneralConfiguration',
+                    displayName: '[Baseline] Windows - BitLocker',
+                    description: 'Cifratura disco BitLocker con recovery key in Azure AD',
+                    bitLockerEncryptDevice: true,
+                    bitLockerDisableWarningForOtherDiskEncryption: true,
+                    bitLockerAllowStandardUserEncryption: true,
+                    bitLockerRecoverPasswordFromAad: true
+                }
+            },
+            {
+                id: 'win-screenlock',
+                name: 'Windows - Screen Lock & Password',
+                category: 'Password',
+                critical: false,
+                description: 'Blocco schermo 15 min, password 12+ alfanumerica',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.windows10GeneralConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.windows10GeneralConfiguration',
+                    displayName: '[Baseline] Windows - Screen Lock',
+                    description: 'Blocco schermo automatico e requisiti password',
+                    passwordRequired: true,
+                    passwordMinimumLength: 12,
+                    passwordRequiredType: 'alphanumeric',
+                    passwordPreviousPasswordBlockCount: 5,
+                    passwordExpirationDays: 90,
+                    passwordMinutesOfInactivityBeforeScreenTimeout: 15,
+                    passwordMinimumCharacterSetCount: 3
+                }
+            }
+        ]
+    },
+    macos: {
+        label: 'macOS',
+        icon: '🍎',
+        policies: [
+            {
+                id: 'mac-compliance',
+                name: 'macOS - Compliance Baseline',
+                category: 'Compliance',
+                critical: true,
+                description: 'Password 12+, FileVault, SIP richiesto, OS minimo 13.0',
+                type: 'compliancePolicy',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies',
+                odataType: '#microsoft.graph.macOSCompliancePolicy',
+                body: {
+                    '@odata.type': '#microsoft.graph.macOSCompliancePolicy',
+                    displayName: '[Baseline] macOS - Compliance',
+                    description: 'Policy di conformità minima per dispositivi macOS gestiti da Intune',
+                    passwordRequired: true,
+                    passwordMinimumLength: 12,
+                    passwordRequiredType: 'alphanumeric',
+                    passwordPreviousPasswordBlockCount: 5,
+                    passwordMaximumAgeDays: 90,
+                    passwordMinutesOfInactivityBeforeLock: 15,
+                    storageRequireEncryption: true,
+                    systemIntegrityProtectionEnabled: true,
+                    firewallEnabled: true,
+                    osMinimumVersion: '13.0',
+                    scheduledActionsForRule: [{ ruleName: 'MarkAsNoncompliant', scheduledActionConfigurations: [{ actionType: 'block', gracePeriodHours: 0 }] }]
+                }
+            },
+            {
+                id: 'mac-endpoint-protection',
+                name: 'macOS - Endpoint Protection',
+                category: 'Sicurezza',
+                critical: true,
+                description: 'FileVault, Firewall stealth mode, Gatekeeper app identificate',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.macOSEndpointProtectionConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.macOSEndpointProtectionConfiguration',
+                    displayName: '[Baseline] macOS - Endpoint Protection',
+                    description: 'FileVault, Firewall e Gatekeeper per macOS',
+                    fileVaultEnabled: true,
+                    fileVaultSelectedRecoveryKeyTypes: 'personalRecoveryKey',
+                    fileVaultPersonalRecoveryKeyHelpMessage: 'Conserva questa chiave in luogo sicuro.',
+                    fileVaultAllowDeferralUntilSignOut: true,
+                    fileVaultNumberOfTimesUserCanIgnore: 3,
+                    fileVaultPersonalRecoveryKeyRotationInMonths: 6,
+                    firewallEnabled: true,
+                    firewallBlockAllIncomingConnections: false,
+                    firewallEnableStealthMode: true,
+                    gatekeeperAllowedAppSource: 'macAppStoreAndIdentifiedDevelopers'
+                }
+            },
+            {
+                id: 'mac-screenlock',
+                name: 'macOS - Screen Lock',
+                category: 'Password',
+                critical: false,
+                description: 'Blocco schermo 15 min, password alfanumerica con simboli',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.macOSGeneralDeviceConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.macOSGeneralDeviceConfiguration',
+                    displayName: '[Baseline] macOS - Screen Lock',
+                    description: 'Timeout schermo e requisiti password per macOS',
+                    passwordRequired: true,
+                    passwordMinimumLength: 12,
+                    passwordRequiredType: 'alphanumericWithSymbol',
+                    passwordPreviousPasswordBlockCount: 5,
+                    passwordMaximumAgeDays: 90,
+                    passwordMinutesOfInactivityBeforeScreenTimeout: 15,
+                    passwordMinutesOfInactivityBeforeLock: 15,
+                    passwordMinimumCharacterSetCount: 3
+                }
+            }
+        ]
+    },
+    ios: {
+        label: 'iOS / iPadOS',
+        icon: '📱',
+        policies: [
+            {
+                id: 'ios-compliance',
+                name: 'iOS/iPadOS - Compliance Baseline',
+                category: 'Compliance',
+                critical: true,
+                description: 'Passcode 6+, anti-jailbreak, OS minimo iOS 16.0',
+                type: 'compliancePolicy',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies',
+                odataType: '#microsoft.graph.iosCompliancePolicy',
+                body: {
+                    '@odata.type': '#microsoft.graph.iosCompliancePolicy',
+                    displayName: '[Baseline] iOS/iPadOS - Compliance',
+                    description: 'Policy di conformità minima per dispositivi iOS/iPadOS',
+                    passcodeRequired: true,
+                    passcodeMinimumLength: 6,
+                    passcodeRequiredType: 'numeric',
+                    passcodeMinutesOfInactivityBeforeLock: 5,
+                    passcodeExpirationDays: 90,
+                    passcodePreviousPasscodeBlockCount: 5,
+                    passcodeSimpleBlocked: true,
+                    securityBlockJailbrokenDevices: true,
+                    osMinimumVersion: '16.0',
+                    scheduledActionsForRule: [{ ruleName: 'MarkAsNoncompliant', scheduledActionConfigurations: [{ actionType: 'block', gracePeriodHours: 0 }] }]
+                }
+            },
+            {
+                id: 'ios-restrictions',
+                name: 'iOS/iPadOS - Restrizioni Sicurezza',
+                category: 'Sicurezza',
+                critical: true,
+                description: 'Passcode lock 5 min, blocco clipboard cross-app, app store restrictions',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.iosGeneralDeviceConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.iosGeneralDeviceConfiguration',
+                    displayName: '[Baseline] iOS - Restrizioni Sicurezza',
+                    description: 'Restrizioni di sicurezza base per dispositivi iOS/iPadOS aziendali',
+                    passcodeRequired: true,
+                    passcodeMinimumLength: 6,
+                    passcodeRequiredType: 'numeric',
+                    passcodeMinutesOfInactivityBeforeScreenTimeout: 5,
+                    passcodeMinutesOfInactivityBeforeLock: 5,
+                    passcodeExpirationDays: 90,
+                    passcodePreviousPasscodeBlockCount: 5,
+                    passcodeSimpleBlocked: true,
+                    safariBlockJavaScript: false,
+                    safariBlockPopups: false
+                }
+            },
+            {
+                id: 'ios-email',
+                name: 'iOS/iPadOS - Email Aziendale',
+                category: 'Email',
+                critical: false,
+                description: 'Profilo email gestito da Intune, SSL, sincronizzazione calendario/contatti',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.iosEasEmailProfileConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.iosEasEmailProfileConfiguration',
+                    displayName: '[Baseline] iOS - Email Aziendale',
+                    description: 'Profilo email aziendale gestito da Intune',
+                    accountName: 'Corporate Email',
+                    authenticationMethod: 'usernameAndPassword',
+                    hostName: 'outlook.office365.com',
+                    requireSsl: true,
+                    emailAddressSource: 'primarySmtpAddress',
+                    usernameSource: 'userPrincipalName',
+                    emailSyncDuration: 'oneMonth',
+                    emailSyncSchedule: 'fifteenMinutes',
+                    syncCalendar: true,
+                    syncContacts: true,
+                    syncTasks: true
+                }
+            }
+        ]
+    },
+    android: {
+        label: 'Android Enterprise',
+        icon: '🤖',
+        policies: [
+            {
+                id: 'android-compliance-workprofile',
+                name: 'Android - Work Profile Compliance',
+                category: 'Compliance',
+                critical: true,
+                description: 'Password 6+ numericComplx, anti-root, Play Protect, security patch 2024',
+                type: 'compliancePolicy',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies',
+                odataType: '#microsoft.graph.androidWorkProfileCompliancePolicy',
+                body: {
+                    '@odata.type': '#microsoft.graph.androidWorkProfileCompliancePolicy',
+                    displayName: '[Baseline] Android - Work Profile Compliance',
+                    description: 'Policy di conformità per dispositivi Android Enterprise (Work Profile)',
+                    passwordRequired: true,
+                    passwordMinimumLength: 6,
+                    passwordRequiredType: 'numericComplex',
+                    passwordExpirationDays: 90,
+                    passwordPreviousPasswordBlockCount: 5,
+                    passwordMinutesOfInactivityBeforeLock: 5,
+                    securityPreventInstallAppsFromUnknownSources: true,
+                    securityDisableUsbDebugging: true,
+                    securityRequireVerifyApps: true,
+                    securityBlockJailbrokenDevices: true,
+                    minAndroidSecurityPatchLevel: '2024-01-01',
+                    osMinimumVersion: '10.0',
+                    scheduledActionsForRule: [{ ruleName: 'MarkAsNoncompliant', scheduledActionConfigurations: [{ actionType: 'block', gracePeriodHours: 0 }] }]
+                }
+            },
+            {
+                id: 'android-compliance-deviceowner',
+                name: 'Android - Fully Managed Compliance',
+                category: 'Compliance',
+                critical: false,
+                description: 'Compliance per dispositivi Android Fully Managed / Device Owner',
+                type: 'compliancePolicy',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies',
+                odataType: '#microsoft.graph.androidDeviceOwnerCompliancePolicy',
+                body: {
+                    '@odata.type': '#microsoft.graph.androidDeviceOwnerCompliancePolicy',
+                    displayName: '[Baseline] Android - Device Owner Compliance',
+                    description: 'Policy conformità per Android Fully Managed/Device Owner',
+                    passwordRequired: true,
+                    passwordMinimumLength: 6,
+                    passwordRequiredType: 'numericComplex',
+                    passwordExpirationDays: 90,
+                    passwordPreviousPasswordBlockCount: 5,
+                    passwordMinutesOfInactivityBeforeLock: 5,
+                    securityRequireVerifyApps: true,
+                    minAndroidSecurityPatchLevel: '2024-01-01',
+                    osMinimumVersion: '10.0',
+                    scheduledActionsForRule: [{ ruleName: 'MarkAsNoncompliant', scheduledActionConfigurations: [{ actionType: 'block', gracePeriodHours: 0 }] }]
+                }
+            },
+            {
+                id: 'android-config-workprofile',
+                name: 'Android - Work Profile Config',
+                category: 'Sicurezza',
+                critical: true,
+                description: 'Work profile password, blocco copy-paste cross-profile, permessi app',
+                type: 'configurationProfile',
+                endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
+                odataType: '#microsoft.graph.androidWorkProfileGeneralDeviceConfiguration',
+                body: {
+                    '@odata.type': '#microsoft.graph.androidWorkProfileGeneralDeviceConfiguration',
+                    displayName: '[Baseline] Android - Work Profile Config',
+                    description: 'Configurazione sicurezza work profile Android Enterprise',
+                    workProfilePasswordRequired: true,
+                    workProfilePasswordMinimumLength: 6,
+                    workProfilePasswordRequiredType: 'numericComplex',
+                    workProfilePasswordExpirationDays: 90,
+                    workProfilePasswordPreviousPasswordBlockCount: 5,
+                    workProfilePasswordMinutesOfInactivityBeforeScreenTimeout: 5,
+                    workProfileBlockCrossProfileCopyPaste: true,
+                    workProfileDefaultAppPermissionPolicy: 'prompt'
+                }
+            }
+        ]
+    }
+};
+
+// ============================================================
+// INTUNE BASELINE WIZARD
+// ============================================================
+function openIntuneBaselineWizard() {
+    const modal = document.getElementById('intune-baseline-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    initBaselineWizard();
+}
+
+function initBaselineWizard() {
+    // Reset step 1
+    document.getElementById('baseline-step-1').style.display = '';
+    document.getElementById('baseline-step-2').style.display = 'none';
+    document.getElementById('baseline-step-3').style.display = 'none';
+    updateBaselineStepIndicator(1);
+
+    // Platform card toggle
+    document.querySelectorAll('.baseline-platform-card').forEach(card => {
+        const inner = card.querySelector('div');
+        const checkbox = card.querySelector('input[type=checkbox]');
+        checkbox.checked = false;
+        inner.style.borderColor = '#e0e7ef';
+        inner.style.background = '';
+
+        // Remove old listener by cloning
+        const newCard = card.cloneNode(true);
+        card.parentNode.replaceChild(newCard, card);
+        newCard.addEventListener('click', () => {
+            const cb = newCard.querySelector('input[type=checkbox]');
+            cb.checked = !cb.checked;
+            const div = newCard.querySelector('div');
+            if (cb.checked) {
+                div.style.borderColor = '#0078d4';
+                div.style.background = '#f0f6ff';
+            } else {
+                div.style.borderColor = '#e0e7ef';
+                div.style.background = '';
+            }
+            const anySelected = document.querySelectorAll('.baseline-platform-card input:checked').length > 0;
+            document.getElementById('baseline-step1-next').disabled = !anySelected;
+        });
+    });
+
+    document.getElementById('baseline-step1-next').disabled = true;
+
+    // Step1 → Step2
+    const nextBtn = document.getElementById('baseline-step1-next');
+    const newNext = nextBtn.cloneNode(true);
+    nextBtn.parentNode.replaceChild(newNext, nextBtn);
+    newNext.addEventListener('click', () => renderBaselineStep2());
+
+    // Step2 back
+    const backBtn = document.getElementById('baseline-step2-back');
+    const newBack = backBtn.cloneNode(true);
+    backBtn.parentNode.replaceChild(newBack, backBtn);
+    newBack.addEventListener('click', () => {
+        document.getElementById('baseline-step-2').style.display = 'none';
+        document.getElementById('baseline-step-1').style.display = '';
+        updateBaselineStepIndicator(1);
+    });
+
+    // Step2 deploy
+    const deployBtn = document.getElementById('baseline-step2-deploy');
+    const newDeploy = deployBtn.cloneNode(true);
+    deployBtn.parentNode.replaceChild(newDeploy, deployBtn);
+    newDeploy.addEventListener('click', () => runBaselineDeploy());
+
+    // Step3 close
+    const closeBtn = document.getElementById('baseline-step3-close');
+    const newClose = closeBtn.cloneNode(true);
+    closeBtn.parentNode.replaceChild(newClose, closeBtn);
+    newClose.addEventListener('click', () => {
+        document.getElementById('intune-baseline-modal').style.display = 'none';
+    });
+
+    // Modal close X
+    const closeX = document.getElementById('intune-baseline-close');
+    const newCloseX = closeX.cloneNode(true);
+    closeX.parentNode.replaceChild(newCloseX, closeX);
+    newCloseX.addEventListener('click', () => {
+        document.getElementById('intune-baseline-modal').style.display = 'none';
+    });
+}
+
+function updateBaselineStepIndicator(activeStep) {
+    document.querySelectorAll('.baseline-step-indicator').forEach(el => {
+        const step = parseInt(el.dataset.step);
+        if (step === activeStep) {
+            el.style.background = '#0078d4';
+            el.style.color = 'white';
+        } else if (step < activeStep) {
+            el.style.background = '#107c10';
+            el.style.color = 'white';
+        } else {
+            el.style.background = '#e0e7ef';
+            el.style.color = '#666';
+        }
+    });
+}
+
+function getBaselineExistingTypes() {
+    const data = window.lastPrecheckResponse || {};
+    const compPolicies = Array.isArray(data.ExistingCompliancePolicies) ? data.ExistingCompliancePolicies : [];
+    const configProfiles = Array.isArray(data.ExistingConfigProfiles) ? data.ExistingConfigProfiles : [];
+    const allTypes = new Set();
+    [...compPolicies, ...configProfiles].forEach(p => {
+        if (p.OdataType) allTypes.add(p.OdataType.toLowerCase());
+    });
+    return allTypes;
+}
+
+function isPolicyPresent(policy, existingTypes) {
+    const type = policy.odataType.toLowerCase();
+    // Also check display name match for [Baseline] policies already deployed
+    const data = window.lastPrecheckResponse || {};
+    const compPolicies = Array.isArray(data.ExistingCompliancePolicies) ? data.ExistingCompliancePolicies : [];
+    const configProfiles = Array.isArray(data.ExistingConfigProfiles) ? data.ExistingConfigProfiles : [];
+    const allNames = [...compPolicies, ...configProfiles].map(p => (p.DisplayName || '').toLowerCase());
+    const baselineName = policy.body.displayName.toLowerCase();
+    if (allNames.some(n => n === baselineName)) return true;
+    return existingTypes.has(type);
+}
+
+function renderBaselineStep2() {
+    document.getElementById('baseline-step-1').style.display = 'none';
+    document.getElementById('baseline-step-2').style.display = '';
+    updateBaselineStepIndicator(2);
+
+    const selectedPlatforms = Array.from(document.querySelectorAll('.baseline-platform-card input:checked')).map(cb => cb.value);
+    const existingTypes = getBaselineExistingTypes();
+    const container = document.getElementById('baseline-policy-list');
+    container.innerHTML = '';
+
+    selectedPlatforms.forEach(platform => {
+        const platformData = INTUNE_BASELINE[platform];
+        if (!platformData) return;
+
+        const platformHeader = document.createElement('div');
+        platformHeader.style.cssText = 'padding:10px 14px;background:#f0f6ff;font-weight:700;font-size:13px;border-bottom:1px solid #e0e7ef;display:flex;align-items:center;gap:8px;';
+        platformHeader.innerHTML = `<span>${platformData.icon}</span><span>${platformData.label}</span>`;
+        container.appendChild(platformHeader);
+
+        platformData.policies.forEach(policy => {
+            const present = isPolicyPresent(policy, existingTypes);
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #f0f0f0;';
+            row.innerHTML = `
+                <input type="checkbox" class="baseline-policy-check" data-platform="${platform}" data-id="${policy.id}" ${present ? 'disabled' : ''} style="width:16px;height:16px;flex-shrink:0;">
+                <div style="flex:1;min-width:0;">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span style="font-weight:600;font-size:13px;">${escapeHtml(policy.name)}</span>
+                        ${policy.critical ? '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">CRITICA</span>' : ''}
+                        <span style="background:#e3f2fd;color:#0078d4;border-radius:4px;padding:1px 6px;font-size:10px;">${escapeHtml(policy.category)}</span>
+                    </div>
+                    <div style="font-size:12px;color:#666;margin-top:2px;">${escapeHtml(policy.description)}</div>
+                </div>
+                <span style="flex-shrink:0;background:${present ? '#107c10' : '#d13438'};color:white;border-radius:4px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap;">${present ? 'PRESENTE' : 'MANCANTE'}</span>`;
+            container.appendChild(row);
+        });
+    });
+
+    // Select all missing by default
+    container.querySelectorAll('.baseline-policy-check:not([disabled])').forEach(cb => {
+        cb.checked = true;
+    });
+    updateBaselineDeployCount();
+
+    // Live count update
+    container.addEventListener('change', updateBaselineDeployCount);
+}
+
+function updateBaselineDeployCount() {
+    const checked = document.querySelectorAll('.baseline-policy-check:checked:not([disabled])').length;
+    const countEl = document.getElementById('baseline-selected-count');
+    const deployBtn = document.getElementById('baseline-step2-deploy');
+    if (countEl) countEl.textContent = `${checked} policy selezionate`;
+    if (deployBtn) deployBtn.disabled = checked === 0;
+}
+
+async function runBaselineDeploy() {
+    document.getElementById('baseline-step-2').style.display = 'none';
+    document.getElementById('baseline-step-3').style.display = '';
+    updateBaselineStepIndicator(3);
+
+    const logEl = document.getElementById('baseline-deploy-log');
+    const summaryEl = document.getElementById('baseline-deploy-summary');
+    const closeBtn = document.getElementById('baseline-step3-close');
+    logEl.innerHTML = '';
+
+    function log(msg, color) {
+        const line = document.createElement('div');
+        line.style.color = color || '#d4d4d4';
+        line.textContent = msg;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    log('Acquisizione token Graph con permessi di scrittura...', '#569cd6');
+    let token;
+    try {
+        token = await getGraphTokenWithWrite();
+        log('✓ Token acquisito.', '#4ec9b0');
+    } catch (e) {
+        log(`✗ Errore token: ${e.message}`, '#f44747');
+        summaryEl.textContent = '❌ Impossibile acquisire il token. Verifica i permessi dell\'App Registration.';
+        summaryEl.style.color = '#d13438';
+        closeBtn.style.display = '';
+        return;
+    }
+
+    const selectedChecks = Array.from(document.querySelectorAll('.baseline-policy-check:checked:not([disabled])'));
+    const toDeployIds = selectedChecks.map(cb => cb.dataset.id);
+
+    let deployed = 0, failed = 0;
+
+    for (const platform of Object.keys(INTUNE_BASELINE)) {
+        for (const policy of INTUNE_BASELINE[platform].policies) {
+            if (!toDeployIds.includes(policy.id)) continue;
+            log(`→ Deploy: ${policy.name}`, '#9cdcfe');
+            try {
+                const resp = await fetch(policy.endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(policy.body)
+                });
+                if (resp.ok) {
+                    const result = await resp.json();
+                    log(`  ✓ Creata: ${result.displayName || policy.name} (id: ${result.id || '?'})`, '#4ec9b0');
+                    deployed++;
+                } else {
+                    const errText = await resp.text();
+                    let errMsg = errText;
+                    try { errMsg = JSON.parse(errText)?.error?.message || errText; } catch {}
+                    log(`  ✗ Errore HTTP ${resp.status}: ${errMsg}`, '#f44747');
+                    failed++;
+                }
+            } catch (e) {
+                log(`  ✗ Errore rete: ${e.message}`, '#f44747');
+                failed++;
+            }
+        }
+    }
+
+    log('', '');
+    log(`=== COMPLETATO: ${deployed} policy create, ${failed} errori ===`, failed > 0 ? '#ff8c00' : '#4ec9b0');
+    summaryEl.textContent = `${deployed} policy deployate con successo${failed > 0 ? `, ${failed} errori` : ''}.`;
+    summaryEl.style.color = failed > 0 ? '#d13438' : '#107c10';
+    closeBtn.style.display = '';
 }
 
 function updateAuthUI(isAuthenticated, username = '') {
@@ -508,11 +1141,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
-        const subscriptionInput = document.getElementById('subscription-id').value.trim();
-        const subscriptionIds = parseSubscriptionIds(subscriptionInput);
-
-        if (!subscriptionIds.length) { alert('⚠️ Inserisci almeno un SubscriptionId valido (GUID).'); return; }
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
+
+        // Intune è tenant-wide: non richiede una subscription Azure
+        let subscriptionIds;
+        if (currentSolution === 'intune') {
+            subscriptionIds = ['tenant-only'];
+        } else {
+            const subscriptionInput = document.getElementById('subscription-id').value.trim();
+            subscriptionIds = parseSubscriptionIds(subscriptionInput);
+            if (!subscriptionIds.length) { alert('⚠️ Inserisci almeno un SubscriptionId valido (GUID).'); return; }
+        }
 
         console.log('🚀 Avvio precheck per:', currentSolution, 'subscriptions:', subscriptionIds.join(','));
 
@@ -1128,6 +1767,27 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // Baseline button in overview
+        const overviewPane = document.getElementById('overview');
+        const existingBaselineBtn = document.getElementById('intune-baseline-btn-overview');
+        if (existingBaselineBtn) existingBaselineBtn.remove();
+
+        const existingComp = Array.isArray(data.ExistingCompliancePolicies) ? data.ExistingCompliancePolicies.length : '?';
+        const existingConf = Array.isArray(data.ExistingConfigProfiles) ? data.ExistingConfigProfiles.length : '?';
+        const baselineBanner = document.createElement('div');
+        baselineBanner.id = 'intune-baseline-btn-overview';
+        baselineBanner.style.cssText = 'margin-top:20px;padding:16px;background:linear-gradient(135deg,#f0f6ff,#e8f0fe);border:1px solid #c0d4f5;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;';
+        baselineBanner.innerHTML = `
+            <div>
+                <div style="font-weight:700;font-size:15px;color:#0078d4;margin-bottom:4px;">🛡 Baseline Sicurezza Intune</div>
+                <div style="font-size:13px;color:#444;">Policy di compliance trovate: <strong>${existingComp}</strong> &nbsp;|&nbsp; Configuration profile trovati: <strong>${existingConf}</strong></div>
+                <div style="font-size:12px;color:#666;margin-top:4px;">Configura le policy standard di sicurezza mancanti per il tuo tenant.</div>
+            </div>
+            <button id="open-intune-baseline-wizard" class="btn-primary" style="flex-shrink:0;">Configura Baseline →</button>`;
+        overviewPane.appendChild(baselineBanner);
+
+        document.getElementById('open-intune-baseline-wizard')?.addEventListener('click', () => openIntuneBaselineWizard());
+
         renderReportHtmlInRecommendations(data);
     }
 
@@ -1321,6 +1981,29 @@ function showPrecheckModal(solution) {
     if (toggleRow) toggleRow.style.display = (solution === 'azure-monitor') ? 'block' : 'none';
     const cb = document.getElementById('use-precheck2');
     if (cb) cb.checked = false;
+
+    // Intune è tenant-wide: nascondi il campo subscription
+    const subGroup = document.getElementById('subscription-id')?.closest('.form-group');
+    const rgGroup = document.getElementById('resource-group')?.closest('.form-group');
+    if (solution === 'intune') {
+        if (subGroup) subGroup.style.display = 'none';
+        if (rgGroup) rgGroup.style.display = 'none';
+        // Mostra nota tenant-wide se non già presente
+        let note = document.getElementById('intune-tenant-note');
+        if (!note) {
+            note = document.createElement('div');
+            note.id = 'intune-tenant-note';
+            note.style.cssText = 'padding:12px 14px;background:#f0f6ff;border:1px solid #c0d4f5;border-radius:8px;margin-bottom:14px;font-size:13px;color:#0078d4;';
+            note.innerHTML = '<strong>ℹ️ Intune è tenant-wide</strong> — non richiede una subscription Azure. Il precheck verrà eseguito direttamente sul tenant associato al tuo account.';
+            document.querySelector('.precheck-form').insertBefore(note, document.getElementById('run-precheck'));
+        }
+        note.style.display = '';
+    } else {
+        if (subGroup) subGroup.style.display = '';
+        if (rgGroup) rgGroup.style.display = '';
+        const note = document.getElementById('intune-tenant-note');
+        if (note) note.style.display = 'none';
+    }
 
     modal.style.display = 'block';
 }

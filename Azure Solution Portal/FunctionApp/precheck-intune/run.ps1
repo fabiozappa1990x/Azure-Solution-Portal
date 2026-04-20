@@ -65,23 +65,41 @@ if (-not $graphTokenHeader -or $graphTokenHeader.Length -lt 100) {
 
 $subscriptionId = $Request.Query.SubscriptionId
 if (-not $subscriptionId) { $subscriptionId = $Request.Query.subscriptionId }
+if (-not $subscriptionId) { $subscriptionId = 'tenant-only' }
 
-if (-not $subscriptionId) {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 400; Body = '{"error":"SubscriptionId mancante"}'; Headers = $corsHeaders })
-    return
-}
-
-# Validate management token + get tenantId
+# Per Intune il subscriptionId è opzionale (tenant-wide).
+# Se è 'tenant-only', estrai il tenantId direttamente dal JWT del Graph token.
 $tenantId = $null
-try {
-    $headers = @{ 'Authorization' = "Bearer $accessToken"; 'Content-Type' = 'application/json' }
-    $url = "https://management.azure.com/subscriptions/${subscriptionId}?api-version=2022-12-01"
-    $result = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
-    Write-Host "Token valid for subscription: $($result.displayName)"
-    $tenantId = $result.tenantId
-} catch {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Token non valido o subscription non accessibile"}'; Headers = $corsHeaders })
-    return
+
+if ($subscriptionId -eq 'tenant-only') {
+    Write-Host "Intune tenant-only mode: extracting tenantId from Graph JWT..."
+    try {
+        $parts = $graphTokenHeader.Split('.')
+        if ($parts.Length -ge 2) {
+            $payload = $parts[1]
+            $mod4 = $payload.Length % 4
+            if ($mod4 -gt 0) { $payload += '=' * (4 - $mod4) }
+            $payload = $payload.Replace('-', '+').Replace('_', '/')
+            $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($payload))
+            $claims = $decoded | ConvertFrom-Json
+            $tenantId = $claims.tid
+            Write-Host "TenantId from JWT: $tenantId"
+        }
+    } catch {
+        Write-Host "Warning: impossibile estrarre tenantId dal JWT: $($_.Exception.Message)"
+    }
+} else {
+    # Validate management token + get tenantId dalla subscription
+    try {
+        $headers = @{ 'Authorization' = "Bearer $accessToken"; 'Content-Type' = 'application/json' }
+        $url = "https://management.azure.com/subscriptions/${subscriptionId}?api-version=2022-12-01"
+        $result = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+        Write-Host "Token valid for subscription: $($result.displayName)"
+        $tenantId = $result.tenantId
+    } catch {
+        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Token non valido o subscription non accessibile"}'; Headers = $corsHeaders })
+        return
+    }
 }
 
 $scriptPath = $null

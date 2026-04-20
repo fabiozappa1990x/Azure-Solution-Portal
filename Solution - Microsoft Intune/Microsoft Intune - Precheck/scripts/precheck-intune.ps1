@@ -58,6 +58,8 @@ $data = @{
     NonCompliantDevices = @()
     DetectedApps   = @()
     DeployedApps   = @()
+    ExistingCompliancePolicies = @()
+    ExistingConfigProfiles     = @()
     ReportHTML     = ""
 }
 
@@ -247,6 +249,42 @@ foreach ($app in $rawMobileApps) {
 # Ordina: prima quelli assegnati, poi per nome
 $data.DeployedApps = @($deployedApps | Sort-Object { if ($_.IsAssigned) { 0 } else { 1 } }, { $_.DisplayName })
 Write-Host "Deployed apps found: $($deployedApps.Count)"
+
+# ----------------------------------------
+# [5b] Compliance policy esistenti nel tenant
+# ----------------------------------------
+Write-Host "[5b] Existing compliance policies..."
+$compPoliciesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type"
+$existingCompPolicies = @()
+if ($compPoliciesResp -and $compPoliciesResp.value) {
+    foreach ($p in $compPoliciesResp.value) {
+        $existingCompPolicies += @{
+            Id          = $p.id
+            DisplayName = $p.displayName
+            OdataType   = $p.'@odata.type'
+        }
+    }
+}
+$data.ExistingCompliancePolicies = $existingCompPolicies
+Write-Host "Existing compliance policies: $($existingCompPolicies.Count)"
+
+# ----------------------------------------
+# [5c] Configuration profile esistenti nel tenant
+# ----------------------------------------
+Write-Host "[5c] Existing config profiles..."
+$configProfilesResp = Invoke-GraphAPI -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type"
+$existingConfigProfiles = @()
+if ($configProfilesResp -and $configProfilesResp.value) {
+    foreach ($p in $configProfilesResp.value) {
+        $existingConfigProfiles += @{
+            Id          = $p.id
+            DisplayName = $p.displayName
+            OdataType   = $p.'@odata.type'
+        }
+    }
+}
+$data.ExistingConfigProfiles = $existingConfigProfiles
+Write-Host "Existing config profiles: $($existingConfigProfiles.Count)"
 
 # ----------------------------------------
 # [6] Summary

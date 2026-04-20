@@ -394,6 +394,107 @@
         </div>
     </div>
 
+    <!-- ===== MODAL INTUNE BASELINE WIZARD ===== -->
+    <div id="intune-baseline-modal" class="modal" style="display:none;">
+        <div class="modal-content modal-large" style="max-width:860px;">
+            <span class="close-modal" id="intune-baseline-close">&times;</span>
+            <h2 style="margin-bottom:4px;">Configura Baseline Sicurezza Intune</h2>
+            <p style="color:#666;margin-bottom:20px;font-size:14px;">Deploya le policy di sicurezza standard per le piattaforme del tuo tenant.</p>
+
+            <!-- Step indicator -->
+            <div id="baseline-steps" style="display:flex;gap:0;margin-bottom:24px;border-radius:8px;overflow:hidden;">
+                <div class="baseline-step-indicator active" data-step="1" style="flex:1;padding:10px;text-align:center;background:#0078d4;color:white;font-size:13px;font-weight:600;cursor:default;">
+                    1. Piattaforme
+                </div>
+                <div class="baseline-step-indicator" data-step="2" style="flex:1;padding:10px;text-align:center;background:#e0e7ef;color:#666;font-size:13px;font-weight:600;cursor:default;">
+                    2. Seleziona Policy
+                </div>
+                <div class="baseline-step-indicator" data-step="3" style="flex:1;padding:10px;text-align:center;background:#e0e7ef;color:#666;font-size:13px;font-weight:600;cursor:default;">
+                    3. Deploy
+                </div>
+            </div>
+
+            <!-- Step 1: Platform selection -->
+            <div id="baseline-step-1">
+                <h3 style="margin-bottom:12px;font-size:16px;">Seleziona le piattaforme da configurare</h3>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:24px;">
+                    <label class="baseline-platform-card" data-platform="windows">
+                        <input type="checkbox" value="windows" style="display:none;">
+                        <div style="display:flex;align-items:center;gap:12px;padding:16px;border:2px solid #e0e7ef;border-radius:10px;cursor:pointer;transition:all .2s;">
+                            <span style="font-size:28px;">🪟</span>
+                            <div>
+                                <div style="font-weight:700;font-size:15px;">Windows 10/11</div>
+                                <div style="color:#666;font-size:12px;">Compliance, Defender, BitLocker, Screen Lock</div>
+                            </div>
+                        </div>
+                    </label>
+                    <label class="baseline-platform-card" data-platform="macos">
+                        <input type="checkbox" value="macos" style="display:none;">
+                        <div style="display:flex;align-items:center;gap:12px;padding:16px;border:2px solid #e0e7ef;border-radius:10px;cursor:pointer;transition:all .2s;">
+                            <span style="font-size:28px;">🍎</span>
+                            <div>
+                                <div style="font-weight:700;font-size:15px;">macOS</div>
+                                <div style="color:#666;font-size:12px;">Compliance, FileVault, Firewall, Screen Lock</div>
+                            </div>
+                        </div>
+                    </label>
+                    <label class="baseline-platform-card" data-platform="ios">
+                        <input type="checkbox" value="ios" style="display:none;">
+                        <div style="display:flex;align-items:center;gap:12px;padding:16px;border:2px solid #e0e7ef;border-radius:10px;cursor:pointer;transition:all .2s;">
+                            <span style="font-size:28px;">📱</span>
+                            <div>
+                                <div style="font-weight:700;font-size:15px;">iOS / iPadOS</div>
+                                <div style="color:#666;font-size:12px;">Compliance, Restrizioni, Anti-jailbreak, Email</div>
+                            </div>
+                        </div>
+                    </label>
+                    <label class="baseline-platform-card" data-platform="android">
+                        <input type="checkbox" value="android" style="display:none;">
+                        <div style="display:flex;align-items:center;gap:12px;padding:16px;border:2px solid #e0e7ef;border-radius:10px;cursor:pointer;transition:all .2s;">
+                            <span style="font-size:28px;">🤖</span>
+                            <div>
+                                <div style="font-weight:700;font-size:15px;">Android Enterprise</div>
+                                <div style="color:#666;font-size:12px;">Compliance Work Profile, Fully Managed, Restrizioni</div>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+                <div style="text-align:right;">
+                    <button id="baseline-step1-next" class="btn-primary" disabled>Avanti →</button>
+                </div>
+            </div>
+
+            <!-- Step 2: Policy selector -->
+            <div id="baseline-step-2" style="display:none;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                    <h3 style="margin:0;font-size:16px;">Policy baseline per le piattaforme selezionate</h3>
+                    <div style="display:flex;gap:10px;align-items:center;font-size:13px;">
+                        <span style="display:inline-flex;align-items:center;gap:5px;"><span style="background:#107c10;color:white;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">PRESENTE</span> Già configurata</span>
+                        <span style="display:inline-flex;align-items:center;gap:5px;"><span style="background:#d13438;color:white;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">MANCANTE</span> Da deployare</span>
+                    </div>
+                </div>
+                <div id="baseline-policy-list" style="max-height:380px;overflow-y:auto;border:1px solid #e0e7ef;border-radius:8px;"></div>
+                <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;">
+                    <button id="baseline-step2-back" class="btn-secondary">← Indietro</button>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <span id="baseline-selected-count" style="font-size:13px;color:#666;">0 policy selezionate</span>
+                        <button id="baseline-step2-deploy" class="btn-primary" disabled>Deploya Selezionate →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Deploy progress -->
+            <div id="baseline-step-3" style="display:none;">
+                <h3 style="margin-bottom:16px;font-size:16px;">Deploy in corso...</h3>
+                <div id="baseline-deploy-log" style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12px;padding:16px;border-radius:8px;max-height:340px;overflow-y:auto;line-height:1.7;"></div>
+                <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;">
+                    <div id="baseline-deploy-summary" style="font-size:14px;font-weight:600;"></div>
+                    <button id="baseline-step3-close" class="btn-primary" style="display:none;">Chiudi</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>&copy; 2024 Portale Soluzioni Azure. Tutti i diritti riservati.</p>
     </footer>
