@@ -267,6 +267,34 @@ const SOLUTIONS = {
         psCommand: '# Deploy tramite wizard baseline nel portale',
         apiEndpoint: '/api/precheck-defender-xdr'
     },
+    'conditional-access': {
+        name: 'Conditional Access Baseline',
+        detailsTitle: 'Conditional Access — Dettagli',
+        details: {
+            whatIs: 'Conditional Access è il motore delle policy di accesso condizionale di Microsoft Entra ID. Questa soluzione deploya 27 policy baseline ispirate alla guida di j0eyv su GitHub: copertura completa per utenti, admin, guest, service account e dispositivi.',
+            features: [
+                'CA000-CA006: 7 policy globali (MFA, blocco legacy auth, device code, app protection)',
+                'CA100-CA105: 6 policy per admin (MFA portali, phishing-resistant, CAE, sign-in frequency)',
+                'CA200-CA209: 10 policy utenti interni (compliance Windows/macOS, risk-based block)',
+                'CA300-CA301: 2 policy service account (MFA + location block)',
+                'CA400-CA404: 5 policy guest (MFA, blocco app non-guest, admin portals block)'
+            ],
+            notes: [
+                'Tutte le policy vengono deployate in Report-Only: zero impatto sulla produzione. Abilita manualmente dopo revisione.',
+                'Richiede consenso admin per Policy.ReadWrite.ConditionalAccess e Group.ReadWrite.All.',
+                'Viene creato automaticamente il gruppo "CA-BreakGlass-Exclusion" da aggiungere agli account break glass.'
+            ],
+            docsAnchor: 'conditional-access'
+        },
+        precheckTitle: 'Precheck Conditional Access',
+        precheckDesc: 'Analizza le CA policy esistenti nel tenant e identifica le coperture mancanti rispetto alla baseline (j0eyv/ConditionalAccessBaseline).',
+        deployTitle: 'Conditional Access Baseline',
+        deployDesc: 'Deploya le 27 policy CA baseline in modalità Report-Only. Abilita manualmente dopo revisione.',
+        portalUrl: '#',
+        psCommand: '# Deploy tramite wizard baseline nel portale',
+        psDownload: null,
+        apiEndpoint: null
+    },
     'update-manager': {
         name: 'Azure Update Manager',
         detailsTitle: 'Azure Update Manager — Dettagli',
@@ -476,6 +504,338 @@ async function getGraphTokenWithWrite() {
         return response.accessToken;
     }
 }
+
+// ============================================================
+// CONDITIONAL ACCESS — SCOPES + TOKEN
+// ============================================================
+const CA_SCOPES_READ = [
+    "https://graph.microsoft.com/Policy.Read.All",
+    "https://graph.microsoft.com/Directory.Read.All"
+];
+const CA_SCOPES_WRITE = [
+    "https://graph.microsoft.com/Policy.ReadWrite.ConditionalAccess",
+    "https://graph.microsoft.com/Policy.Read.All",
+    "https://graph.microsoft.com/Group.ReadWrite.All",
+    "https://graph.microsoft.com/Directory.Read.All"
+];
+
+async function getCaToken(write = false) {
+    if (!msalInstance || !currentAccount) throw new Error("Non autenticato.");
+    const scopes = write ? CA_SCOPES_WRITE : CA_SCOPES_READ;
+    try {
+        const r = await msalInstance.acquireTokenSilent({ scopes, account: currentAccount });
+        return r.accessToken;
+    } catch {
+        sessionStorage.setItem('ca_consent_pending', write ? 'write' : 'read');
+        await msalInstance.acquireTokenRedirect({ scopes, account: currentAccount, prompt: 'consent' });
+        throw new Error('Redirect in corso...');
+    }
+}
+
+// ============================================================
+// CONDITIONAL ACCESS BASELINE (j0eyv/ConditionalAccessBaseline)
+// ============================================================
+// Admin role IDs sono uguali in tutti i tenant Microsoft Entra
+const CA_ADMIN_ROLES = [
+    '62e90394-69f5-4237-9190-012177145e10', // Global Administrator
+    'e8611ab8-c189-46e8-94e1-60213ab1f814', // Privileged Role Administrator
+    'fe930be7-5e62-47db-91af-98c3a49a38b1', // User Administrator
+    'f28a1f50-f6e7-4571-818b-6a12f2af6b6c', // SharePoint Administrator
+    '29232cdf-9323-42fd-aea2-88a2b1a08ee4', // Exchange Administrator
+    'b1be1c3e-b65d-4f19-8427-f6fa0d97feb9', // Conditional Access Administrator
+    '194ae4cb-b126-40b2-bd5b-6091b380977d', // Security Administrator
+    '17315797-102d-40b4-93e0-432062caca18', // Compliance Administrator
+    'c4e39bd9-1100-46d3-8c65-fb160da0071f', // Authentication Administrator
+    '729827e3-9c14-49f7-bb1b-9608f156bbb8', // Helpdesk Administrator
+    '69091246-20e8-4a56-aa4d-066075b2a7a8', // Teams Administrator
+    '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c1', // Application Administrator
+    '158c047a-c907-4556-b7ef-446551a6b5f7', // Cloud Application Administrator
+    '3a2c62db-5318-420d-8d74-23affee5d9d5', // Intune Administrator
+    'b0f54661-2d74-4c50-afa3-1ec803f12efe', // Billing Administrator
+    '9360feb5-f418-4baa-8175-e2a00bac4301'  // Directory Writers
+];
+
+// Crea il body di ogni policy: bg = break glass group ID, sa = service accounts group ID
+function caBody(code, displayName, state, conditions, grantControls, sessionControls) {
+    return { displayName: `${code}-${displayName}`, state, conditions, grantControls: grantControls || null, sessionControls: sessionControls || null };
+}
+
+const CA_BASELINE = [
+    // ── GLOBAL ──────────────────────────────────────────────────────────
+    {
+        id: 'ca000', code: 'CA000', category: 'Global', critical: true,
+        name: 'MFA — Tutti gli utenti, tutte le app',
+        description: 'Richiede MFA per tutti gli utenti su qualsiasi applicazione cloud.',
+        why: 'La policy più fondamentale: senza MFA il 99% degli account compromessi non avrebbe subito danni secondo i dati Microsoft. Un attaccante che ottiene la password non può accedere senza il secondo fattore. Viene deployata in Report-Only: monitora chi avrebbe ricevuto la challenge MFA prima di abilitarla.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeUsers?.includes('All') && p.grantControls?.builtInControls?.includes('mfa')),
+        getBody: (bg) => caBody('CA000', 'Global-IdentityProtection-AnyApp-AnyPlatform-MFA', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'] },
+            { operator: 'OR', builtInControls: ['mfa'] })
+    },
+    {
+        id: 'ca001', code: 'CA001', category: 'Global', critical: false,
+        name: 'Blocco per Paese — Allowlist',
+        description: 'Blocca accessi da paesi non nella lista consentita (richiede Named Location).',
+        why: 'Riduce drasticamente la superficie di attacco bloccando accessi da paesi non operativi. Attenzione: viene creata una Named Location "CA-Allowed-Countries" con Europa+NA che puoi personalizzare in seguito in Entra ID → Named Locations.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.grantControls?.builtInControls?.includes('block') && (p.conditions?.locations?.excludeLocations?.length > 0 || p.conditions?.locations?.includeLocations?.some(l => l !== 'All' && l !== 'AllTrusted'))),
+        getBody: (bg, locs) => caBody('CA001', 'Global-AttackSurfaceReduction-AnyApp-AnyPlatform-BLOCK-CountryWhitelist', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'], locations: { includeLocations: ['All'], excludeLocations: locs?.allowed ? [locs.allowed] : ['AllTrusted'] } },
+            { operator: 'OR', builtInControls: ['block'] })
+    },
+    {
+        id: 'ca002', code: 'CA002', category: 'Global', critical: true,
+        name: 'Blocca Legacy Authentication',
+        description: 'Blocca tutti i client che usano autenticazione legacy (SMTP AUTH, IMAP, POP3, Basic Auth).',
+        why: 'I protocolli legacy non supportano MFA: chiunque abbia la password può autenticarsi. Il 99% degli attacchi password spray colpisce proprio questi protocolli. Bloccarli è sicuro in qualsiasi tenant moderno — Office 365/M365 non usa più questi protocolli per default.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.grantControls?.builtInControls?.includes('block') && (p.conditions?.clientAppTypes?.includes('exchangeActiveSync') || p.conditions?.clientAppTypes?.includes('other'))),
+        getBody: (bg) => caBody('CA002', 'Global-IdentityProtection-AnyApp-AnyPlatform-Block-LegacyAuthentication', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['exchangeActiveSync', 'other'] },
+            { operator: 'OR', builtInControls: ['block'] })
+    },
+    {
+        id: 'ca003', code: 'CA003', category: 'Global', critical: true,
+        name: 'MFA — Registrazione / Join dispositivo',
+        description: 'Richiede MFA quando un utente registra o aggiunge un dispositivo a Entra ID.',
+        why: 'Senza questa policy un attaccante con le credenziali può registrare il proprio dispositivo nel tenant e ottenere un token persistente. Richiedere MFA per il join device blocca questo vettore di attacco.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.applications?.includeUserActions?.includes('urn:user:registerdevice') && p.grantControls?.builtInControls?.includes('mfa')),
+        getBody: (bg) => caBody('CA003', 'Global-BaseProtection-RegisterOrJoin-AnyPlatform-MFA', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeGroups: bg ? [bg] : [] }, applications: { includeUserActions: ['urn:user:registerdevice'] }, clientAppTypes: ['all'] },
+            { operator: 'OR', builtInControls: ['mfa'] })
+    },
+    {
+        id: 'ca004', code: 'CA004', category: 'Global', critical: true,
+        name: 'Blocca Device Code Flow e Auth Transfer',
+        description: 'Blocca i flussi di autenticazione Device Code e Authentication Transfer.',
+        why: 'Il Device Code Flow è usato in attacchi di phishing avanzati (token stealing via link "entra questo codice"): l\'utente pensa di fare login ma sta dando il token all\'attaccante. L\'Authentication Transfer permette di trasferire sessioni tra device. Entrambi sono raramente necessari in produzione e molto pericolosi.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.grantControls?.builtInControls?.includes('block') && p.conditions?.authenticationFlows?.transferMethods),
+        getBody: (bg) => caBody('CA004', 'Global-IdentityProtection-AnyApp-AnyPlatform-AuthenticationFlows', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'], authenticationFlows: { transferMethods: 'deviceCodeFlow,authenticationTransfer' } },
+            { operator: 'OR', builtInControls: ['block'] })
+    },
+    {
+        id: 'ca005', code: 'CA005', category: 'Global', critical: false,
+        name: 'App Protection — Office 365 su dispositivi non gestiti (iOS/Android)',
+        description: 'Richiede App Protection Policy (MAM) per accedere a Office 365 da dispositivi iOS/Android non gestiti.',
+        why: 'Quando un dipendente usa il proprio smartphone personale (non MDM), non puoi controllare il dispositivo. L\'App Protection Policy permette comunque di proteggere i dati aziendali dentro l\'app (es. Outlook) impedendo copia/incolla verso app personali, richiedendo PIN, e potendo fare wipe selettivo solo dei dati aziendali.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && (p.conditions?.platforms?.includePlatforms?.includes('android') || p.conditions?.platforms?.includePlatforms?.includes('iOS')) && (p.grantControls?.builtInControls?.includes('compliantApplication') || p.grantControls?.builtInControls?.includes('approvedApplication'))),
+        getBody: (bg) => caBody('CA005', 'Global-DataProtection-Office365-iOSAndroid-RequireAppProtection', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['Office365'] }, clientAppTypes: ['mobileAppsAndDesktopClients'], platforms: { includePlatforms: ['android', 'iOS'] } },
+            { operator: 'OR', builtInControls: ['compliantApplication'] })
+    },
+    {
+        id: 'ca006', code: 'CA006', category: 'Global', critical: false,
+        name: 'App Protection — Office apps mobile (sessione)',
+        description: 'Applica restrizioni di sessione per app Office su iOS/Android.',
+        why: 'Complementa CA005 aggiungendo Application Enforced Restrictions nelle sessioni browser su mobile, impedendo download di file e operazioni non sicure anche via browser mobile.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && (p.conditions?.platforms?.includePlatforms?.includes('android') || p.conditions?.platforms?.includePlatforms?.includes('iOS')) && p.sessionControls?.applicationEnforcedRestrictions?.isEnabled),
+        getBody: (bg) => caBody('CA006', 'Global-DataProtection-Office365-iOSAndroid-SessionControls', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['Office365'] }, clientAppTypes: ['browser'], platforms: { includePlatforms: ['android', 'iOS'] } },
+            null, { applicationEnforcedRestrictions: { isEnabled: true } })
+    },
+    // ── ADMINS ──────────────────────────────────────────────────────────
+    {
+        id: 'ca100', code: 'CA100', category: 'Admins', critical: true,
+        name: 'MFA — Admin su portali amministrativi',
+        description: 'Richiede MFA a tutti gli admin quando accedono ai portali Microsoft (Azure, Entra, M365 Admin).',
+        why: 'I portali admin sono il target principale degli attaccanti: da qui si possono modificare utenti, aggiungere app con permessi globali, esfiltrare dati. MFA obbligatoria per admin sui portali è il minimo assoluto e va abilitata subito anche in produzione.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.applications?.includeApplications?.includes('MicrosoftAdminPortals') && p.conditions?.users?.includeRoles?.length > 0 && p.grantControls?.builtInControls?.includes('mfa')),
+        getBody: (bg) => caBody('CA100', 'Admins-IdentityProtection-AdminPortals-AnyPlatform-MFA', 'enabledForReportingButNotEnforced',
+            { users: { includeRoles: CA_ADMIN_ROLES, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['MicrosoftAdminPortals'] }, clientAppTypes: ['all'] },
+            { operator: 'OR', builtInControls: ['mfa'] })
+    },
+    {
+        id: 'ca101', code: 'CA101', category: 'Admins', critical: true,
+        name: 'MFA — Admin su tutte le app',
+        description: 'Richiede MFA agli admin su qualsiasi applicazione.',
+        why: 'Gli admin devono fare MFA non solo sui portali Microsoft ma su QUALSIASI app cloud. Un admin che accede a Salesforce, GitHub o qualsiasi SaaS senza MFA è un rischio: quella sessione può essere dirottata per pivot verso risorse aziendali.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.applications?.includeApplications?.includes('All') && p.conditions?.users?.includeRoles?.length > 0 && p.grantControls?.builtInControls?.includes('mfa')),
+        getBody: (bg) => caBody('CA101', 'Admins-IdentityProtection-AnyApp-AnyPlatform-MFA', 'enabledForReportingButNotEnforced',
+            { users: { includeRoles: CA_ADMIN_ROLES, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['browser', 'mobileAppsAndDesktopClients'] },
+            { operator: 'OR', builtInControls: ['mfa'] })
+    },
+    {
+        id: 'ca102', code: 'CA102', category: 'Admins', critical: false,
+        name: 'Sign-in Frequency 12h — Admin',
+        description: 'Forza re-autenticazione ogni 12 ore per gli admin.',
+        why: 'Le sessioni degli admin non devono essere permanenti. Se un attaccante ruba un token admin, la finestra di utilizzo viene limitata a 12 ore. Combina primary e secondary authentication per impedire token refresh automatico.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeRoles?.length > 0 && p.sessionControls?.signInFrequency?.isEnabled && p.sessionControls?.signInFrequency?.value <= 12),
+        getBody: (bg) => caBody('CA102', 'Admins-IdentityProtection-AllApps-AnyPlatform-SigninFrequency', 'enabledForReportingButNotEnforced',
+            { users: { includeRoles: CA_ADMIN_ROLES, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'] },
+            null, { signInFrequency: { value: 12, type: 'hours', isEnabled: true, authenticationType: 'primaryAndSecondaryAuthentication', frequencyInterval: 'timeBased' } })
+    },
+    {
+        id: 'ca103', code: 'CA103', category: 'Admins', critical: false,
+        name: 'No Sessione Browser Persistente — Admin',
+        description: 'Impedisce sessioni browser persistenti per gli admin.',
+        why: 'Senza questa policy un admin che fa login su un browser condiviso o lascia il laptop incustodito rimane autenticato. "Persistent browser never" forza il logout alla chiusura del browser.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeRoles?.length > 0 && p.sessionControls?.persistentBrowser?.isEnabled && p.sessionControls?.persistentBrowser?.mode === 'never'),
+        getBody: (bg) => caBody('CA103', 'Admins-IdentityProtection-AllApps-AnyPlatform-PersistentBrowser', 'enabledForReportingButNotEnforced',
+            { users: { includeRoles: CA_ADMIN_ROLES, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['browser'] },
+            null, { persistentBrowser: { mode: 'never', isEnabled: true } })
+    },
+    {
+        id: 'ca104', code: 'CA104', category: 'Admins', critical: false,
+        name: 'Continuous Access Evaluation — Admin',
+        description: 'Abilita CAE in modalità strictLocation per gli admin.',
+        why: 'CAE (Continuous Access Evaluation) revoca i token in tempo reale quando l\'IP cambia drasticamente o l\'account viene disabilitato/compromesso. Senza CAE un token admin rubato rimane valido fino alla scadenza naturale (1-24h). Con strictLocation la revoca avviene in secondi.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeRoles?.length > 0 && p.sessionControls?.continuousAccessEvaluation?.mode),
+        getBody: (bg) => caBody('CA104', 'Admins-IdentityProtection-AllApps-AnyPlatform-CAE', 'enabledForReportingButNotEnforced',
+            { users: { includeRoles: CA_ADMIN_ROLES, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'] },
+            null, { continuousAccessEvaluation: { mode: 'strictLocation' } })
+    },
+    {
+        id: 'ca105', code: 'CA105', category: 'Admins', critical: false,
+        name: 'MFA Phishing-Resistant — Admin',
+        description: 'Richiede MFA phishing-resistant (FIDO2, Windows Hello, Certificato) per gli admin.',
+        why: 'L\'MFA classica (SMS, TOTP) è vulnerabile al phishing in tempo reale: siti come Evilginx2 rubano il token MFA nel momento dell\'inserimento. FIDO2/Windows Hello sono legati al dominio e fisicamente impossibili da intercettare via phishing. Ideale per gli account admin più privilegiati.',
+        detectFn: (ps) => ps.some(p => p.conditions?.users?.includeRoles?.length > 0 && p.grantControls?.authenticationStrength),
+        getBody: (bg) => caBody('CA105', 'Admins-IdentityProtection-AnyApp-AnyPlatform-PhishingResistantMFA', 'enabledForReportingButNotEnforced',
+            { users: { includeRoles: CA_ADMIN_ROLES, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'] },
+            { operator: 'OR', authenticationStrength: { id: '00000000-0000-0000-0000-000000000004' } })
+    },
+    // ── INTERNALS ────────────────────────────────────────────────────────
+    {
+        id: 'ca200', code: 'CA200', category: 'Internals', critical: true,
+        name: 'MFA — Utenti interni, tutte le app',
+        description: 'MFA per tutti gli utenti membri (non guest) su tutte le app.',
+        why: 'Versione esplicita di CA000 dedicata agli utenti interni. In alcuni tenant CA000 copre tutto ma avere una policy dedicata per i soli membri facilita la gestione delle eccezioni e il reporting separato.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && (p.conditions?.users?.includeUsers?.includes('All') || p.conditions?.users?.includeUsers?.includes('GuestsOrExternalUsers') === false) && p.grantControls?.builtInControls?.includes('mfa')),
+        getBody: (bg) => caBody('CA200', 'Internals-IdentityProtection-AnyApp-AnyPlatform-MFA', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'], excludeApplications: ['d4ebce55-015a-49b5-a083-c8d1797ae8c3'] }, clientAppTypes: ['browser', 'mobileAppsAndDesktopClients'] },
+            { operator: 'OR', builtInControls: ['mfa'] })
+    },
+    {
+        id: 'ca201', code: 'CA201', category: 'Internals', critical: true,
+        name: 'Blocca utenti ad alto rischio',
+        description: 'Blocca automaticamente gli utenti con segnale di rischio "High" da Entra ID Protection.',
+        why: 'Entra ID Protection calcola il rischio utente analizzando dark web, comportamenti anomali, leaked credentials. Se un account è classificato "High Risk" (es. credenziali trovate in un breach), questa policy lo blocca automaticamente anche prima che l\'IT team se ne accorga. Richiede licenza Entra ID P2.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.grantControls?.builtInControls?.includes('block') && p.conditions?.userRiskLevels?.includes('high')),
+        getBody: (bg) => caBody('CA201', 'Internals-IdentityProtection-AnyApp-AnyPlatform-BLOCK-HighRiskUser', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'], userRiskLevels: ['high'] },
+            { operator: 'OR', builtInControls: ['block'] })
+    },
+    {
+        id: 'ca202', code: 'CA202', category: 'Internals', critical: false,
+        name: 'Sign-in Frequency 12h — Dispositivi non gestiti',
+        description: 'Forza re-auth ogni 12h su Windows/macOS non gestiti da Intune.',
+        why: 'Un PC personale non gestito non ha le stesse garanzie di sicurezza di un device aziendale. Limitare la durata della sessione a 12h riduce l\'esposizione in caso di device perso o condiviso.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && (p.conditions?.platforms?.includePlatforms?.includes('windows') || p.conditions?.platforms?.includePlatforms?.includes('macOS')) && p.sessionControls?.signInFrequency?.isEnabled),
+        getBody: (bg) => caBody('CA202', 'Internals-IdentityProtection-AllApps-WindowsMacOS-SigninFrequency-UnmanagedDevices', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'], platforms: { includePlatforms: ['windows', 'macOS'] }, devices: { deviceFilter: { mode: 'exclude', rule: 'device.isCompliant -eq True -or device.trustType -eq "ServerAD"' } } },
+            null, { signInFrequency: { value: 12, type: 'hours', isEnabled: true, authenticationType: 'primaryAndSecondaryAuthentication', frequencyInterval: 'timeBased' } })
+    },
+    {
+        id: 'ca203', code: 'CA203', category: 'Internals', critical: false,
+        name: 'MFA — Enrollment Intune',
+        description: 'Richiede MFA durante il processo di enrollment dei dispositivi in Intune.',
+        why: 'Senza MFA sull\'enrollment Intune, un attaccante con le credenziali può enrollare il proprio device e ottenere accesso alle risorse aziendali come se fosse un device aziendale. Con MFA, l\'enrollment richiede la presenza fisica o il dispositivo MFA dell\'utente legittimo.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.applications?.includeApplications?.some(a => a === 'd4ebce55-015a-49b5-a083-c8d1797ae8c3') && p.grantControls?.builtInControls?.includes('mfa')),
+        getBody: (bg) => caBody('CA203', 'Internals-AppProtection-MicrosoftIntuneEnrollment-AnyPlatform-MFA', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['d4ebce55-015a-49b5-a083-c8d1797ae8c3'] }, clientAppTypes: ['all'] },
+            { operator: 'OR', builtInControls: ['mfa'] })
+    },
+    {
+        id: 'ca204', code: 'CA204', category: 'Internals', critical: false,
+        name: 'Blocca piattaforme sconosciute',
+        description: 'Blocca accessi da piattaforme non riconosciute (non Windows, macOS, iOS, Android, Linux).',
+        why: 'Piattaforme "unknown" includono vecchi browser, device IoT, script automatizzati senza user agent noto. Bloccarle elimina una classe di tentativi di accesso non legittimi senza impatto sugli utenti reali.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.grantControls?.builtInControls?.includes('block') && p.conditions?.platforms?.includePlatforms && !p.conditions?.platforms?.includePlatforms?.includes('all')),
+        getBody: (bg) => caBody('CA204', 'Internals-AttackSurfaceReduction-AllApps-AnyPlatform-BlockUnknownPlatforms', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'], platforms: { includePlatforms: ['all'], excludePlatforms: ['android', 'iOS', 'windows', 'macOS', 'linux', 'windowsPhone'] } },
+            { operator: 'OR', builtInControls: ['block'] })
+    },
+    {
+        id: 'ca205', code: 'CA205', category: 'Internals', critical: false,
+        name: 'Compliance obbligatoria — Windows',
+        description: 'Blocca accessi da Windows non conformi o non joined a Entra ID.',
+        why: 'Un PC Windows non gestito da Intune non ha garanzie: niente AV policy, niente patch management, niente encryption. Richiedere compliance o AADJ assicura che solo device aziendali gestiti possano accedere alle risorse.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.platforms?.includePlatforms?.includes('windows') && (p.grantControls?.builtInControls?.includes('compliantDevice') || p.grantControls?.builtInControls?.includes('domainJoinedDevice'))),
+        getBody: (bg) => caBody('CA205', 'Internals-BaseProtection-AnyApp-Windows-CompliantOrAADHJ', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'], excludeApplications: ['d4ebce55-015a-49b5-a083-c8d1797ae8c3'] }, clientAppTypes: ['all'], platforms: { includePlatforms: ['windows'] } },
+            { operator: 'OR', builtInControls: ['compliantDevice', 'domainJoinedDevice'] })
+    },
+    {
+        id: 'ca206', code: 'CA206', category: 'Internals', critical: false,
+        name: 'No Sessione Browser Persistente — Utenti non gestiti',
+        description: 'Impedisce sessioni browser persistenti su device non gestiti.',
+        why: 'Su un PC personale o condiviso, una sessione browser persistente significa che chiunque apra il browser trova l\'utente già loggato su Outlook, Teams, SharePoint. "Persistent never" forza il login a ogni apertura del browser.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.clientAppTypes?.includes('browser') && p.sessionControls?.persistentBrowser?.mode === 'never' && !p.conditions?.users?.includeRoles?.length),
+        getBody: (bg) => caBody('CA206', 'Internals-IdentityProtection-AllApps-AnyPlatform-PersistentBrowser', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['browser'], devices: { deviceFilter: { mode: 'exclude', rule: 'device.isCompliant -eq True -or device.trustType -eq "ServerAD"' } } },
+            null, { persistentBrowser: { mode: 'never', isEnabled: true } })
+    },
+    {
+        id: 'ca208', code: 'CA208', category: 'Internals', critical: false,
+        name: 'Compliance obbligatoria — macOS',
+        description: 'Blocca accessi da macOS non conformi (non gestiti da Intune).',
+        why: 'Come CA205 per Windows, questa policy assicura che i Mac aziendali siano gestiti da Intune. Senza gestione MDM su macOS non si ha visibilità su encryption FileVault, aggiornamenti di sicurezza e configurazioni.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.platforms?.includePlatforms?.includes('macOS') && p.grantControls?.builtInControls?.includes('compliantDevice')),
+        getBody: (bg) => caBody('CA208', 'Internals-BaseProtection-AnyApp-MacOS-Compliant', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'], excludeApplications: ['d4ebce55-015a-49b5-a083-c8d1797ae8c3'] }, clientAppTypes: ['all'], platforms: { includePlatforms: ['macOS'] } },
+            { operator: 'OR', builtInControls: ['compliantDevice'] })
+    },
+    {
+        id: 'ca209', code: 'CA209', category: 'Internals', critical: false,
+        name: 'Continuous Access Evaluation — Tutti',
+        description: 'Abilita CAE strictLocation per tutti gli utenti.',
+        why: 'CAE garantisce che i token vengano revocati in tempo reale invece di aspettare la scadenza naturale. Se un utente viene disabilitato o il suo IP cambia radicalmente, l\'accesso viene bloccato in secondi anziché ore. Impatto sulle performance: minimo.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeUsers?.includes('All') && p.sessionControls?.continuousAccessEvaluation?.mode),
+        getBody: (bg) => caBody('CA209', 'Internals-IdentityProtection-AllApps-AnyPlatform-CAE', 'enabledForReportingButNotEnforced',
+            { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'] },
+            null, { continuousAccessEvaluation: { mode: 'strictLocation' } })
+    },
+    // ── GUEST USERS ──────────────────────────────────────────────────────
+    {
+        id: 'ca400', code: 'CA400', category: 'Guest', critical: true,
+        name: 'MFA — Utenti Guest',
+        description: 'Richiede MFA a tutti gli utenti guest/esterni su qualsiasi app.',
+        why: 'Gli account guest (B2B) sono gestiti dal tenant di origine: non hai controllo sulla loro sicurezza. Un guest senza MFA è un rischio elevato perché il suo account potrebbe non avere le stesse policy del tuo tenant. MFA obbligatoria garantisce un secondo fattore indipendente.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeGuestsOrExternalUsers && p.grantControls?.builtInControls?.includes('mfa')),
+        getBody: (bg) => caBody('CA400', 'GuestUsers-IdentityProtection-AnyApp-AnyPlatform-MFA', 'enabledForReportingButNotEnforced',
+            { users: { includeGuestsOrExternalUsers: { guestOrExternalUserTypes: 'internalGuest,b2bCollaborationGuest,b2bCollaborationMember,b2bDirectConnectUser,otherExternalUser,serviceProvider', externalTenants: { membershipKind: 'all' } }, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'] },
+            { operator: 'OR', builtInControls: ['mfa'] })
+    },
+    {
+        id: 'ca401', code: 'CA401', category: 'Guest', critical: true,
+        name: 'Blocca Guest su app non-guest',
+        description: 'Blocca i guest dall\'accesso a tutte le app eccetto Office 365.',
+        why: 'I guest dovrebbero accedere SOLO a ciò che serve per collaborare (Teams, SharePoint condiviso). Questa policy impedisce ai guest di accedere ad app aziendali come ERP, CRM, o qualsiasi SaaS interno che non hanno bisogno di vedere.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeGuestsOrExternalUsers && p.grantControls?.builtInControls?.includes('block') && p.conditions?.applications?.excludeApplications?.length > 0),
+        getBody: (bg) => caBody('CA401', 'GuestUsers-AttackSurfaceReduction-AllApps-AnyPlatform-BlockNonGuestAppAccess', 'enabledForReportingButNotEnforced',
+            { users: { includeGuestsOrExternalUsers: { guestOrExternalUserTypes: 'internalGuest,b2bCollaborationGuest,b2bCollaborationMember,b2bDirectConnectUser,otherExternalUser,serviceProvider', externalTenants: { membershipKind: 'all' } }, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'], excludeApplications: ['Office365'] }, clientAppTypes: ['all'] },
+            { operator: 'OR', builtInControls: ['block'] })
+    },
+    {
+        id: 'ca402', code: 'CA402', category: 'Guest', critical: false,
+        name: 'Sign-in Frequency 12h — Guest',
+        description: 'Forza re-autenticazione ogni 12h per i guest.',
+        why: 'I guest accedono da dispositivi non controllati. Limitare la durata della sessione riduce il rischio che una sessione aperta su un dispositivo condiviso rimanga accessibile a lungo.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeGuestsOrExternalUsers && p.sessionControls?.signInFrequency?.isEnabled),
+        getBody: (bg) => caBody('CA402', 'GuestUsers-IdentityProtection-AllApps-AnyPlatform-SigninFrequency', 'enabledForReportingButNotEnforced',
+            { users: { includeGuestsOrExternalUsers: { guestOrExternalUserTypes: 'internalGuest,b2bCollaborationGuest,b2bCollaborationMember,b2bDirectConnectUser,otherExternalUser,serviceProvider', externalTenants: { membershipKind: 'all' } }, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'] },
+            null, { signInFrequency: { value: 12, type: 'hours', isEnabled: true, frequencyInterval: 'timeBased' } })
+    },
+    {
+        id: 'ca403', code: 'CA403', category: 'Guest', critical: false,
+        name: 'No Sessione Browser Persistente — Guest',
+        description: 'Impedisce sessioni browser persistenti per i guest.',
+        why: 'Un guest non dovrebbe rimanere loggato permanentemente nel browser. "Persistent never" forza il login esplicito ad ogni sessione browser, limitando l\'esposizione su device condivisi.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeGuestsOrExternalUsers && p.sessionControls?.persistentBrowser?.mode === 'never'),
+        getBody: (bg) => caBody('CA403', 'GuestUsers-IdentityProtection-AllApps-AnyPlatform-PersistentBrowser', 'enabledForReportingButNotEnforced',
+            { users: { includeGuestsOrExternalUsers: { guestOrExternalUserTypes: 'internalGuest,b2bCollaborationGuest,b2bCollaborationMember,b2bDirectConnectUser,otherExternalUser,serviceProvider', externalTenants: { membershipKind: 'all' } }, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['browser'] },
+            null, { persistentBrowser: { mode: 'never', isEnabled: true } })
+    },
+    {
+        id: 'ca404', code: 'CA404', category: 'Guest', critical: true,
+        name: 'Blocca Guest su portali amministrativi',
+        description: 'Impedisce ai guest di accedere ai portali Microsoft Admin.',
+        why: 'I guest non devono MAI avere accesso ai portali Azure, M365 Admin, Entra ID. Questa policy è un safety net che blocca questo accesso anche se qualche configurazione errata concedesse permissions admin a un guest.',
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.conditions?.users?.includeGuestsOrExternalUsers && p.conditions?.applications?.includeApplications?.includes('MicrosoftAdminPortals') && p.grantControls?.builtInControls?.includes('block')),
+        getBody: (bg) => caBody('CA404', 'GuestUsers-AttackSurfaceReduction-AdminPortals-AnyPlatform-BLOCK', 'enabledForReportingButNotEnforced',
+            { users: { includeGuestsOrExternalUsers: { guestOrExternalUserTypes: 'internalGuest,b2bCollaborationGuest,b2bCollaborationMember,b2bDirectConnectUser,otherExternalUser,serviceProvider', externalTenants: { membershipKind: 'all' } }, excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['MicrosoftAdminPortals'] }, clientAppTypes: ['browser', 'mobileAppsAndDesktopClients'] },
+            { operator: 'OR', builtInControls: ['block'] })
+    }
+];
 
 // ============================================================
 // INTUNE BASELINE CATALOG
@@ -1035,6 +1395,14 @@ const MDE_BASELINE = [
 // ============================================================
 // MDE BASELINE WIZARD
 // ============================================================
+function openCaBaselineWizard() {
+    const modal = document.getElementById('ca-baseline-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    initCaBaselineWizard();
+    renderCaPolicyList();
+}
+
 function openMdeBaselineWizard() {
     const modal = document.getElementById('mde-baseline-modal');
     if (!modal) return;
@@ -1066,6 +1434,18 @@ function initMdeBaselineWizard() {
     newDeploy.addEventListener('click', () => runMdeBaselineDeploy());
 
     renderMdePolicyList();
+}
+
+function initCaBaselineWizard() {
+    document.getElementById('ca-step-1').style.display = '';
+    document.getElementById('ca-step-2').style.display = 'none';
+
+    const closeX = document.getElementById('ca-baseline-close');
+    if (closeX) { const n = closeX.cloneNode(true); closeX.parentNode.replaceChild(n, closeX); n.addEventListener('click', () => { document.getElementById('ca-baseline-modal').style.display = 'none'; }); }
+    const closeBtn = document.getElementById('ca-step2-close');
+    if (closeBtn) { const n = closeBtn.cloneNode(true); closeBtn.parentNode.replaceChild(n, closeBtn); n.addEventListener('click', () => { document.getElementById('ca-baseline-modal').style.display = 'none'; }); }
+    const deployBtn = document.getElementById('ca-step1-deploy');
+    if (deployBtn) { const n = deployBtn.cloneNode(true); deployBtn.parentNode.replaceChild(n, deployBtn); n.addEventListener('click', () => runCaBaselineDeploy()); }
 }
 
 function updateMdeStepIndicator(activeStep) {
@@ -1520,8 +1900,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.btn-deploy').forEach(btn => {
         btn.addEventListener('click', function() {
             currentSolution = this.getAttribute('data-solution');
-            if (currentSolution === 'defender-xdr' || currentSolution === 'intune') {
-                // Per queste solution il deploy avviene tramite wizard baseline
+            if (currentSolution === 'defender-xdr' || currentSolution === 'intune' || currentSolution === 'conditional-access') {
                 showPrecheckModal(currentSolution);
                 return;
             }
@@ -1576,15 +1955,13 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
 
-        // Defender XDR: precheck diretto browser → Graph API (no Azure Function)
-        if (currentSolution === 'defender-xdr') {
-            await runDefenderXdrPrecheckClientSide();
-            return;
-        }
+        // Defender XDR e Conditional Access: precheck diretto browser → Graph API
+        if (currentSolution === 'defender-xdr') { await runDefenderXdrPrecheckClientSide(); return; }
+        if (currentSolution === 'conditional-access') { await runCaPrecheckClientSide(); return; }
 
         // Intune e Defender XDR sono tenant-wide: non richiedono subscription Azure
         let subscriptionIds;
-        if (currentSolution === 'intune' || currentSolution === 'defender-xdr') {
+        if (currentSolution === 'intune' || currentSolution === 'defender-xdr' || currentSolution === 'conditional-access') {
             subscriptionIds = ['tenant-only'];
         } else {
             const subscriptionInput = document.getElementById('subscription-id').value.trim();
@@ -1868,6 +2245,25 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabVisible('workspaces', true);
             setTabVisible('dcr', false);
             setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'conditional-access') {
+            setSummaryLabels('CA Readiness:', 'Policy Mancanti:');
+            setTabText('overview', 'Panoramica');
+            setTabText('virtual-machines', 'Gap Analysis');
+            setTabText('workspaces', 'Policy Esistenti');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', 'Stato Conditional Access');
+            setPaneTitle('virtual-machines', 'Gap Analysis — Baseline CA');
+            setPaneTitle('workspaces', 'CA Policy nel Tenant');
+            setOverviewLabels(['Readiness Score', 'Critiche Mancanti', 'Policy nel Tenant', 'Baseline Coperta']);
+            setTableHeaders('vm-table', ['Policy', 'Stato', 'Priorità']);
+            setTableHeaders('workspace-table', ['Nome Policy', 'Stato']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', false);
+            setTabVisible('recommendations', false);
             return;
         }
 
@@ -2855,6 +3251,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (currentSolution === 'conditional-access') {
+            renderCaPrecheck(data);
+            return;
+        }
+
         // Fallback: mostra report HTML e tenta di mettere qualche KPI
         const summary = data?.Summary || {};
         document.getElementById('overview-vm-total').textContent = summary.TotalVMs ?? summary.TotalVaults ?? summary.TotalPlans ?? summary.TotalMaintenanceConfigs ?? 0;
@@ -2943,14 +3344,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Procedi con deployment
     document.getElementById('proceed-to-deploy')?.addEventListener('click', function() {
         document.getElementById('precheck-modal').style.display = 'none';
-        if (currentSolution === 'defender-xdr') {
-            openMdeBaselineWizard();
-            return;
-        }
-        if (currentSolution === 'intune') {
-            openIntuneBaselineWizard();
-            return;
-        }
+        if (currentSolution === 'defender-xdr') { openMdeBaselineWizard(); return; }
+        if (currentSolution === 'intune') { openIntuneBaselineWizard(); return; }
+        if (currentSolution === 'conditional-access') { openCaBaselineWizard(); return; }
         showDeployModal(currentSolution);
     });
 
@@ -3124,6 +3520,297 @@ function showDetailsModal(solution) {
     }
 
     modal.style.display = 'block';
+}
+
+// ============================================================
+// CONDITIONAL ACCESS — PRECHECK CLIENT-SIDE
+// ============================================================
+async function runCaPrecheckClientSide() {
+    document.querySelector('.precheck-form').style.display = 'none';
+    document.getElementById('precheck-loading').style.display = 'block';
+    document.getElementById('precheck-results').style.display = 'none';
+    try {
+        const token = await getCaToken(false);
+        const headers = { 'Authorization': `Bearer ${token}` };
+
+        let allPolicies = [];
+        let url = 'https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies?$top=200';
+        while (url) {
+            const r = await fetch(url, { headers });
+            if (!r.ok) { const e = await r.json(); throw new Error(e?.error?.message || `HTTP ${r.status}`); }
+            const j = await r.json();
+            allPolicies = allPolicies.concat(j.value || []);
+            url = j['@odata.nextLink'] || null;
+        }
+
+        const gapAnalysis = CA_BASELINE.map(c => {
+            const present = c.detectFn(allPolicies);
+            return { Id: c.id, Code: c.code, Name: c.name, Category: c.category, Critical: c.critical, Present: present, Status: present ? 'OK' : 'MISSING' };
+        });
+
+        const critMissing = gapAnalysis.filter(g => g.Critical && !g.Present).length;
+        const critTotal   = gapAnalysis.filter(g => g.Critical).length;
+        const readiness   = critTotal > 0 ? Math.round((critTotal - critMissing) / critTotal * 100) : 100;
+
+        const data = {
+            Summary: { ReadinessScore: readiness, CriticalMissing: critMissing, TotalPolicies: allPolicies.length, TotalBaseline: CA_BASELINE.length },
+            PolicyGapAnalysis: gapAnalysis,
+            ExistingCaPolicies: allPolicies.map(p => ({ Id: p.id, DisplayName: p.displayName, State: p.state }))
+        };
+        window.lastPrecheckResponse = data;
+        document.getElementById('precheck-loading').style.display = 'none';
+        applyPrecheckUiForSolution('conditional-access');
+        renderCaPrecheck(data);
+        document.getElementById('precheck-results').style.display = 'block';
+        showTab('overview');
+    } catch (err) {
+        document.getElementById('precheck-loading').style.display = 'none';
+        document.querySelector('.precheck-form').style.display = 'block';
+        alert(`❌ Errore precheck Conditional Access:\n\n${err.message}`);
+    }
+}
+
+function renderCaPrecheck(data) {
+    const summary = data?.Summary || {};
+    const readiness   = summary.ReadinessScore ?? 0;
+    const critMissing = summary.CriticalMissing ?? 0;
+    const total       = summary.TotalPolicies ?? 0;
+    const baseline    = summary.TotalBaseline ?? CA_BASELINE.length;
+
+    document.getElementById('overview-vm-total').textContent    = readiness + '%';
+    document.getElementById('overview-vm-monitored').textContent = critMissing;
+    document.getElementById('overview-workspaces').textContent   = total;
+    document.getElementById('overview-dcr').textContent          = baseline - (data?.PolicyGapAnalysis?.filter(g => !g.Present).length ?? 0);
+    document.getElementById('vm-count').textContent              = readiness + '%';
+    document.getElementById('workspace-count').textContent       = total;
+
+    if (readiness >= 80)      setOverallStatus(`Readiness ${readiness}% — Baseline CA OK`, 'success');
+    else if (readiness >= 50) setOverallStatus(`Readiness ${readiness}% — Policy critiche mancanti`, 'warning');
+    else                      setOverallStatus(`Readiness ${readiness}% — Baseline CA incompleta`, 'danger');
+
+    // Tab Gap Analysis
+    {
+        const tbody = document.querySelector('#vm-table tbody');
+        tbody.innerHTML = '';
+        const gaps = Array.isArray(data.PolicyGapAnalysis) ? data.PolicyGapAnalysis : [];
+        const categories = [...new Set(gaps.map(g => g.Category))];
+        categories.forEach(cat => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="3" style="background:#f0f4ff;font-weight:700;font-size:12px;color:#0a2342;padding:6px 10px;">${cat.toUpperCase()}</td>`;
+            tbody.appendChild(tr);
+            gaps.filter(g => g.Category === cat).forEach(g => {
+                const sc = g.Present ? 'status-success' : 'status-danger';
+                const tr2 = document.createElement('tr');
+                tr2.innerHTML = `<td><span style="font-size:11px;color:#888;margin-right:6px;">${g.Code}</span>${escapeHtml(g.Name)}</td>
+                    <td><span class="status-badge ${sc}">${g.Present ? 'PRESENTE' : 'MANCANTE'}</span></td>
+                    <td>${g.Critical ? '<span style="color:#856404;font-weight:700;font-size:11px;">CRITICA</span>' : ''}</td>`;
+                tbody.appendChild(tr2);
+            });
+        });
+    }
+
+    // Tab Policy esistenti
+    {
+        const tbody = document.querySelector('#workspace-table tbody');
+        tbody.innerHTML = '';
+        const policies = Array.isArray(data.ExistingCaPolicies) ? data.ExistingCaPolicies : [];
+        if (!policies.length) { tbody.innerHTML = '<tr><td colspan="2">Nessuna CA policy trovata nel tenant.</td></tr>'; return; }
+        policies.forEach(p => {
+            const stateColor = p.State === 'enabled' ? '#107c10' : p.State === 'enabledForReportingButNotEnforced' ? '#ff8c00' : '#888';
+            const stateLabel = p.State === 'enabled' ? 'ATTIVA' : p.State === 'enabledForReportingButNotEnforced' ? 'REPORT-ONLY' : 'DISABILITATA';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${escapeHtml(p.DisplayName || 'N/A')}</td><td><span style="background:${stateColor};color:white;border-radius:4px;padding:1px 8px;font-size:10px;font-weight:700;">${stateLabel}</span></td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Banner baseline
+    const overviewPane = document.getElementById('overview');
+    document.getElementById('ca-baseline-btn-overview')?.remove();
+    const missing = Array.isArray(data.PolicyGapAnalysis) ? data.PolicyGapAnalysis.filter(g => !g.Present).length : 0;
+    const banner = document.createElement('div');
+    banner.id = 'ca-baseline-btn-overview';
+    banner.style.cssText = 'margin-top:20px;padding:16px;background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;';
+    banner.innerHTML = `
+        <div>
+            <div style="font-weight:700;font-size:15px;margin-bottom:4px;">🔐 Conditional Access Baseline</div>
+            <div style="font-size:13px;opacity:.9;">Policy critiche mancanti: <strong>${critMissing}</strong> &nbsp;|&nbsp; Policy totali nel tenant: <strong>${total}</strong> &nbsp;|&nbsp; Mancanti: <strong>${missing}</strong></div>
+            <div style="font-size:12px;opacity:.7;margin-top:4px;">Tutte le policy vengono deployate in Report-Only — zero impatto sulla produzione.</div>
+        </div>
+        <button id="open-ca-baseline-wizard" style="background:white;color:#1a1a2e;border:none;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;flex-shrink:0;">Configura Baseline CA →</button>`;
+    overviewPane.appendChild(banner);
+    document.getElementById('open-ca-baseline-wizard')?.addEventListener('click', () => openCaBaselineWizard());
+}
+
+function openCaBaselineWizard() {
+    const modal = document.getElementById('ca-baseline-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    renderCaPolicyList();
+}
+
+function renderCaPolicyList() {
+    const data = window.lastPrecheckResponse || {};
+    const gapMap = {};
+    if (Array.isArray(data.PolicyGapAnalysis)) data.PolicyGapAnalysis.forEach(g => { gapMap[g.Id] = g.Present; });
+
+    const container = document.getElementById('ca-policy-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const catColors = { 'Global': '#0078d4', 'Admins': '#d13438', 'Internals': '#107c10', 'Guest': '#6f42c1' };
+    let lastCat = '';
+    CA_BASELINE.forEach(policy => {
+        if (policy.category !== lastCat) {
+            lastCat = policy.category;
+            const hdr = document.createElement('div');
+            hdr.style.cssText = `padding:8px 14px;background:${catColors[policy.category] || '#333'};color:white;font-size:12px;font-weight:700;letter-spacing:.5px;`;
+            hdr.textContent = policy.category.toUpperCase();
+            container.appendChild(hdr);
+        }
+        const present = gapMap[policy.id] === true;
+        const detailsId = `ca-why-${policy.id}`;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid #f0f0f0;';
+        row.innerHTML = `
+            <input type="checkbox" class="ca-policy-check" data-id="${policy.id}" ${present ? 'disabled' : ''} style="width:16px;height:16px;flex-shrink:0;margin-top:3px;">
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span style="font-size:11px;font-weight:700;color:${catColors[policy.category]||'#333'};background:${catColors[policy.category]||'#333'}18;border-radius:3px;padding:1px 5px;">${policy.code}</span>
+                    <span style="font-weight:600;font-size:13px;">${escapeHtml(policy.name)}</span>
+                    ${policy.critical ? '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">CRITICA</span>' : ''}
+                    <span style="flex-shrink:0;background:${present ? '#107c10' : '#d13438'};color:white;border-radius:4px;padding:1px 8px;font-size:10px;font-weight:700;">${present ? 'PRESENTE' : 'MANCANTE'}</span>
+                </div>
+                <div style="font-size:12px;color:#555;margin-top:3px;">${escapeHtml(policy.description)}</div>
+                <button onclick="document.getElementById('${detailsId}').style.display=document.getElementById('${detailsId}').style.display==='none'?'block':'none'"
+                    style="background:none;border:none;color:#0078d4;font-size:11px;cursor:pointer;padding:3px 0;text-decoration:underline;">
+                    Perché è importante?
+                </button>
+                <div id="${detailsId}" style="display:none;margin-top:6px;padding:10px 12px;background:#f0f6ff;border-left:3px solid #0078d4;border-radius:0 6px 6px 0;font-size:12px;color:#333;line-height:1.5;">
+                    ${escapeHtml(policy.why)}
+                </div>
+            </div>`;
+        container.appendChild(row);
+    });
+
+    container.querySelectorAll('.ca-policy-check:not([disabled])').forEach(cb => {
+        const p = CA_BASELINE.find(x => x.id === cb.dataset.id);
+        cb.checked = p?.critical ?? false;
+    });
+    updateCaDeployCount();
+    container.addEventListener('change', updateCaDeployCount);
+}
+
+function updateCaDeployCount() {
+    const checked = document.querySelectorAll('.ca-policy-check:checked:not([disabled])').length;
+    const el = document.getElementById('ca-selected-count');
+    const btn = document.getElementById('ca-step1-deploy');
+    if (el) el.textContent = `${checked} policy selezionate`;
+    if (btn) btn.disabled = checked === 0;
+}
+
+async function runCaBaselineDeploy() {
+    document.getElementById('ca-step-1').style.display = 'none';
+    document.getElementById('ca-step-2').style.display = '';
+
+    const logEl = document.getElementById('ca-deploy-log');
+    const summaryEl = document.getElementById('ca-deploy-summary');
+    const closeBtn = document.getElementById('ca-step2-close');
+    logEl.innerHTML = '';
+
+    function log(msg, color) {
+        const line = document.createElement('div');
+        line.style.color = color || '#d4d4d4';
+        line.textContent = msg;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    log('Acquisizione token con permessi CA + Group...', '#569cd6');
+    let token;
+    try {
+        token = await getCaToken(true);
+        log('✓ Token acquisito.', '#4ec9b0');
+    } catch (e) {
+        log(`✗ Errore token: ${e.message}`, '#f44747');
+        summaryEl.textContent = '❌ Impossibile acquisire il token. Verifica i permessi nell\'App Registration.';
+        summaryEl.style.color = '#d13438';
+        if (closeBtn) closeBtn.style.display = '';
+        return;
+    }
+
+    const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    // Crea/trova il gruppo BreakGlass
+    let bgGroupId = null;
+    log('→ Ricerca gruppo CA-BreakGlass-Exclusion...', '#9cdcfe');
+    try {
+        const gResp = await fetch('https://graph.microsoft.com/v1.0/groups?$filter=displayName eq \'CA-BreakGlass-Exclusion\'&$select=id,displayName', { headers });
+        const gJson = await gResp.json();
+        if (gJson.value?.length > 0) {
+            bgGroupId = gJson.value[0].id;
+            log(`  ✓ Gruppo esistente: ${bgGroupId}`, '#4ec9b0');
+        } else {
+            const cResp = await fetch('https://graph.microsoft.com/v1.0/groups', {
+                method: 'POST', headers,
+                body: JSON.stringify({ displayName: 'CA-BreakGlass-Exclusion', mailEnabled: false, mailNickname: 'CA-BreakGlass-Exclusion', securityEnabled: true, description: 'Gruppo di esclusione per account Break Glass dalle Conditional Access policy.' })
+            });
+            if (cResp.ok) { const cj = await cResp.json(); bgGroupId = cj.id; log(`  ✓ Gruppo creato: ${bgGroupId}`, '#4ec9b0'); }
+            else { log('  ⚠ Impossibile creare il gruppo BreakGlass, procedo senza.', '#ff8c00'); }
+        }
+    } catch (e) { log(`  ⚠ Errore gruppo BreakGlass: ${e.message}`, '#ff8c00'); }
+
+    // Crea Named Location per CA001 se necessaria
+    let allowedLocId = null;
+    const selectedIds = Array.from(document.querySelectorAll('.ca-policy-check:checked:not([disabled])')).map(cb => cb.dataset.id);
+    if (selectedIds.includes('ca001')) {
+        log('→ Creazione Named Location "CA-Allowed-Countries"...', '#9cdcfe');
+        try {
+            const locResp = await fetch('https://graph.microsoft.com/v1.0/identity/conditionalAccess/namedLocations?$filter=displayName eq \'CA-Allowed-Countries\'', { headers });
+            const locJson = await locResp.json();
+            if (locJson.value?.length > 0) {
+                allowedLocId = locJson.value[0].id;
+                log(`  ✓ Named Location esistente: ${allowedLocId}`, '#4ec9b0');
+            } else {
+                const nlResp = await fetch('https://graph.microsoft.com/v1.0/identity/conditionalAccess/namedLocations', {
+                    method: 'POST', headers,
+                    body: JSON.stringify({ '@odata.type': '#microsoft.graph.countryNamedLocation', displayName: 'CA-Allowed-Countries', includeUnknownCountriesAndRegions: false, countriesAndRegions: ['IT','DE','FR','GB','NL','BE','CH','AT','SE','NO','DK','FI','ES','PT','PL','CZ','HU','RO','US','CA','AU','NZ'] })
+                });
+                if (nlResp.ok) { const nlj = await nlResp.json(); allowedLocId = nlj.id; log(`  ✓ Named Location creata (personalizza in Entra ID): ${allowedLocId}`, '#4ec9b0'); }
+                else { log('  ⚠ Impossibile creare Named Location, CA001 verrà saltata.', '#ff8c00'); }
+            }
+        } catch (e) { log(`  ⚠ Errore Named Location: ${e.message}`, '#ff8c00'); }
+    }
+
+    let deployed = 0, failed = 0, skipped = 0;
+    for (const policy of CA_BASELINE) {
+        if (!selectedIds.includes(policy.id)) continue;
+        log(`→ Deploy: [${policy.code}] ${policy.name}`, '#9cdcfe');
+        try {
+            const locs = policy.id === 'ca001' ? { allowed: allowedLocId } : null;
+            if (policy.id === 'ca001' && !allowedLocId) { log('  ⚠ Saltata (Named Location non disponibile)', '#ff8c00'); skipped++; continue; }
+            const body = policy.getBody(bgGroupId, locs);
+            const resp = await fetch('https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies', { method: 'POST', headers, body: JSON.stringify(body) });
+            if (resp.ok) {
+                const result = await resp.json();
+                log(`  ✓ Creata in Report-Only: ${result.displayName} (${result.id})`, '#4ec9b0');
+                deployed++;
+            } else {
+                const ej = await resp.json();
+                const msg = ej?.error?.message || `HTTP ${resp.status}`;
+                log(`  ✗ Errore: ${msg}`, '#f44747');
+                failed++;
+            }
+        } catch (e) { log(`  ✗ Errore rete: ${e.message}`, '#f44747'); failed++; }
+    }
+
+    log('', '');
+    log(`=== COMPLETATO: ${deployed} policy create, ${failed} errori, ${skipped} saltate ===`, failed > 0 ? '#ff8c00' : '#4ec9b0');
+    if (bgGroupId) log(`⚠ Aggiungi i tuoi account Break Glass al gruppo CA-BreakGlass-Exclusion (${bgGroupId})`, '#ff8c00');
+    log('⚠ Tutte le policy sono in Report-Only. Vai su Entra ID → CA → verifica i report → abilita manualmente.', '#ff8c00');
+    summaryEl.textContent = `${deployed} policy CA deployate in Report-Only${failed > 0 ? ` — ${failed} errori` : ''}.`;
+    summaryEl.style.color = failed > 0 ? '#d13438' : '#107c10';
+    if (closeBtn) closeBtn.style.display = '';
 }
 
 function escapeHtml(str) {

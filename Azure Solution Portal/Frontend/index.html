@@ -170,6 +170,27 @@
                     </div>
                 </div>
 
+                <!-- Conditional Access Baseline -->
+                <div class="solution-card" id="card-conditional-access">
+                    <div class="solution-icon" style="background: linear-gradient(135deg, #1a1a2e, #16213e);">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <div class="solution-badge badge-available">Disponibile</div>
+                    <h3>Conditional Access Baseline</h3>
+                    <p>Analizza le CA policy esistenti nel tenant e deploya la baseline completa di 24 policy (j0eyv/ConditionalAccessBaseline): Global, Admins, Internals, Guest.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-check"></i> CA000-CA006: MFA globale, blocco legacy auth, device code</li>
+                        <li><i class="fas fa-check"></i> CA100-CA105: MFA admin, phishing-resistant, CAE strict</li>
+                        <li><i class="fas fa-check"></i> CA200-CA209: Compliance Windows/macOS, risk-based block</li>
+                        <li><i class="fas fa-check"></i> CA400-CA404: Protezione completa guest</li>
+                    </ul>
+                    <div class="solution-actions">
+                        <button class="btn-details" data-solution="conditional-access">Dettagli</button>
+                        <button class="btn-precheck" data-solution="conditional-access">Precheck</button>
+                        <button class="btn-deploy" data-solution="conditional-access">Configura Baseline</button>
+                    </div>
+                </div>
+
                 <!-- Azure Update Manager -->
                 <div class="solution-card" id="card-update-manager">
                     <div class="solution-icon" style="background: linear-gradient(135deg, #ff8c00, #c45900);">
@@ -586,6 +607,42 @@
                 <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;">
                     <div id="mde-deploy-summary" style="font-size:14px;font-weight:600;"></div>
                     <button id="mde-step2-close" class="btn-primary" style="display:none;">Chiudi</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CA Baseline Modal -->
+    <div id="ca-baseline-modal" class="modal" style="display:none;">
+        <div class="modal-content modal-large" style="max-width:900px;">
+            <span class="close-modal" id="ca-baseline-close">&times;</span>
+            <h2 style="margin-bottom:4px;">Configura Baseline Conditional Access</h2>
+            <p style="color:#666;margin-bottom:20px;font-size:14px;">Deploya le CA policy baseline in modalità <strong>Report-Only</strong> — zero impatto sulla produzione. Abilita manualmente dopo revisione.</p>
+            <!-- Step 1: selezione policy -->
+            <div id="ca-step-1">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                    <h3 style="margin:0;font-size:16px;">Policy baseline Conditional Access</h3>
+                    <div style="display:flex;gap:10px;align-items:center;font-size:13px;">
+                        <span><span style="background:#107c10;color:white;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">PRESENTE</span> Rilevata</span>
+                        <span><span style="background:#d13438;color:white;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">MANCANTE</span> Da deployare</span>
+                    </div>
+                </div>
+                <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#6d4c00;">
+                    ⚠ Tutte le policy vengono deployate in <strong>Report-Only</strong>. Viene creato il gruppo <strong>CA-BreakGlass-Exclusion</strong> — aggiungivi i tuoi account break glass.
+                </div>
+                <div id="ca-policy-list" style="max-height:420px;overflow-y:auto;border:1px solid #e0e7ef;border-radius:8px;"></div>
+                <div style="margin-top:12px;display:flex;justify-content:flex-end;align-items:center;gap:12px;">
+                    <span id="ca-selected-count" style="font-size:13px;color:#666;">0 policy selezionate</span>
+                    <button id="ca-step1-deploy" class="btn-primary" disabled>Deploya Selezionate →</button>
+                </div>
+            </div>
+            <!-- Step 2: log deploy -->
+            <div id="ca-step-2" style="display:none;">
+                <h3 style="margin-bottom:16px;font-size:16px;">Deploy in corso...</h3>
+                <div id="ca-deploy-log" style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:12px;padding:16px;border-radius:8px;max-height:380px;overflow-y:auto;line-height:1.7;"></div>
+                <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;">
+                    <div id="ca-deploy-summary" style="font-size:14px;font-weight:600;"></div>
+                    <button id="ca-step2-close" class="btn-primary" style="display:none;">Chiudi</button>
                 </div>
             </div>
         </div>
