@@ -3420,7 +3420,7 @@ function showPrecheckModal(solution) {
     // Intune è tenant-wide: nascondi il campo subscription
     const subGroup = document.getElementById('subscription-id')?.closest('.form-group');
     const rgGroup = document.getElementById('resource-group')?.closest('.form-group');
-    if (solution === 'intune' || solution === 'defender-xdr') {
+    if (solution === 'intune' || solution === 'defender-xdr' || solution === 'conditional-access') {
         if (subGroup) subGroup.style.display = 'none';
         if (rgGroup) rgGroup.style.display = 'none';
         let note = document.getElementById('intune-tenant-note');
@@ -3430,7 +3430,7 @@ function showPrecheckModal(solution) {
             note.style.cssText = 'padding:12px 14px;background:#f0f6ff;border:1px solid #c0d4f5;border-radius:8px;margin-bottom:14px;font-size:13px;color:#0078d4;';
             document.querySelector('.precheck-form').insertBefore(note, document.getElementById('run-precheck'));
         }
-        const label = solution === 'defender-xdr' ? 'Defender XDR' : 'Intune';
+        const label = solution === 'defender-xdr' ? 'Defender XDR' : solution === 'conditional-access' ? 'Conditional Access' : 'Intune';
         note.innerHTML = `<strong>ℹ️ ${label} è tenant-wide</strong> — non richiede una subscription Azure. Il precheck verrà eseguito direttamente sul tenant associato al tuo account.`;
         note.style.display = '';
     } else {
