@@ -3391,6 +3391,11 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('precheck-results').style.display = 'none';
         }
     }
+
+    // Expose selected UI helpers for global feature modules (e.g. Conditional Access)
+    window.applyPrecheckUiForSolution = applyPrecheckUiForSolution;
+    window.showTab = showTab;
+    window.setOverallStatus = setOverallStatus;
 });
 
 // ========================================
@@ -3559,10 +3564,10 @@ async function runCaPrecheckClientSide() {
         };
         window.lastPrecheckResponse = data;
         document.getElementById('precheck-loading').style.display = 'none';
-        applyPrecheckUiForSolution('conditional-access');
+        window.applyPrecheckUiForSolution?.('conditional-access');
         renderCaPrecheck(data);
         document.getElementById('precheck-results').style.display = 'block';
-        showTab('overview');
+        window.showTab?.('overview');
     } catch (err) {
         document.getElementById('precheck-loading').style.display = 'none';
         document.querySelector('.precheck-form').style.display = 'block';
@@ -3584,9 +3589,9 @@ function renderCaPrecheck(data) {
     document.getElementById('vm-count').textContent              = readiness + '%';
     document.getElementById('workspace-count').textContent       = total;
 
-    if (readiness >= 80)      setOverallStatus(`Readiness ${readiness}% — Baseline CA OK`, 'success');
-    else if (readiness >= 50) setOverallStatus(`Readiness ${readiness}% — Policy critiche mancanti`, 'warning');
-    else                      setOverallStatus(`Readiness ${readiness}% — Baseline CA incompleta`, 'danger');
+    if (readiness >= 80)      window.setOverallStatus?.(`Readiness ${readiness}% — Baseline CA OK`, 'success');
+    else if (readiness >= 50) window.setOverallStatus?.(`Readiness ${readiness}% — Policy critiche mancanti`, 'warning');
+    else                      window.setOverallStatus?.(`Readiness ${readiness}% — Baseline CA incompleta`, 'danger');
 
     // Tab Gap Analysis
     {
