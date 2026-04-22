@@ -1217,6 +1217,9 @@ const MDE_BASELINE = [
         critical: true,
         description: 'Onboarding automatico a Defender for Endpoint tramite connettore Intune.',
         why: 'Senza onboarding, gli endpoint non inviano segnali telemetrici al portale security.microsoft.com: niente alert, niente risposta automatica agli incidenti, niente threat hunting. È il prerequisito di tutto. Il connettore Intune elimina la necessità di script di onboarding manuali e garantisce che ogni device gestito sia automaticamente protetto da EDR.',
+        detectFn: (cfgs, intents=[]) =>
+            cfgs.some(p => (p['@odata.type']||'').toLowerCase().includes('windowsdefenderadvancedthreatprotectionconfiguration')) ||
+            intents.some(i => ['e44c2ca3-2f9a-400a-a113-6cc88efd773d','a239407c-698d-4ef6-b525-8f0f50b4ecf6'].includes((i.templateId||'').toLowerCase())),
         odataType: '#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration',
         endpoint: 'https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations',
         body: {
@@ -1235,6 +1238,12 @@ const MDE_BASELINE = [
         critical: true,
         description: 'Protezione real-time, cloud block level High, behavior monitoring, blocco PUA.',
         why: 'Configura Defender AV con le impostazioni raccomandate da Microsoft e Jeffrey Appel: cloud protection High aumenta la detection rate fino al 99%+, behavior monitoring rileva malware zero-day che l\'AV signature-based non vede, il blocco PUA (Potentially Unwanted Apps) elimina adware e bundleware, network inspection analizza il traffico in real-time. Senza questa policy, Defender AV opera con impostazioni default che possono variare per device.',
+        detectFn: (cfgs, intents=[]) => {
+            const avProps = ['defenderRequireRealTimeMonitoring','defenderRequireCloudProtection','defenderRequireBehaviorMonitoring','defenderCloudBlockLevel','defenderPotentiallyUnwantedAppAction','defenderRequireNetworkInspectionSystem'];
+            return cfgs.some(p => (p['@odata.type']||'').toLowerCase().includes('windows10endpointprotectionconfiguration') &&
+                avProps.some(prop => p[prop] === true || (p[prop] && p[prop] !== 'notConfigured' && p[prop] !== 'userDefined'))) ||
+                intents.some(i => { const t=(i.templateId||'').toLowerCase(); return t.includes('4356d05c') || t.includes('windows10antivirus'); });
+        },
         odataType: '#microsoft.graph.windows10EndpointProtectionConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -1264,6 +1273,10 @@ const MDE_BASELINE = [
         critical: true,
         description: 'Impedisce che malware o utenti locali disabilitino Defender AV/EDR (OMA-URI valore 5).',
         why: 'Uno dei primi obiettivi di un attaccante è disabilitare l\'antivirus prima di eseguire il payload. Tamper Protection blocca qualsiasi tentativo di modificare le impostazioni di Defender — incluse operazioni PowerShell, modifiche al registro, e strumenti di terze parti — anche con privilegi di amministratore locale. Il valore 5 significa "gestito da Intune": solo Intune può modificarlo, non l\'utente o un malware.',
+        detectFn: (cfgs, intents=[]) => cfgs.some(p =>
+            (p['@odata.type']||'').toLowerCase().includes('windows10customconfiguration') && Array.isArray(p.omaSettings) &&
+            p.omaSettings.some(o => (o.omaUri||'').toLowerCase().includes('tamperprotection') &&
+                (o.value==5||o.value==='5'||o.integerValue==5))),
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -1288,6 +1301,10 @@ const MDE_BASELINE = [
         critical: true,
         description: 'Blocca connessioni a IP, domini e URL malevoli in Block mode (OMA-URI valore 1).',
         why: 'Network Protection estende SmartScreen a tutto il traffico di rete, non solo al browser. Blocca in tempo reale le connessioni verso C2 (Command & Control), phishing, exploit kit e IOC (Indicators of Compromise) caricati da MDE. In modalità Block (valore 1), la connessione viene interrotta prima che il payload raggiunga il device. Valore 2 = Audit (solo log), valore 1 = Block (raccomandato per produzione).',
+        detectFn: (cfgs, intents=[]) => cfgs.some(p =>
+            (p['@odata.type']||'').toLowerCase().includes('windows10customconfiguration') && Array.isArray(p.omaSettings) &&
+            p.omaSettings.some(o => (o.omaUri||'').toLowerCase().includes('enablenetworkprotection') &&
+                [1,'1',2,'2'].includes(o.value ?? o.integerValue))),
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -1312,6 +1329,10 @@ const MDE_BASELINE = [
         critical: false,
         description: 'Tutte le 16 regole ASR in modalità Audit (2) — monitora senza bloccare.',
         why: 'Le Attack Surface Reduction Rules riducono la superficie d\'attacco bloccando comportamenti tipici del malware (es. Office che crea processi child, LSASS dump, script offuscati, USB non autorizzati). Prima di passare a Block è essenziale fare un periodo di Audit per verificare che nessuna applicazione legittima venga impattata. Il report in security.microsoft.com → Reports → Attack Surface Reduction mostra quali regole avrebbero bloccato cosa.',
+        detectFn: (cfgs, intents=[]) => cfgs.some(p =>
+            (p['@odata.type']||'').toLowerCase().includes('windows10customconfiguration') && Array.isArray(p.omaSettings) &&
+            p.omaSettings.some(o => (o.omaUri||'').toLowerCase().includes('attacksurfacereductionrules'))) ||
+            intents.some(i => ['0e237410-1367-4844-bd7f-15fb0f08943b','e8c053d6-9f6e-41c9-b196-6e4fa8c9d0e4'].includes((i.templateId||'').toLowerCase())),
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
         body: {
@@ -1335,6 +1356,11 @@ const MDE_BASELINE = [
         category: 'Attack Surface Reduction',
         critical: true,
         description: '4 regole ASR ad alto impatto di sicurezza e basso rischio di falsi positivi in Block mode.',
+        detectFn: (cfgs, intents=[]) => cfgs.some(p =>
+            (p['@odata.type']||'').toLowerCase().includes('windows10customconfiguration') && Array.isArray(p.omaSettings) &&
+            p.omaSettings.some(o => (o.omaUri||'').toLowerCase().includes('attacksurfacereductionrules') &&
+                ((o.value||o.stringValue||'').match(/=1/g)||[]).length >= 1)) ||
+            intents.some(i => ['0e237410-1367-4844-bd7f-15fb0f08943b','e8c053d6-9f6e-41c9-b196-6e4fa8c9d0e4'].includes((i.templateId||'').toLowerCase())),
         why: 'Queste 4 regole sono considerate sicure da mettere in Block anche senza periodo di audit: (1) LSASS credential dump — blocca Mimikatz e simili, (2) Vulnerable signed drivers — previene driver-based escalation, (3) WMI event subscription persistence — tecnica comune per persistenza fileless, (4) Ransomware protection avanzata. Secondo Jeffrey Appel, queste 4 hanno un impatto minimo su applicazioni legittime e possono essere deployate subito in Block.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
@@ -1359,6 +1385,11 @@ const MDE_BASELINE = [
         category: 'Attack Surface Reduction',
         critical: false,
         description: 'Tutte le 16 regole ASR in Block mode — deployrare dopo aver validato l\'Audit.',
+        detectFn: (cfgs, intents=[]) => cfgs.some(p =>
+            (p['@odata.type']||'').toLowerCase().includes('windows10customconfiguration') && Array.isArray(p.omaSettings) &&
+            p.omaSettings.some(o => (o.omaUri||'').toLowerCase().includes('attacksurfacereductionrules') &&
+                ((o.value||o.stringValue||'').match(/=1/g)||[]).length >= 8)) ||
+            intents.some(i => ['0e237410-1367-4844-bd7f-15fb0f08943b','e8c053d6-9f6e-41c9-b196-6e4fa8c9d0e4'].includes((i.templateId||'').toLowerCase())),
         why: 'Dopo aver analizzato il report Audit e confermato che nessuna app legittima viene bloccata, questa policy porta tutte le 16 regole in modalità Block per la massima protezione. Copre scenari come: Office che scarica executable, script offuscati, processi da USB non autorizzati, iniezioni di codice nei processi Office, child process da client email. Attenzione: valutare esclusioni per software specifici prima del deploy in produzione.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
@@ -1382,6 +1413,10 @@ const MDE_BASELINE = [
         category: 'Telemetry',
         critical: false,
         description: 'Calcolo automatico degli hash SHA-256 di tutti i file eseguiti sull\'endpoint.',
+        detectFn: (cfgs, intents=[]) => cfgs.some(p =>
+            (p['@odata.type']||'').toLowerCase().includes('windows10customconfiguration') && Array.isArray(p.omaSettings) &&
+            p.omaSettings.some(o => (o.omaUri||'').toLowerCase().includes('enablefilehashcomputation') &&
+                (o.value==1||o.value==='1'||o.integerValue==1))),
         why: 'MDE usa gli hash per abbinare i file agli indicatori di compromissione (IOC) personalizzati che puoi caricare in security.microsoft.com. Senza questa impostazione, non puoi creare regole "blocca file con hash X" né vedere gli hash degli eseguibili nei log di Advanced Hunting (tabella DeviceFileEvents). Essenziale per threat hunting e response. Attenzione: può aumentare leggermente il carico CPU su macchine con alto I/O di file.',
         odataType: '#microsoft.graph.windows10CustomConfiguration',
         endpoint: 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations',
@@ -1405,6 +1440,93 @@ const MDE_BASELINE = [
 // ============================================================
 // MDE BASELINE WIZARD
 // ============================================================
+
+// Descrizione leggibile di un config profile esistente basata su @odata.type e settings
+function describeExistingProfile(p) {
+    const type = (p['@odata.type'] || '').toLowerCase();
+    if (type.includes('windowsdefenderadvancedthreatprotection')) return 'Defender for Endpoint Onboarding';
+    if (type.includes('windows10endpointprotection')) {
+        const parts = [];
+        if (p.defenderRequireRealTimeMonitoring || p.defenderRequireCloudProtection) parts.push('AV / Cloud Protection');
+        if (p.firewallEnabled) parts.push('Firewall');
+        if (p.bitLockerEnabled || p.bitLockerEncryptDevice) parts.push('BitLocker');
+        return parts.length ? parts.join(', ') : 'Endpoint Protection';
+    }
+    if (type.includes('windows10customconfiguration') && Array.isArray(p.omaSettings)) {
+        const uris = p.omaSettings.map(o => {
+            const u = (o.omaUri||'').toLowerCase();
+            if (u.includes('tamperprotection')) return 'Tamper Protection';
+            if (u.includes('enablenetworkprotection')) return 'Network Protection';
+            if (u.includes('attacksurfacereductionrules')) return 'ASR Rules';
+            if (u.includes('enablefilehashcomputation')) return 'File Hash Computation';
+            const seg = (o.omaUri||'').split('/').pop();
+            return seg || o.omaUri;
+        });
+        const uniq = [...new Set(uris)];
+        return 'OMA-URI: ' + uniq.slice(0, 3).join(', ') + (uniq.length > 3 ? ` +${uniq.length-3}` : '');
+    }
+    if (type.includes('windows10generalconfiguration')) return 'Impostazioni generali Windows (browser, lock, account...)';
+    if (type.includes('devicemanagementconfigurationpolicy')) return 'Settings Catalog';
+    if (type.includes('grouppolicyconfiguration')) return 'Administrative Templates (ADMX/GPO)';
+    if (type.includes('iosgeneral') || type.includes('ipadgeneral')) return 'Impostazioni generali iOS/iPadOS';
+    if (type.includes('android')) return 'Configurazione Android';
+    if (type.includes('macos')) return 'Configurazione macOS';
+    return type.replace('#microsoft.graph.', '').replace(/([A-Z])/g, ' $1').trim() || 'Configuration Profile';
+}
+
+// Fetcha tutti i device configs con full settings e calcola copertura per ogni entry MDE_BASELINE
+async function scanMdeCoverage() {
+    try {
+        const token = await getGraphToken();
+        const h = { 'Authorization': `Bearer ${token}` };
+
+        let configs = [], url = 'https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?$top=100';
+        while (url) {
+            const r = await fetch(url, { headers: h });
+            if (!r.ok) break;
+            const j = await r.json();
+            configs = configs.concat(j.value || []);
+            url = j['@odata.nextLink'] || null;
+        }
+
+        let intents = [];
+        try {
+            const ir = await fetch('https://graph.microsoft.com/beta/deviceManagement/intents?$top=100', { headers: h });
+            if (ir.ok) intents = (await ir.json()).value || [];
+        } catch {}
+
+        const map = {};
+        for (const entry of MDE_BASELINE) {
+            if (!entry.detectFn) { map[entry.id] = { present: false, coveredBy: null, coveredByDesc: null }; continue; }
+            const present = entry.detectFn(configs, intents);
+            let coveredBy = null, coveredByDesc = null;
+            if (present) {
+                for (const p of configs) {
+                    if (entry.detectFn([p], [])) {
+                        coveredBy = p.displayName || p.name || 'Policy sconosciuta';
+                        coveredByDesc = describeExistingProfile(p);
+                        break;
+                    }
+                }
+                if (!coveredBy) {
+                    for (const i of intents) {
+                        if (entry.detectFn([], [i])) {
+                            coveredBy = i.displayName || 'Endpoint Security Policy';
+                            coveredByDesc = 'Endpoint Security Intent';
+                            break;
+                        }
+                    }
+                }
+            }
+            map[entry.id] = { present, coveredBy, coveredByDesc };
+        }
+        return { map, configs, intents };
+    } catch (e) {
+        console.warn('scanMdeCoverage failed:', e.message);
+        return { map: {}, configs: [], intents: [] };
+    }
+}
+
 function openCaBaselineWizard() {
     const modal = document.getElementById('ca-baseline-modal');
     if (!modal) return;
@@ -1413,11 +1535,20 @@ function openCaBaselineWizard() {
     renderCaPolicyList();
 }
 
-function openMdeBaselineWizard() {
+async function openMdeBaselineWizard() {
     const modal = document.getElementById('mde-baseline-modal');
     if (!modal) return;
     modal.style.display = 'flex';
     initMdeBaselineWizard();
+
+    // Loading state nel policy list
+    const listEl = document.getElementById('mde-policy-list');
+    if (listEl) listEl.innerHTML = '<div style="padding:24px;text-align:center;color:#666;"><i class="fas fa-spinner fa-spin" style="margin-right:8px;"></i>Analisi policy esistenti nel tenant...</div>';
+
+    // Fetch full configs e calcola copertura
+    const { map } = await scanMdeCoverage();
+    window.mdeCoverageMap = map;
+    renderMdePolicyList();
 }
 
 function initMdeBaselineWizard() {
@@ -1469,24 +1600,20 @@ function updateMdeStepIndicator(activeStep) {
 }
 
 function renderMdePolicyList() {
-    const data = window.lastPrecheckResponse || {};
-    // Usa la gap analysis funzionale già calcolata dal precheck, se disponibile
+    // Priorità: mdeCoverageMap (scan real-time) > PolicyGapAnalysis (dal precheck XDR)
+    const coverageMap = window.mdeCoverageMap || null;
     const gapMap = {};
-    if (Array.isArray(data.PolicyGapAnalysis)) {
-        data.PolicyGapAnalysis.forEach(g => { gapMap[g.Id] = g.Present; });
+    if (!coverageMap) {
+        const data = window.lastPrecheckResponse || {};
+        const POLICY_TO_GAP = {
+            'mde-edr-onboarding': 'edr-onboarding', 'mde-av-nextgen': 'av-nextgen',
+            'mde-tamper-protection': 'tamper-protection', 'mde-network-protection': 'network-protection',
+            'mde-asr-audit': 'asr-rules', 'mde-asr-block-safe': 'asr-rules',
+            'mde-asr-block-full': 'asr-rules', 'mde-file-hash': 'file-hash'
+        };
+        if (Array.isArray(data.PolicyGapAnalysis)) data.PolicyGapAnalysis.forEach(g => { gapMap[g.Id] = g.Present; });
+        MDE_BASELINE.forEach(p => { if (!gapMap[POLICY_TO_GAP[p.id]]) gapMap[p.id] = false; });
     }
-
-    // Map: policy.id → gap analysis ID
-    const POLICY_TO_GAP = {
-        'mde-edr-onboarding':       'edr-onboarding',
-        'mde-av-nextgen':           'av-nextgen',
-        'mde-tamper-protection':    'tamper-protection',
-        'mde-network-protection':   'network-protection',
-        'mde-asr-audit':            'asr-rules',
-        'mde-asr-block-critical':   'asr-rules',
-        'mde-asr-block-complete':   'asr-rules',
-        'mde-file-hash':            'file-hash'
-    };
 
     const container = document.getElementById('mde-policy-list');
     container.innerHTML = '';
@@ -1503,22 +1630,38 @@ function renderMdePolicyList() {
             container.appendChild(hdr);
         }
 
-        const gapId = POLICY_TO_GAP[policy.id];
-        // Se il precheck ha già rilevato la funzionalità, la policy è presente
-        const present = gapId !== undefined ? (gapMap[gapId] === true) : false;
+        // Determina stato: usa coverageMap se disponibile, altrimenti gapMap
+        let present = false, coveredBy = null, coveredByDesc = null;
+        if (coverageMap && coverageMap[policy.id]) {
+            present = coverageMap[policy.id].present;
+            coveredBy = coverageMap[policy.id].coveredBy;
+            coveredByDesc = coverageMap[policy.id].coveredByDesc;
+        } else {
+            const POLICY_TO_GAP = { 'mde-edr-onboarding': 'edr-onboarding', 'mde-av-nextgen': 'av-nextgen', 'mde-tamper-protection': 'tamper-protection', 'mde-network-protection': 'network-protection', 'mde-asr-audit': 'asr-rules', 'mde-asr-block-safe': 'asr-rules', 'mde-asr-block-full': 'asr-rules', 'mde-file-hash': 'file-hash' };
+            const gapId = POLICY_TO_GAP[policy.id];
+            present = gapId ? (gapMap[gapId] === true) : false;
+        }
 
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid #f0f0f0;';
+        row.style.cssText = `display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid #f0f0f0;${present ? 'background:#f6fff6;' : ''}`;
         const detailsId = `mde-details-${policy.id}`;
+
+        const coveredByHtml = coveredBy ? `
+            <div style="margin-top:5px;padding:6px 10px;background:#e8f5e9;border-left:3px solid #107c10;border-radius:0 4px 4px 0;font-size:11px;color:#1b5e20;">
+                <strong>Coperta da:</strong> ${escapeHtml(coveredBy)}
+                ${coveredByDesc ? `<span style="color:#555;"> — ${escapeHtml(coveredByDesc)}</span>` : ''}
+            </div>` : '';
+
         row.innerHTML = `
             <input type="checkbox" class="mde-policy-check" data-id="${policy.id}" ${present ? 'disabled' : ''} style="width:16px;height:16px;flex-shrink:0;margin-top:3px;">
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <span style="font-weight:600;font-size:13px;">${escapeHtml(policy.name)}</span>
                     ${policy.critical ? '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">CRITICA</span>' : ''}
-                    <span style="flex-shrink:0;background:${present ? '#107c10' : '#d13438'};color:white;border-radius:4px;padding:1px 8px;font-size:10px;font-weight:700;">${present ? 'PRESENTE' : 'MANCANTE'}</span>
+                    <span style="flex-shrink:0;background:${present ? '#107c10' : '#d13438'};color:white;border-radius:4px;padding:1px 8px;font-size:10px;font-weight:700;">${present ? '✓ PRESENTE' : 'MANCANTE'}</span>
                 </div>
                 <div style="font-size:12px;color:#555;margin-top:3px;">${escapeHtml(policy.description)}</div>
+                ${coveredByHtml}
                 ${policy.why ? `
                 <button onclick="document.getElementById('${detailsId}').style.display=document.getElementById('${detailsId}').style.display==='none'?'block':'none'"
                     style="background:none;border:none;color:#0078d4;font-size:11px;cursor:pointer;padding:3px 0;text-decoration:underline;">
@@ -1531,7 +1674,7 @@ function renderMdePolicyList() {
         container.appendChild(row);
     });
 
-    // Select missing critical by default
+    // Seleziona di default solo le MANCANTI critiche
     container.querySelectorAll('.mde-policy-check:not([disabled])').forEach(cb => {
         const policy = MDE_BASELINE.find(p => p.id === cb.dataset.id);
         cb.checked = policy?.critical ?? true;
