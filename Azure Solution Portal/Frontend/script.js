@@ -2262,6 +2262,99 @@ document.addEventListener('DOMContentLoaded', function() {
         recContainer.appendChild(iframe);
     }
 
+    // Shared: render Checks array (from PS EnterprisePrecheck) as styled table + optional extra HTML blocks + iframe fallback
+    function renderNativeEnterpriseReport(data, extraBlocks) {
+        const recContainer = document.getElementById('recommendations-content');
+        if (!recContainer) return;
+        recContainer.innerHTML = '';
+
+        const checks = Array.isArray(data?.Checks) ? data.Checks : [];
+
+        // Coverage bar if readiness available
+        const readiness = data?.Readiness;
+        const score = Number(data?.Summary?.ReadinessScore ?? readiness?.score ?? null);
+        if (Number.isFinite(score)) {
+            const color = score >= 85 ? '#107c10' : score >= 60 ? '#d97706' : '#b3261e';
+            const bg    = score >= 85 ? '#e6f4ea' : score >= 60 ? '#fff8eb' : '#fce8e6';
+            const bar = document.createElement('div');
+            bar.style.cssText = `margin-bottom:16px;padding:14px 16px;background:${bg};border:1px solid ${color}33;border-radius:10px;`;
+            bar.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                    <span style="font-weight:700;color:${color};font-size:15px;">Readiness Score</span>
+                    <span style="font-weight:800;font-size:22px;color:${color};">${score}%</span>
+                </div>
+                <div style="background:#e0e0e0;border-radius:6px;height:10px;overflow:hidden;">
+                    <div style="width:${score}%;height:100%;background:${color};border-radius:6px;transition:width .5s;"></div>
+                </div>`;
+            recContainer.appendChild(bar);
+        }
+
+        // Enterprise checks table
+        if (checks.length) {
+            const failed = checks.filter(c => !c.Passed && c.status !== 'Pass');
+            const passed = checks.filter(c => c.Passed || c.status === 'Pass');
+            const box = document.createElement('div');
+            box.style.cssText = 'margin-bottom:16px;padding:14px 16px;border:1px solid #cfd8dc;background:#f9fbfc;border-radius:10px;';
+            const rows = checks.map(c => {
+                const ok = (c.Passed === true || String(c.status||'').toLowerCase() === 'pass');
+                const sev = String(c.Severity || c.severity || '').toLowerCase();
+                const sevBadge = ok
+                    ? '<span style="background:#e6f4ea;color:#137333;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;">OK</span>'
+                    : sev === 'critical'
+                        ? '<span style="background:#fce8e6;color:#b3261e;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;">CRITICO</span>'
+                        : sev === 'high'
+                            ? '<span style="background:#fff0e6;color:#c44d00;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;">ALTO</span>'
+                            : '<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;">ATTENZIONE</span>';
+                const title = escapeHtml(c.Title || c.title || '');
+                const area  = escapeHtml(c.Area || c.area || '');
+                const rec   = escapeHtml(c.Remediation || c.remediation || c.Recommendation || '');
+                const rat   = escapeHtml(c.Rationale || c.rationale || '');
+                return `<tr style="border-bottom:1px solid #e8edf0;">
+                    <td style="padding:8px 10px;vertical-align:top;width:90px;">${sevBadge}</td>
+                    <td style="padding:8px 10px;vertical-align:top;">
+                        <div style="font-weight:600;color:#1a2e3b;">${title}</div>
+                        ${area ? `<div style="font-size:11px;color:#5a7082;margin-top:1px;">${area}</div>` : ''}
+                        ${rat  ? `<div style="font-size:12px;color:#555;margin-top:3px;">${rat}</div>`  : ''}
+                        ${!ok && rec ? `<div style="font-size:12px;color:#0078d4;margin-top:4px;font-style:italic;">→ ${rec}</div>` : ''}
+                    </td>
+                </tr>`;
+            }).join('');
+            box.innerHTML = `
+                <div style="font-weight:700;color:#0f3d56;margin-bottom:6px;font-size:14px;">Check Enterprise Microsoft</div>
+                <div style="font-size:13px;color:#37566b;margin-bottom:10px;">
+                    Totale: <strong>${checks.length}</strong> &nbsp;·&nbsp; OK: <strong>${passed.length}</strong> &nbsp;·&nbsp; Gap: <strong>${failed.length}</strong>
+                </div>
+                <div style="max-height:340px;overflow:auto;border:1px solid #dde6ea;border-radius:8px;background:white;">
+                    <table style="width:100%;border-collapse:collapse;">${rows}</table>
+                </div>`;
+            recContainer.appendChild(box);
+        }
+
+        // Extra content blocks (solution-specific tables)
+        if (Array.isArray(extraBlocks)) {
+            extraBlocks.forEach(block => {
+                if (!block) return;
+                const el = document.createElement('div');
+                el.style.cssText = 'margin-bottom:16px;';
+                el.innerHTML = block;
+                recContainer.appendChild(el);
+            });
+        }
+
+        // Iframe report at the bottom (collapsible)
+        if (data?.ReportHTML) {
+            const details = document.createElement('details');
+            details.style.cssText = 'margin-top:8px;border:1px solid #d1dce5;border-radius:8px;overflow:hidden;';
+            details.innerHTML = `<summary style="padding:10px 14px;background:#f0f4f8;cursor:pointer;font-weight:600;color:#0f3d56;font-size:13px;">Report HTML completo (appendice tecnica)</summary>`;
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'width:100%;height:680px;border:none;display:block;';
+            iframe.setAttribute('sandbox', 'allow-same-origin');
+            iframe.srcdoc = data.ReportHTML;
+            details.appendChild(iframe);
+            recContainer.appendChild(details);
+        }
+    }
+
     function applyPrecheckUiForSolution(solution) {
         setTabVisible('intune-compliance', false);
         setTabVisible('intune-configuration', false);
@@ -2315,13 +2408,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (solution === 'backup') {
             setSummaryLabels('VM Totali:', 'Recovery Vaults:');
             setTabText('overview', 'Panoramica');
-            setTabText('recommendations', 'Report');
+            setTabText('virtual-machines', 'VM Azure');
+            setTabText('workspaces', 'Vault');
+            setTabText('dcr', 'Policy Backup');
+            setTabText('recommendations', 'Analisi');
             setPaneTitle('overview', "Stato Azure Backup");
-            setPaneTitle('recommendations', 'Report');
-            setOverviewLabels(['VM Totali', 'VM Protette', 'VM Non Protette', 'Copertura (%)']);
-            setTabVisible('virtual-machines', false);
-            setTabVisible('workspaces', false);
-            setTabVisible('dcr', false);
+            setPaneTitle('virtual-machines', 'Macchine Virtuali Azure');
+            setPaneTitle('workspaces', 'Recovery Services Vault');
+            setPaneTitle('dcr', 'Policy di Backup');
+            setPaneTitle('recommendations', 'Analisi e Raccomandazioni');
+            setOverviewLabels(['VM Totali', 'VM Protette', 'VM Non Protette', 'Copertura']);
+            setTableHeaders('vm-table', ['Nome VM', 'Gruppo di Risorse', 'Location', 'OS', 'Backup']);
+            setTableHeaders('workspace-table', ['Vault', 'Gruppo di Risorse', 'Location', 'Ridondanza', 'SoftDelete']);
+            setTableHeaders('dcr-table', ['Vault', 'Policy', 'Workload', 'Tipo', '']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', true);
             setTabVisible('recommendations', true);
             return;
         }
@@ -2329,12 +2431,18 @@ document.addEventListener('DOMContentLoaded', function() {
         if (solution === 'defender') {
             setSummaryLabels('Piani Standard:', 'Secure Score (%):');
             setTabText('overview', 'Panoramica');
-            setTabText('recommendations', 'Report');
+            setTabText('virtual-machines', 'Defender Plans');
+            setTabText('workspaces', 'Raccomandazioni');
+            setTabText('recommendations', 'Analisi');
             setPaneTitle('overview', "Stato Defender for Cloud");
-            setPaneTitle('recommendations', 'Report');
+            setPaneTitle('virtual-machines', 'Defender Plans');
+            setPaneTitle('workspaces', 'Top Raccomandazioni');
+            setPaneTitle('recommendations', 'Analisi e Raccomandazioni');
             setOverviewLabels(['Secure Score (%)', 'Piani Standard', 'High Recs', 'Security Contacts']);
-            setTabVisible('virtual-machines', false);
-            setTabVisible('workspaces', false);
+            setTableHeaders('vm-table', ['Piano', 'Tier', 'SubPlan', '', '']);
+            setTableHeaders('workspace-table', ['Severità', 'Raccomandazione', 'Tipo risorsa', '', '']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
             setTabVisible('dcr', false);
             setTabVisible('recommendations', true);
             return;
@@ -2343,13 +2451,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (solution === 'updates') {
             setSummaryLabels('VM Totali:', 'Maintenance Config:');
             setTabText('overview', 'Panoramica');
-            setTabText('recommendations', 'Report');
+            setTabText('virtual-machines', 'VM Azure');
+            setTabText('workspaces', 'Maintenance Config');
+            setTabText('dcr', 'Update Pendenti');
+            setTabText('recommendations', 'Analisi');
             setPaneTitle('overview', "Stato Update Manager");
-            setPaneTitle('recommendations', 'Report');
+            setPaneTitle('virtual-machines', 'Macchine Virtuali Azure');
+            setPaneTitle('workspaces', 'Maintenance Configurations');
+            setPaneTitle('dcr', 'Update Pendenti (campione VM)');
+            setPaneTitle('recommendations', 'Analisi e Raccomandazioni');
             setOverviewLabels(['VM Totali', 'Auto patching', 'Manual patching', 'Critical pending']);
-            setTabVisible('virtual-machines', false);
-            setTabVisible('workspaces', false);
-            setTabVisible('dcr', false);
+            setTableHeaders('vm-table', ['Nome VM', 'Gruppo di Risorse', 'OS', 'Patch Mode', '']);
+            setTableHeaders('workspace-table', ['Nome', 'Gruppo di Risorse', 'Location', 'Schedule', 'Assegnate']);
+            setTableHeaders('dcr-table', ['VM', 'OS', 'Ultimo Assessment', 'Critical', 'Security']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', true);
             setTabVisible('recommendations', true);
             return;
         }
@@ -2533,6 +2650,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 recContainer.appendChild(div);
             });
         }
+
+        // Enterprise checks + iframe appendix if available
+        if (Array.isArray(data.Checks) && data.Checks.length) {
+            renderNativeEnterpriseReport(data, []);
+        } else if (data?.ReportHTML) {
+            const details = document.createElement('details');
+            details.style.cssText = 'margin-top:8px;border:1px solid #d1dce5;border-radius:8px;overflow:hidden;';
+            details.innerHTML = `<summary style="padding:10px 14px;background:#f0f4f8;cursor:pointer;font-weight:600;color:#0f3d56;font-size:13px;">Report HTML completo (appendice tecnica)</summary>`;
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'width:100%;height:680px;border:none;display:block;';
+            iframe.setAttribute('sandbox', 'allow-same-origin');
+            iframe.srcdoc = data.ReportHTML;
+            details.appendChild(iframe);
+            recContainer.appendChild(details);
+        }
     }
 
     function renderAvdPrecheck(data) {
@@ -2627,8 +2759,38 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        // Per AVD mostriamo direttamente il report HTML generato dal precheck.
-        renderReportHtmlInRecommendations(data);
+        // AVD: native checks + appendix
+        const scalingPlans = Array.isArray(data.ScalingPlans) ? data.ScalingPlans : [];
+        const storage = Array.isArray(data.StorageAccounts) ? data.StorageAccounts : [];
+        let avdExtra = '';
+        if (scalingPlans.length) {
+            const spRows = scalingPlans.map(sp =>
+                `<tr style="border-bottom:1px solid #e8edf0;"><td style="padding:6px 10px;">${escapeHtml(sp.Name||'N/A')}</td><td style="padding:6px 10px;">${escapeHtml(sp.ResourceGroup||'')}</td><td style="padding:6px 10px;">${escapeHtml(sp.Location||'')}</td><td style="padding:6px 10px;">${escapeHtml(sp.FriendlyName||'')}</td></tr>`
+            ).join('');
+            avdExtra += `<div style="padding:14px 16px;background:#f0f6ff;border:1px solid #c0d4f5;border-radius:10px;">
+                <div style="font-weight:700;color:#0a3f78;margin-bottom:8px;">Scaling Plans (${scalingPlans.length})</div>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr style="background:#e8f0fe;"><th style="padding:6px 10px;text-align:left;">Nome</th><th style="padding:6px 10px;text-align:left;">RG</th><th style="padding:6px 10px;text-align:left;">Location</th><th style="padding:6px 10px;text-align:left;">Descrizione</th></tr></thead>
+                    <tbody>${spRows}</tbody>
+                </table>
+            </div>`;
+        }
+        if (storage.length) {
+            const stRows = storage.map(s => {
+                const fslogix = s.FSLogixReady || s.AADKerbEnabled
+                    ? '<span class="status-badge status-success">FSLogix OK</span>'
+                    : '<span class="status-badge">No AADKERB</span>';
+                return `<tr style="border-bottom:1px solid #e8edf0;"><td style="padding:6px 10px;">${escapeHtml(s.Name||'N/A')}</td><td style="padding:6px 10px;">${escapeHtml(s.ResourceGroup||'')}</td><td style="padding:6px 10px;">${escapeHtml(s.Location||'')}</td><td style="padding:6px 10px;">${fslogix}</td></tr>`;
+            }).join('');
+            avdExtra += `<div style="padding:14px 16px;background:#f9fbfc;border:1px solid #cfd8dc;border-radius:10px;">
+                <div style="font-weight:700;color:#0f3d56;margin-bottom:8px;">Storage Accounts (FSLogix)</div>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr style="background:#eceff1;"><th style="padding:6px 10px;text-align:left;">Account</th><th style="padding:6px 10px;text-align:left;">RG</th><th style="padding:6px 10px;text-align:left;">Location</th><th style="padding:6px 10px;text-align:left;">FSLogix</th></tr></thead>
+                    <tbody>${stRows}</tbody>
+                </table>
+            </div>`;
+        }
+        renderNativeEnterpriseReport(data, avdExtra ? [avdExtra] : []);
     }
 
     function setStatusFromReadiness(summary) {
@@ -2659,7 +2821,95 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('workspace-count').textContent = totalVaults;
 
         setStatusFromReadiness(summary);
-        renderReportHtmlInRecommendations(data);
+
+        // Tab VM Azure
+        {
+            const tbody = document.querySelector('#vm-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.AzureVMs) ? data.AzureVMs : [];
+            if (!rows.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessuna VM trovata nella subscription.</td></tr>`;
+            } else {
+                rows.forEach(vm => {
+                    const badge = vm.IsProtected
+                        ? '<span class="status-badge status-success">Protetta</span>'
+                        : '<span class="status-badge status-danger">Non protetta</span>';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(vm.Name||'N/A')}</td><td>${escapeHtml(vm.ResourceGroup||'')}</td><td>${escapeHtml(vm.Location||'')}</td><td>${escapeHtml(vm.OsType||'')}</td><td>${badge}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Tab Recovery Services Vault
+        {
+            const tbody = document.querySelector('#workspace-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.RecoveryServicesVaults) ? data.RecoveryServicesVaults : [];
+            if (!rows.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessun Recovery Services Vault trovato.</td></tr>`;
+            } else {
+                rows.forEach(v => {
+                    const sdBadge = v.SoftDeleteEnabled
+                        ? '<span class="status-badge status-success">Sì</span>'
+                        : '<span class="status-badge status-danger">No</span>';
+                    const redundClass = (v.StorageType === 'GeoRedundant') ? 'status-success' : '';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(v.Name||'N/A')}</td><td>${escapeHtml(v.ResourceGroup||'')}</td><td>${escapeHtml(v.Location||'')}</td><td><span class="status-badge ${redundClass}">${escapeHtml(v.StorageType||'N/A')}</span></td><td>${sdBadge}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Tab Policy Backup
+        {
+            const tbody = document.querySelector('#dcr-table tbody');
+            tbody.innerHTML = '';
+            const rows = Array.isArray(data.BackupPolicies) ? data.BackupPolicies : [];
+            if (!rows.length) {
+                tbody.innerHTML = `<tr><td colspan="4">Nessuna backup policy trovata.</td></tr>`;
+            } else {
+                rows.forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(p.VaultName||'')}</td><td>${escapeHtml(p.Name||'N/A')}</td><td>${escapeHtml(p.WorkloadType||'')}</td><td>${escapeHtml(p.PolicyType||'')}</td><td></td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Extra: unprotected VMs list + auto policies
+        const unprotected = (Array.isArray(data.AzureVMs) ? data.AzureVMs : []).filter(v => !v.IsProtected);
+        let extraHtml = '';
+        if (unprotected.length) {
+            const vmRows = unprotected.slice(0, 80).map(v =>
+                `<tr style="border-bottom:1px solid #f0e8e8;"><td style="padding:6px 10px;color:#b3261e;font-weight:600;">${escapeHtml(v.Name||'N/A')}</td><td style="padding:6px 10px;">${escapeHtml(v.ResourceGroup||'')}</td><td style="padding:6px 10px;">${escapeHtml(v.Location||'')}</td><td style="padding:6px 10px;">${escapeHtml(v.OsType||'')}</td></tr>`
+            ).join('');
+            extraHtml = `<div style="padding:14px 16px;background:#fce8e6;border:1px solid #f5c2bf;border-radius:10px;">
+                <div style="font-weight:700;color:#b3261e;margin-bottom:8px;">VM non protette da backup (${unprotected.length})</div>
+                <div style="max-height:220px;overflow:auto;border-radius:6px;background:white;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead><tr style="background:#fce8e6;"><th style="padding:6px 10px;text-align:left;">VM</th><th style="padding:6px 10px;text-align:left;">RG</th><th style="padding:6px 10px;text-align:left;">Location</th><th style="padding:6px 10px;text-align:left;">OS</th></tr></thead>
+                        <tbody>${vmRows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }
+
+        const autoPols = Array.isArray(data.AutoBackupPolicies) ? data.AutoBackupPolicies : [];
+        if (autoPols.length) {
+            const polRows = autoPols.map(p =>
+                `<tr style="border-bottom:1px solid #e8edf0;"><td style="padding:6px 10px;">${escapeHtml(p.DisplayName||p.Name||'N/A')}</td><td style="padding:6px 10px;">${escapeHtml(p.Enforcement||'')}</td></tr>`
+            ).join('');
+            extraHtml += `<div style="padding:14px 16px;background:#f0f6ff;border:1px solid #c0d4f5;border-radius:10px;">
+                <div style="font-weight:700;color:#0a3f78;margin-bottom:8px;">Azure Policy — Auto-backup (${autoPols.length})</div>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr style="background:#e8f0fe;"><th style="padding:6px 10px;text-align:left;">Policy</th><th style="padding:6px 10px;text-align:left;">Enforcement</th></tr></thead>
+                    <tbody>${polRows}</tbody>
+                </table>
+            </div>`;
+        }
+
+        renderNativeEnterpriseReport(data, extraHtml ? [extraHtml] : []);
     }
 
     function renderDefenderPrecheck(data) {
@@ -2677,7 +2927,95 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('workspace-count').textContent = Number.isFinite(secureScore) ? secureScore : 0;
 
         setStatusFromReadiness(summary);
-        renderReportHtmlInRecommendations(data);
+
+        // Tab Defender Plans
+        {
+            const tbody = document.querySelector('#vm-table tbody');
+            tbody.innerHTML = '';
+            const plans = Array.isArray(data.DefenderPlans) ? data.DefenderPlans : [];
+            if (!plans.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessun Defender plan trovato.</td></tr>`;
+            } else {
+                plans.forEach(p => {
+                    const tierBadge = p.PricingTier === 'Standard'
+                        ? '<span class="status-badge status-success">Standard</span>'
+                        : '<span class="status-badge">Free</span>';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(p.Name||'N/A')}</td><td>${tierBadge}</td><td>${escapeHtml(p.SubPlan||'—')}</td><td></td><td></td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Tab Top Recommendations
+        {
+            const tbody = document.querySelector('#workspace-table tbody');
+            tbody.innerHTML = '';
+            const recs = Array.isArray(data.TopRecommendations) ? data.TopRecommendations : [];
+            if (!recs.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessuna raccomandazione trovata.</td></tr>`;
+            } else {
+                recs.forEach(r => {
+                    const sev = String(r.Severity||'').toLowerCase();
+                    const sevBadge = sev === 'high'
+                        ? '<span class="status-badge status-danger">High</span>'
+                        : sev === 'medium'
+                            ? '<span class="status-badge status-warning">Medium</span>'
+                            : `<span class="status-badge">${escapeHtml(r.Severity||'N/A')}</span>`;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${sevBadge}</td><td>${escapeHtml(r.DisplayName||r.Title||'N/A')}</td><td>${escapeHtml(r.ResourceType||'')}</td><td></td><td></td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Extra: Secure Score gauge + contacts + auto-provisioning
+        const scoreColor = secureScore >= 80 ? '#107c10' : secureScore >= 50 ? '#d97706' : '#b3261e';
+        const scoreBg    = secureScore >= 80 ? '#e6f4ea' : secureScore >= 50 ? '#fff8eb' : '#fce8e6';
+        let extraHtml = `<div style="padding:14px 16px;background:${scoreBg};border:1px solid ${scoreColor}33;border-radius:10px;">
+            <div style="font-weight:700;color:${scoreColor};font-size:14px;margin-bottom:8px;">Secure Score: ${secureScore}%</div>
+            <div style="background:#e0e0e0;border-radius:6px;height:12px;overflow:hidden;">
+                <div style="width:${secureScore}%;height:100%;background:${scoreColor};border-radius:6px;"></div>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:#555;">
+                Piani Standard: <strong>${enabledPlans}</strong> / ${summary.TotalPlans||0} &nbsp;·&nbsp;
+                Raccomandazioni High: <strong>${highRecs}</strong> &nbsp;·&nbsp;
+                Medium: <strong>${summary.MediumSeverityRecs||0}</strong>
+            </div>
+        </div>`;
+
+        const contacts_ = Array.isArray(data.SecurityContacts) ? data.SecurityContacts : [];
+        if (contacts_.length) {
+            const cRows = contacts_.map(c =>
+                `<tr style="border-bottom:1px solid #e8edf0;"><td style="padding:6px 10px;">${escapeHtml(c.Name||'N/A')}</td><td style="padding:6px 10px;">${escapeHtml(c.Emails||'')}</td><td style="padding:6px 10px;">${escapeHtml(c.AlertNotifs||'')}</td></tr>`
+            ).join('');
+            extraHtml += `<div style="padding:14px 16px;background:#f0f6ff;border:1px solid #c0d4f5;border-radius:10px;">
+                <div style="font-weight:700;color:#0a3f78;margin-bottom:8px;">Security Contacts (${contacts_.length})</div>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr style="background:#e8f0fe;"><th style="padding:6px 10px;text-align:left;">Nome</th><th style="padding:6px 10px;text-align:left;">Email</th><th style="padding:6px 10px;text-align:left;">Notifiche</th></tr></thead>
+                    <tbody>${cRows}</tbody>
+                </table>
+            </div>`;
+        }
+
+        const autoProv = Array.isArray(data.AutoProvisionings) ? data.AutoProvisionings : [];
+        if (autoProv.length) {
+            const apRows = autoProv.map(ap => {
+                const onBadge = ap.AutoProvision === 'On'
+                    ? '<span class="status-badge status-success">On</span>'
+                    : '<span class="status-badge status-warning">Off</span>';
+                return `<tr style="border-bottom:1px solid #e8edf0;"><td style="padding:6px 10px;">${escapeHtml(ap.Name||'N/A')}</td><td style="padding:6px 10px;">${onBadge}</td></tr>`;
+            }).join('');
+            extraHtml += `<div style="padding:14px 16px;background:#f9fbfc;border:1px solid #cfd8dc;border-radius:10px;">
+                <div style="font-weight:700;color:#0f3d56;margin-bottom:8px;">Auto Provisioning Settings</div>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr style="background:#eceff1;"><th style="padding:6px 10px;text-align:left;">Agent</th><th style="padding:6px 10px;text-align:left;">Stato</th></tr></thead>
+                    <tbody>${apRows}</tbody>
+                </table>
+            </div>`;
+        }
+
+        renderNativeEnterpriseReport(data, [extraHtml]);
     }
 
     function renderUpdatesPrecheck(data) {
@@ -2696,7 +3034,87 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('workspace-count').textContent = maintenance;
 
         setStatusFromReadiness(summary);
-        renderReportHtmlInRecommendations(data);
+
+        // Tab VM Azure — patch mode
+        {
+            const tbody = document.querySelector('#vm-table tbody');
+            tbody.innerHTML = '';
+            const vms = Array.isArray(data.AzureVMs) ? data.AzureVMs : [];
+            if (!vms.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessuna VM trovata nella subscription.</td></tr>`;
+            } else {
+                vms.forEach(vm => {
+                    const pm = vm.PatchMode || 'NotConfigured';
+                    const isAuto = pm === 'AutomaticByPlatform' || pm === 'AutomaticByOS';
+                    const patchBadge = isAuto
+                        ? `<span class="status-badge status-success">${escapeHtml(pm)}</span>`
+                        : `<span class="status-badge status-warning">${escapeHtml(pm)}</span>`;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(vm.Name||'N/A')}</td><td>${escapeHtml(vm.ResourceGroup||'')}</td><td>${escapeHtml(vm.OsType||'')}</td><td>${patchBadge}</td><td></td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Tab Maintenance Configurations
+        {
+            const tbody = document.querySelector('#workspace-table tbody');
+            tbody.innerHTML = '';
+            const mcs = Array.isArray(data.MaintenanceConfigurations) ? data.MaintenanceConfigurations : [];
+            if (!mcs.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessuna Maintenance Configuration trovata.</td></tr>`;
+            } else {
+                mcs.forEach(mc => {
+                    const assigned = mc.AssignedResourceCount ?? 0;
+                    const assignBadge = assigned > 0
+                        ? `<span class="status-badge status-success">${assigned}</span>`
+                        : `<span class="status-badge status-warning">0</span>`;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(mc.Name||'N/A')}</td><td>${escapeHtml(mc.ResourceGroup||'')}</td><td>${escapeHtml(mc.Location||'')}</td><td>${escapeHtml(mc.RecurEvery||'N/A')}</td><td>${assignBadge}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Tab Update Pendenti
+        {
+            const tbody = document.querySelector('#dcr-table tbody');
+            tbody.innerHTML = '';
+            const pending = Array.isArray(data.PendingUpdates) ? data.PendingUpdates : [];
+            if (!pending.length) {
+                tbody.innerHTML = `<tr><td colspan="5">Nessun dato di assessment disponibile (campione VM).</td></tr>`;
+            } else {
+                pending.sort((a, b) => (b.CriticalUpdateCount||0) - (a.CriticalUpdateCount||0)).forEach(p => {
+                    const crit = p.CriticalUpdateCount ?? 0;
+                    const critBadge = crit > 0
+                        ? `<span class="status-badge status-danger">${crit}</span>`
+                        : `<span class="status-badge status-success">0</span>`;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(p.VMName||'N/A')}</td><td>${escapeHtml(p.OsType||'')}</td><td>${escapeHtml(p.LastAssessmentTime||'N/A')}</td><td>${critBadge}</td><td>${p.SecurityUpdateCount??0}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Extra: auto patching coverage gauge
+        const autoPct = totalVMs > 0 ? Math.round((auto / totalVMs) * 100) : 0;
+        const pctColor = autoPct >= 70 ? '#107c10' : autoPct >= 30 ? '#d97706' : '#b3261e';
+        const pctBg    = autoPct >= 70 ? '#e6f4ea' : autoPct >= 30 ? '#fff8eb' : '#fce8e6';
+        const extraHtml = `<div style="padding:14px 16px;background:${pctBg};border:1px solid ${pctColor}33;border-radius:10px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-weight:700;color:${pctColor};font-size:14px;">Copertura Auto Patching</span>
+                <span style="font-weight:800;font-size:20px;color:${pctColor};">${autoPct}%</span>
+            </div>
+            <div style="background:#e0e0e0;border-radius:6px;height:10px;overflow:hidden;">
+                <div style="width:${autoPct}%;height:100%;background:${pctColor};border-radius:6px;"></div>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:#555;">
+                Auto: <strong>${auto}</strong> &nbsp;·&nbsp; Manual/NotConfigured: <strong>${manual}</strong> &nbsp;·&nbsp;
+                Maintenance Config: <strong>${maintenance}</strong> &nbsp;·&nbsp; Critical pending: <strong style="color:${critical > 0 ? '#b3261e' : '#107c10'}">${critical}</strong>
+            </div>
+        </div>`;
+
+        renderNativeEnterpriseReport(data, [extraHtml]);
     }
 
     function classifyIntuneDevicePlatform(osName) {
@@ -2865,21 +3283,17 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         recContainer.appendChild(gapBox);
 
-        if (!data?.ReportHTML) {
-            const p = document.createElement('p');
-            p.textContent = 'Report HTML non disponibile per questa esecuzione.';
-            recContainer.appendChild(p);
-            return;
+        if (data?.ReportHTML) {
+            const details = document.createElement('details');
+            details.style.cssText = 'margin-top:8px;border:1px solid #d1dce5;border-radius:8px;overflow:hidden;';
+            details.innerHTML = `<summary style="padding:10px 14px;background:#f0f4f8;cursor:pointer;font-weight:600;color:#0f3d56;font-size:13px;">Report HTML completo (appendice tecnica)</summary>`;
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'width:100%;height:680px;border:none;display:block;';
+            iframe.setAttribute('sandbox', 'allow-same-origin');
+            iframe.srcdoc = data.ReportHTML;
+            details.appendChild(iframe);
+            recContainer.appendChild(details);
         }
-
-        const iframe = document.createElement('iframe');
-        iframe.style.width = '100%';
-        iframe.style.height = '720px';
-        iframe.style.border = '1px solid #e1e1e1';
-        iframe.style.borderRadius = '8px';
-        iframe.setAttribute('sandbox', 'allow-same-origin');
-        iframe.srcdoc = data.ReportHTML;
-        recContainer.appendChild(iframe);
     }
 
     function renderIntunePrecheck(data) {
