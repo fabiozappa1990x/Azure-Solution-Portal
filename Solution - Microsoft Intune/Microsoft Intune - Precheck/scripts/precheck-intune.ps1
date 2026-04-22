@@ -234,56 +234,17 @@ $data.ManagedDevices = $managedDevices
 Write-Host "Devices found: $($managedDevices.Count)"
 
 # ----------------------------------------
-# [3] Analisi non conformita (dettagli policy)
+# [3] Non conformi: solo lista, nessuna chiamata per-device (troppo lenta)
 # ----------------------------------------
-Write-Host "[3/6] Non-compliance details..."
-$nonCompliantDevices = @($managedDevices | Where-Object { $_.Compliance -eq 'noncompliant' })
-$maxNonCompliantDetails = 50
+Write-Host "[3/6] Non-compliance summary (no per-device API calls)..."
+$nonCompliantDevicesList = @($managedDevices | Where-Object { $_.Compliance -eq 'noncompliant' })
 $nonCompliantTruncated = $false
 $reasonCounts = @{}
 $nonCompliantDetails = @()
 
-function Add-ReasonCount {
-    param([string]$ReasonKey)
-    if (-not $ReasonKey) { return }
-    if ($reasonCounts.ContainsKey($ReasonKey)) {
-        $reasonCounts[$ReasonKey] = [int]$reasonCounts[$ReasonKey] + 1
-    } else {
-        $reasonCounts[$ReasonKey] = 1
-    }
-}
-
-foreach ($device in $nonCompliantDevices) {
+$maxNonCompliantDetails = 50
+foreach ($device in $nonCompliantDevicesList) {
     if ($nonCompliantDetails.Count -ge $maxNonCompliantDetails) { $nonCompliantTruncated = $true; break }
-    $reasons = @()
-    if ($device.Id) {
-        $policyStates = Invoke-GraphAPI -Label "CompliancePolicyStates/$($device.Id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($device.Id)/deviceCompliancePolicyStates?`$select=displayName,state,settingStates"
-        if ($policyStates -and $policyStates.value) {
-            foreach ($policy in $policyStates.value) {
-                $policyName = if ($policy.displayName) { $policy.displayName } else { "Policy" }
-                $policyState = if ($policy.state) { $policy.state } else { "unknown" }
-                if ($policy.settingStates) {
-                    foreach ($s in $policy.settingStates) {
-                        $state = if ($s.state) { $s.state } else { "unknown" }
-                        if ($state -in @("nonCompliant","error","conflict")) {
-                            $settingName = if ($s.settingName) { $s.settingName } elseif ($s.setting) { $s.setting } elseif ($s.settingDisplayName) { $s.settingDisplayName } else { "Setting" }
-                            $reasonLabel = "$policyName - $settingName"
-                            $reasons += "${policyName}: $settingName ($state)"
-                            Add-ReasonCount -ReasonKey $reasonLabel
-                        }
-                    }
-                } elseif ($policyState -in @("nonCompliant","error","conflict")) {
-                    $reasons += "${policyName} ($policyState)"
-                    Add-ReasonCount -ReasonKey $policyName
-                }
-            }
-        }
-    }
-    if (-not $reasons -or $reasons.Count -eq 0) {
-        $reasons = @("Motivo non disponibile")
-        Add-ReasonCount -ReasonKey "Motivo non disponibile"
-    }
-
     $nonCompliantDetails += @{
         Name            = $device.Name
         OS              = $device.OS
@@ -293,7 +254,7 @@ foreach ($device in $nonCompliantDevices) {
         LastSync        = $device.LastSync
         EnrollmentType  = $device.EnrollmentType
         ManagementAgent = $device.ManagementAgent
-        Reasons         = $reasons
+        Reasons         = @("Dettaglio non disponibile in modalità rapida")
     }
 }
 $data.NonCompliantDevices = $nonCompliantDetails
@@ -376,67 +337,29 @@ $data.DeployedApps = @($deployedApps | Sort-Object { if ($_.IsAssigned) { 0 } el
 Write-Host "Deployed apps found: $($deployedApps.Count)"
 
 # ----------------------------------------
-# [5b] Compliance policy esistenti nel tenant
+# [5b] Compliance policy — una sola chiamata con $expand=assignments
 # ----------------------------------------
-Write-Host "[5b] Existing compliance policies..."
-$compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
-if (-not $compPoliciesResp -or -not $compPoliciesResp.value -or @($compPoliciesResp.value).Count -eq 0) {
-    $compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
-}
+Write-Host "[5b] Existing compliance policies (expand=assignments)..."
+# $expand=assignments restituisce le assegnazioni inline: zero chiamate N+1
+$compPoliciesResp = Invoke-GraphAPI -Label "CompliancePolicies" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies?`$top=500&`$expand=assignments"
 $existingCompPolicies = @()
 if ($compPoliciesResp -and $compPoliciesResp.value) {
     foreach ($p in $compPoliciesResp.value) {
-        $platform = Get-CompliancePlatform -Policy @{ OdataType = $p.'@odata.type' }
-        $assignUriV1 = "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies/$($p.id)/assignments?`$top=200&`$select=id"
-        $assignUriBeta = "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies/$($p.id)/assignments?`$top=200&`$select=id"
-        $assignCount = Get-EndpointValueCount -Label "ComplianceAssignments(v1)/$($p.id)" -Uri $assignUriV1
-        if ($assignCount -eq 0) {
-            $assignCount = Get-EndpointValueCount -Label "ComplianceAssignments(beta)/$($p.id)" -Uri $assignUriBeta
-        }
-
-        $detail = Invoke-GraphAPI -Label "ComplianceDetail(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies/$($p.id)"
-        if (-not $detail) {
-            $detail = Invoke-GraphAPI -Label "ComplianceDetail(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCompliancePolicies/$($p.id)"
-        }
-        $excludeComp = @('id','displayName','description','version','createdDateTime','lastModifiedDateTime','roleScopeTagIds','scheduledActionsForRule')
-        $configuredSettings = Get-ConfiguredSettingsCount -Object $detail -ExcludeProperties $excludeComp
-
-        $hasPasswordControl = $false
-        if ($detail) {
-            foreach ($prop in $detail.PSObject.Properties) {
-                if ($prop.Name -match 'password' -and (Is-ConfiguredValue -Value $prop.Value)) {
-                    $hasPasswordControl = $true
-                    break
-                }
-            }
-        }
-
-        $assessment = 'OK'
+        $platform  = Get-CompliancePlatform -Policy @{ OdataType = $p.'@odata.type' }
+        $assignCount = if ($p.assignments) { @($p.assignments).Count } else { 0 }
         $notes = @()
-        if ($assignCount -le 0) {
-            $assessment = 'WARN'
-            $notes += 'Policy non assegnata'
-        }
-        if ($configuredSettings -lt 3) {
-            if ($assessment -eq 'OK') { $assessment = 'WARN' }
-            $notes += 'Pochi setting configurati'
-        }
-        if (-not $hasPasswordControl -and $platform -eq 'windows') {
-            if ($assessment -eq 'OK') { $assessment = 'WARN' }
-            $notes += 'Nessun controllo password rilevato'
-        }
-
+        if ($assignCount -le 0) { $notes += 'Non assegnata' }
         $existingCompPolicies += @{
-            Id          = $p.id
-            DisplayName = $p.displayName
-            OdataType   = $p.'@odata.type'
-            LastModified = $p.lastModifiedDateTime
-            Platform    = $platform
-            AssignmentCount = $assignCount
-            IsAssigned  = ($assignCount -gt 0)
-            ConfiguredSettings = $configuredSettings
-            Assessment  = $assessment
-            Findings    = ($notes -join '; ')
+            Id               = $p.id
+            DisplayName      = $p.displayName
+            OdataType        = $p.'@odata.type'
+            LastModified     = $p.lastModifiedDateTime
+            Platform         = $platform
+            AssignmentCount  = $assignCount
+            IsAssigned       = ($assignCount -gt 0)
+            ConfiguredSettings = 0
+            Assessment       = if ($assignCount -gt 0) { 'OK' } else { 'WARN' }
+            Findings         = ($notes -join '; ')
         }
     }
 }
@@ -444,111 +367,79 @@ $data.ExistingCompliancePolicies = $existingCompPolicies
 Write-Host "Existing compliance policies: $($existingCompPolicies.Count)"
 
 # ----------------------------------------
-# [5c] Configuration profile esistenti nel tenant
+# [5c] Configuration profiles — una sola chiamata per endpoint con $expand=assignments
 # ----------------------------------------
-Write-Host "[5c] Existing config profiles..."
-$legacyConfigProfilesResp = Invoke-GraphAPI -Label "DeviceConfigurations(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
-if (-not $legacyConfigProfilesResp -or -not $legacyConfigProfilesResp.value -or @($legacyConfigProfilesResp.value).Count -eq 0) {
-    $legacyConfigProfilesResp = Invoke-GraphAPI -Label "DeviceConfigurations(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?`$top=500&`$select=id,displayName,@odata.type,lastModifiedDateTime"
-}
-$settingsCatalogResp = Invoke-GraphAPI -Label "ConfigurationPolicies(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies?`$top=500&`$select=id,name,@odata.type,platforms,technologies,lastModifiedDateTime"
-if (-not $settingsCatalogResp -or -not $settingsCatalogResp.value -or @($settingsCatalogResp.value).Count -eq 0) {
-    $settingsCatalogResp = Invoke-GraphAPI -Label "ConfigurationPolicies(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?`$top=500&`$select=id,name,@odata.type,platforms,technologies,lastModifiedDateTime"
-}
-$adminTemplatesResp = Invoke-GraphAPI -Label "GroupPolicyConfigurations(v1)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations?`$top=500&`$select=id,displayName,lastModifiedDateTime"
-if (-not $adminTemplatesResp -or -not $adminTemplatesResp.value -or @($adminTemplatesResp.value).Count -eq 0) {
-    $adminTemplatesResp = Invoke-GraphAPI -Label "GroupPolicyConfigurations(beta)" -Uri "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations?`$top=500&`$select=id,displayName,lastModifiedDateTime"
-}
+Write-Host "[5c] Existing config profiles (expand=assignments)..."
+
+$legacyConfigProfilesResp = Invoke-GraphAPI -Label "DeviceConfigurations" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?`$top=500&`$expand=assignments"
+$settingsCatalogResp      = Invoke-GraphAPI -Label "ConfigurationPolicies" -Uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?`$top=500&`$expand=assignments"
+$adminTemplatesResp       = Invoke-GraphAPI -Label "GroupPolicyConfigurations" -Uri "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations?`$top=500&`$expand=assignments"
+
 $existingConfigProfiles = @()
+
 if ($legacyConfigProfilesResp -and $legacyConfigProfilesResp.value) {
     foreach ($p in $legacyConfigProfilesResp.value) {
-        $assignCount = Get-EndpointValueCount -Label "ConfigAssignments(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
-        if ($assignCount -eq 0) {
-            $assignCount = Get-EndpointValueCount -Label "ConfigAssignments(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
-        }
-        $detail = Invoke-GraphAPI -Label "ConfigDetail(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations/$($p.id)"
-        if (-not $detail) {
-            $detail = Invoke-GraphAPI -Label "ConfigDetail(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations/$($p.id)"
-        }
-        $excludeCfg = @('id','displayName','description','version','createdDateTime','lastModifiedDateTime','roleScopeTagIds')
-        $configuredSettings = Get-ConfiguredSettingsCount -Object $detail -ExcludeProperties $excludeCfg
-        $assessment = if ($assignCount -gt 0 -and $configuredSettings -gt 0) { 'OK' } elseif ($configuredSettings -gt 0) { 'WARN' } else { 'WARN' }
+        $assignCount = if ($p.assignments) { @($p.assignments).Count } else { 0 }
         $findings = @()
         if ($assignCount -le 0) { $findings += 'Profile non assegnato' }
-        if ($configuredSettings -le 0) { $findings += 'Nessun setting rilevato' }
         $existingConfigProfiles += @{
-            Id          = $p.id
-            DisplayName = $p.displayName
-            OdataType   = $p.'@odata.type'
-            Source      = 'deviceConfigurations'
-            LastModified = $p.lastModifiedDateTime
-            AssignmentCount = $assignCount
-            IsAssigned  = ($assignCount -gt 0)
-            ConfiguredSettings = $configuredSettings
-            Assessment  = $assessment
-            Findings    = ($findings -join '; ')
-        }
-    }
-}
-if ($settingsCatalogResp -and $settingsCatalogResp.value) {
-    foreach ($p in $settingsCatalogResp.value) {
-        $assignCount = Get-EndpointValueCount -Label "ConfigPolicyAssignments(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies/$($p.id)/assignments?`$top=200&`$select=id"
-        if ($assignCount -eq 0) {
-            $assignCount = Get-EndpointValueCount -Label "ConfigPolicyAssignments(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies/$($p.id)/assignments?`$top=200&`$select=id"
-        }
-        $settingsCount = Get-EndpointValueCount -Label "ConfigPolicySettings(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/configurationPolicies/$($p.id)/settings?`$top=1000"
-        if ($settingsCount -eq 0) {
-            $settingsCount = Get-EndpointValueCount -Label "ConfigPolicySettings(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies/$($p.id)/settings?`$top=1000"
-        }
-        $assessment = if ($assignCount -gt 0 -and $settingsCount -gt 0) { 'OK' } elseif ($settingsCount -gt 0) { 'WARN' } else { 'WARN' }
-        $findings = @()
-        if ($assignCount -le 0) { $findings += 'Policy non assegnata' }
-        if ($settingsCount -le 0) { $findings += 'Nessun setting rilevato' }
-        $existingConfigProfiles += @{
-            Id          = $p.id
-            DisplayName = if ($p.name) { $p.name } else { $p.displayName }
-            OdataType   = if ($p.'@odata.type') { $p.'@odata.type' } else { '#microsoft.graph.deviceManagementConfigurationPolicy' }
-            Source      = 'configurationPolicies'
-            Platforms   = if ($p.platforms) { @($p.platforms) } else { @() }
-            Technologies = if ($p.technologies) { @($p.technologies) } else { @() }
-            LastModified = $p.lastModifiedDateTime
-            AssignmentCount = $assignCount
-            IsAssigned  = ($assignCount -gt 0)
-            ConfiguredSettings = $settingsCount
-            Assessment  = $assessment
-            Findings    = ($findings -join '; ')
-        }
-    }
-}
-if ($adminTemplatesResp -and $adminTemplatesResp.value) {
-    foreach ($p in $adminTemplatesResp.value) {
-        $assignCount = Get-EndpointValueCount -Label "GpoAssignments(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
-        if ($assignCount -eq 0) {
-            $assignCount = Get-EndpointValueCount -Label "GpoAssignments(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations/$($p.id)/assignments?`$top=200&`$select=id"
-        }
-        $settingsCount = Get-EndpointValueCount -Label "GpoSettings(v1)/$($p.id)" -Uri "https://graph.microsoft.com/v1.0/deviceManagement/groupPolicyConfigurations/$($p.id)/definitionValues?`$top=1000"
-        if ($settingsCount -eq 0) {
-            $settingsCount = Get-EndpointValueCount -Label "GpoSettings(beta)/$($p.id)" -Uri "https://graph.microsoft.com/beta/deviceManagement/groupPolicyConfigurations/$($p.id)/definitionValues?`$top=1000"
-        }
-        $assessment = if ($assignCount -gt 0 -and $settingsCount -gt 0) { 'OK' } elseif ($settingsCount -gt 0) { 'WARN' } else { 'WARN' }
-        $findings = @()
-        if ($assignCount -le 0) { $findings += 'Template non assegnato' }
-        if ($settingsCount -le 0) { $findings += 'Nessun setting rilevato' }
-        $existingConfigProfiles += @{
-            Id          = $p.id
-            DisplayName = $p.displayName
-            OdataType   = '#microsoft.graph.groupPolicyConfiguration'
-            Source      = 'groupPolicyConfigurations'
-            LastModified = $p.lastModifiedDateTime
-            AssignmentCount = $assignCount
-            IsAssigned  = ($assignCount -gt 0)
-            ConfiguredSettings = $settingsCount
-            Assessment  = $assessment
-            Findings    = ($findings -join '; ')
+            Id               = $p.id
+            DisplayName      = $p.displayName
+            OdataType        = $p.'@odata.type'
+            Source           = 'deviceConfigurations'
+            LastModified     = $p.lastModifiedDateTime
+            AssignmentCount  = $assignCount
+            IsAssigned       = ($assignCount -gt 0)
+            ConfiguredSettings = 0
+            Assessment       = if ($assignCount -gt 0) { 'OK' } else { 'WARN' }
+            Findings         = ($findings -join '; ')
         }
     }
 }
 
+if ($settingsCatalogResp -and $settingsCatalogResp.value) {
+    foreach ($p in $settingsCatalogResp.value) {
+        $assignCount = if ($p.assignments) { @($p.assignments).Count } else { 0 }
+        $findings = @()
+        if ($assignCount -le 0) { $findings += 'Policy non assegnata' }
+        $existingConfigProfiles += @{
+            Id               = $p.id
+            DisplayName      = if ($p.name) { $p.name } else { $p.displayName }
+            OdataType        = if ($p.'@odata.type') { $p.'@odata.type' } else { '#microsoft.graph.deviceManagementConfigurationPolicy' }
+            Source           = 'configurationPolicies'
+            Platforms        = if ($p.platforms) { @($p.platforms) } else { @() }
+            Technologies     = if ($p.technologies) { @($p.technologies) } else { @() }
+            LastModified     = $p.lastModifiedDateTime
+            AssignmentCount  = $assignCount
+            IsAssigned       = ($assignCount -gt 0)
+            ConfiguredSettings = 0
+            Assessment       = if ($assignCount -gt 0) { 'OK' } else { 'WARN' }
+            Findings         = ($findings -join '; ')
+        }
+    }
+}
+
+if ($adminTemplatesResp -and $adminTemplatesResp.value) {
+    foreach ($p in $adminTemplatesResp.value) {
+        $assignCount = if ($p.assignments) { @($p.assignments).Count } else { 0 }
+        $findings = @()
+        if ($assignCount -le 0) { $findings += 'Template non assegnato' }
+        $existingConfigProfiles += @{
+            Id               = $p.id
+            DisplayName      = $p.displayName
+            OdataType        = '#microsoft.graph.groupPolicyConfiguration'
+            Source           = 'groupPolicyConfigurations'
+            LastModified     = $p.lastModifiedDateTime
+            AssignmentCount  = $assignCount
+            IsAssigned       = ($assignCount -gt 0)
+            ConfiguredSettings = 0
+            Assessment       = if ($assignCount -gt 0) { 'OK' } else { 'WARN' }
+            Findings         = ($findings -join '; ')
+        }
+    }
+}
+
+# Dedup per Id
 $dedupById = @{}
 foreach ($p in $existingConfigProfiles) {
     if (-not $p.Id) { continue }
@@ -575,82 +466,7 @@ $data.Diagnostics = @{
     EndpointErrorCount  = @($statusValues | Where-Object { $_.Status -eq 'error' }).Count
 }
 
-$deviceByPlatform = @{
-    windows = [int]$windowsDevices
-    ios     = [int]$iosDevices
-    android = [int]$androidDevices
-    macos   = [int]$macDevices
-    other   = [int]($totalDevices - $windowsDevices - $iosDevices - $androidDevices - $macDevices)
-}
-
-$complianceByPlatform = @{ windows = 0; ios = 0; android = 0; macos = 0; other = 0 }
-foreach ($p in $existingCompPolicies) {
-    $k = Get-CompliancePlatform -Policy $p
-    if (-not $complianceByPlatform.ContainsKey($k)) { $k = 'other' }
-    $complianceByPlatform[$k] = [int]$complianceByPlatform[$k] + 1
-}
-
-$configByPlatform = @{ windows = 0; ios = 0; android = 0; macos = 0; other = 0 }
-$configBySource = @{ deviceConfigurations = 0; configurationPolicies = 0; groupPolicyConfigurations = 0; other = 0 }
-foreach ($p in $data.ExistingConfigProfiles) {
-    $k = Get-ConfigPlatform -Profile $p
-    if (-not $configByPlatform.ContainsKey($k)) { $k = 'other' }
-    $configByPlatform[$k] = [int]$configByPlatform[$k] + 1
-
-    $src = "$($p.Source)"
-    if ([string]::IsNullOrWhiteSpace($src)) { $src = 'other' }
-    if (-not $configBySource.ContainsKey($src)) { $src = 'other' }
-    $configBySource[$src] = [int]$configBySource[$src] + 1
-}
-
-$requiredPlatforms = @()
-foreach ($pk in @('windows','ios','android','macos')) {
-    if ([int]$deviceByPlatform[$pk] -gt 0) { $requiredPlatforms += $pk }
-}
-if ($requiredPlatforms.Count -eq 0) { $requiredPlatforms = @('windows','ios','android','macos') }
-
-$bestPracticeChecks = @()
-function Add-BpCheck {
-    param(
-        [string]$Id,
-        [string]$Area,
-        [string]$Title,
-        [bool]$Passed,
-        [string]$Severity = 'warning',
-        [string]$Recommendation = '',
-        [string]$DeployHint = ''
-    )
-    $bestPracticeChecks += @{
-        Id             = $Id
-        Area           = $Area
-        Title          = $Title
-        Passed         = $Passed
-        Severity       = $Severity
-        Status         = if ($Passed) { 'OK' } else { 'MISSING' }
-        Recommendation = $Recommendation
-        DeployHint     = $DeployHint
-    }
-}
-
-Add-BpCheck -Id 'graph-endpoints' -Area 'Permissions' -Title 'Endpoint Graph accessibili per il precheck' -Passed ($data.Diagnostics.EndpointErrorCount -eq 0) -Severity 'critical' -Recommendation 'Concedere admin consent alle permission Intune Graph richieste e riautenticarsi.' -DeployHint 'Verifica App Registration e consenso admin.'
-Add-BpCheck -Id 'has-compliance-policies' -Area 'Compliance' -Title 'Almeno una Compliance Policy presente nel tenant' -Passed ($existingCompPolicies.Count -gt 0) -Severity 'critical' -Recommendation 'Creare almeno una compliance policy baseline per piattaforma.' -DeployHint 'Usare Configura Baseline Intune.'
-Add-BpCheck -Id 'has-config-profiles' -Area 'Configuration' -Title 'Almeno un Configuration Profile presente nel tenant' -Passed ($data.ExistingConfigProfiles.Count -gt 0) -Severity 'critical' -Recommendation 'Creare configuration profiles (Settings Catalog / templates) baseline.' -DeployHint 'Usare Configura Baseline Intune.'
-Add-BpCheck -Id 'has-assigned-apps' -Area 'Applications' -Title 'Almeno una app assegnata in Intune' -Passed ($assignedApps -gt 0) -Severity 'warning' -Recommendation 'Pubblicare e assegnare app core (M365, browser, agent, security tooling).' -DeployHint 'Rivedere tab App Deployate e assignments.'
-Add-BpCheck -Id 'device-compliance-target' -Area 'Compliance' -Title 'Conformità dispositivi >= 80%' -Passed ($compliancePct -ge 80) -Severity 'warning' -Recommendation 'Indagare i motivi di non conformità e correggere policy/assegnazioni.' -DeployHint 'Controllare tab dispositivi e motivi non conformità.'
-
-foreach ($pk in $requiredPlatforms) {
-    Add-BpCheck -Id "platform-$pk-compliance" -Area "Platform/$pk" -Title "Policy di compliance presenti per piattaforma $pk" -Passed ([int]$complianceByPlatform[$pk] -gt 0) -Severity 'critical' -Recommendation "Definire almeno una compliance policy per $pk." -DeployHint 'Usare Configura Baseline Intune (platform-aware).'
-    Add-BpCheck -Id "platform-$pk-config" -Area "Platform/$pk" -Title "Configuration profile presenti per piattaforma $pk" -Passed ([int]$configByPlatform[$pk] -gt 0) -Severity 'warning' -Recommendation "Definire almeno un configuration profile per $pk." -DeployHint 'Usare Configura Baseline Intune (platform-aware).'
-}
-
-$data.Inventory = @{
-    DevicesByPlatform      = $deviceByPlatform
-    ComplianceByPlatform   = $complianceByPlatform
-    ConfigProfilesByPlatform = $configByPlatform
-    ConfigProfilesBySource = $configBySource
-    RequiredPlatforms      = $requiredPlatforms
-}
-$data.BestPracticeChecks = $bestPracticeChecks
+# Inventory e BestPracticeChecks vengono calcolati DOPO il Summary (dopo che $windowsDevices ecc. sono definiti)
 
 # ----------------------------------------
 # [6] Summary
@@ -696,6 +512,64 @@ $readiness = 50
 if ($totalDevices -gt 0) { $readiness += [math]::Min(30, [int]($compliancePct * 0.3)) }
 if ($assignedApps -gt 0) { $readiness += 20 }
 $readiness = [math]::Min(100, $readiness)
+
+# ----------------------------------------
+# Inventory e Best Practice Checks (qui tutte le variabili sono definite)
+# ----------------------------------------
+$deviceByPlatform = @{
+    windows = [int]$windowsDevices
+    ios     = [int]$iosDevices
+    android = [int]$androidDevices
+    macos   = [int]$macDevices
+    other   = [math]::Max(0, [int]($totalDevices - $windowsDevices - $iosDevices - $androidDevices - $macDevices))
+}
+
+$complianceByPlatform = @{ windows = 0; ios = 0; android = 0; macos = 0; other = 0 }
+foreach ($p in $existingCompPolicies) {
+    $k = Get-CompliancePlatform -Policy $p
+    if (-not $complianceByPlatform.ContainsKey($k)) { $k = 'other' }
+    $complianceByPlatform[$k] = [int]$complianceByPlatform[$k] + 1
+}
+
+$configByPlatform = @{ windows = 0; ios = 0; android = 0; macos = 0; other = 0 }
+$configBySource   = @{ deviceConfigurations = 0; configurationPolicies = 0; groupPolicyConfigurations = 0; other = 0 }
+foreach ($p in $data.ExistingConfigProfiles) {
+    $k = Get-ConfigPlatform -Profile $p
+    if (-not $configByPlatform.ContainsKey($k)) { $k = 'other' }
+    $configByPlatform[$k] = [int]$configByPlatform[$k] + 1
+    $src = if ($p.Source) { "$($p.Source)" } else { 'other' }
+    if (-not $configBySource.ContainsKey($src)) { $src = 'other' }
+    $configBySource[$src] = [int]$configBySource[$src] + 1
+}
+
+$requiredPlatforms = @()
+foreach ($pk in @('windows','ios','android','macos')) {
+    if ([int]$deviceByPlatform[$pk] -gt 0) { $requiredPlatforms += $pk }
+}
+if ($requiredPlatforms.Count -eq 0) { $requiredPlatforms = @('windows','ios','android','macos') }
+
+# BestPracticeChecks — uso array script-scope per evitare bug di scope in funzione
+$bestPracticeChecks = [System.Collections.Generic.List[hashtable]]::new()
+
+$bestPracticeChecks.Add(@{ Id='graph-endpoints';           Area='Permissions';    Title='Endpoint Graph accessibili per il precheck';                    Passed=($data.Diagnostics.EndpointErrorCount -eq 0); Severity='critical'; Status=if($data.Diagnostics.EndpointErrorCount -eq 0){'OK'}else{'MISSING'}; Recommendation='Concedere admin consent alle permission Intune Graph richieste e riautenticarsi.'; DeployHint='Verifica App Registration e consenso admin.' })
+$bestPracticeChecks.Add(@{ Id='has-compliance-policies';   Area='Compliance';     Title='Almeno una Compliance Policy presente nel tenant';              Passed=($existingCompPolicies.Count -gt 0); Severity='critical'; Status=if($existingCompPolicies.Count -gt 0){'OK'}else{'MISSING'}; Recommendation='Creare almeno una compliance policy baseline per piattaforma.'; DeployHint='Usare Configura Baseline Intune.' })
+$bestPracticeChecks.Add(@{ Id='has-config-profiles';       Area='Configuration';  Title='Almeno un Configuration Profile presente nel tenant';           Passed=($data.ExistingConfigProfiles.Count -gt 0); Severity='critical'; Status=if($data.ExistingConfigProfiles.Count -gt 0){'OK'}else{'MISSING'}; Recommendation='Creare configuration profiles (Settings Catalog / templates) baseline.'; DeployHint='Usare Configura Baseline Intune.' })
+$bestPracticeChecks.Add(@{ Id='has-assigned-apps';         Area='Applications';   Title='Almeno una app assegnata in Intune';                            Passed=($assignedApps -gt 0); Severity='warning'; Status=if($assignedApps -gt 0){'OK'}else{'MISSING'}; Recommendation='Pubblicare e assegnare app core (M365, browser, agent, security tooling).'; DeployHint='Rivedere tab App Deployate e assignments.' })
+$bestPracticeChecks.Add(@{ Id='device-compliance-target';  Area='Compliance';     Title='Conformità dispositivi >= 80%';                                 Passed=($compliancePct -ge 80); Severity='warning'; Status=if($compliancePct -ge 80){'OK'}else{'MISSING'}; Recommendation='Indagare i motivi di non conformità e correggere policy/assegnazioni.'; DeployHint='Controllare tab dispositivi e motivi non conformità.' })
+
+foreach ($pk in $requiredPlatforms) {
+    $bestPracticeChecks.Add(@{ Id="platform-$pk-compliance"; Area="Platform/$pk"; Title="Policy di compliance presenti per piattaforma $pk"; Passed=([int]$complianceByPlatform[$pk] -gt 0); Severity='critical'; Status=if([int]$complianceByPlatform[$pk] -gt 0){'OK'}else{'MISSING'}; Recommendation="Definire almeno una compliance policy per $pk."; DeployHint='Usare Configura Baseline Intune (platform-aware).' })
+    $bestPracticeChecks.Add(@{ Id="platform-$pk-config";     Area="Platform/$pk"; Title="Configuration profile presenti per piattaforma $pk"; Passed=([int]$configByPlatform[$pk] -gt 0); Severity='warning'; Status=if([int]$configByPlatform[$pk] -gt 0){'OK'}else{'MISSING'}; Recommendation="Definire almeno un configuration profile per $pk."; DeployHint='Usare Configura Baseline Intune (platform-aware).' })
+}
+
+$data.Inventory = @{
+    DevicesByPlatform        = $deviceByPlatform
+    ComplianceByPlatform     = $complianceByPlatform
+    ConfigProfilesByPlatform = $configByPlatform
+    ConfigProfilesBySource   = $configBySource
+    RequiredPlatforms        = $requiredPlatforms
+}
+$data.BestPracticeChecks = @($bestPracticeChecks)
 
 $data.Summary = @{
     TotalManagedDevices   = $totalDevices
