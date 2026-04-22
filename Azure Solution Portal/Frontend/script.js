@@ -399,6 +399,16 @@ async function initializeAuth() {
                         document.getElementById('run-precheck')?.click();
                     }, 800);
                 }
+
+                // Se stavamo aspettando il consenso Graph per Conditional Access, riavvia il precheck
+                const caPending = sessionStorage.getItem('ca_consent_pending');
+                if (caPending) {
+                    sessionStorage.removeItem('ca_consent_pending');
+                    setTimeout(() => {
+                        showPrecheckModal('conditional-access');
+                        document.getElementById('run-precheck')?.click();
+                    }, 800);
+                }
             } catch {
                 currentAccessToken = null;
                 updateAuthUI(false);
@@ -739,7 +749,7 @@ const CA_BASELINE = [
         name: 'Blocca piattaforme sconosciute',
         description: 'Blocca accessi da piattaforme non riconosciute (non Windows, macOS, iOS, Android, Linux).',
         why: 'Piattaforme "unknown" includono vecchi browser, device IoT, script automatizzati senza user agent noto. Bloccarle elimina una classe di tentativi di accesso non legittimi senza impatto sugli utenti reali.',
-        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.grantControls?.builtInControls?.includes('block') && p.conditions?.platforms?.includePlatforms && !p.conditions?.platforms?.includePlatforms?.includes('all')),
+        detectFn: (ps) => ps.some(p => p.state !== 'disabled' && p.grantControls?.builtInControls?.includes('block') && p.conditions?.platforms?.includePlatforms?.includes('all') && p.conditions?.platforms?.excludePlatforms?.length > 0),
         getBody: (bg) => caBody('CA204', 'Internals-AttackSurfaceReduction-AllApps-AnyPlatform-BlockUnknownPlatforms', 'enabledForReportingButNotEnforced',
             { users: { includeUsers: ['All'], excludeUsers: ['GuestsOrExternalUsers'], excludeGroups: bg ? [bg] : [] }, applications: { includeApplications: ['All'] }, clientAppTypes: ['all'], platforms: { includePlatforms: ['all'], excludePlatforms: ['android', 'iOS', 'windows', 'macOS', 'linux', 'windowsPhone'] } },
             { operator: 'OR', builtInControls: ['block'] })
@@ -1367,7 +1377,7 @@ const MDE_BASELINE = [
         }
     },
     {
-        id: 'mde-filehash',
+        id: 'mde-file-hash',
         name: 'File Hash Computation',
         category: 'Telemetry',
         critical: false,
@@ -1414,6 +1424,8 @@ function initMdeBaselineWizard() {
     document.getElementById('mde-step-1').style.display = '';
     document.getElementById('mde-step-2').style.display = 'none';
     updateMdeStepIndicator(1);
+    const logEl = document.getElementById('mde-deploy-log');
+    if (logEl) logEl.innerHTML = '';
 
     // Close X
     const closeX = document.getElementById('mde-baseline-close');

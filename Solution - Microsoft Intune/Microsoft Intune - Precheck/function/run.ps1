@@ -4,6 +4,31 @@ param($Request, $TriggerMetadata)
 
 Write-Host "=== START precheck-intune ==="
 
+function ConvertFrom-Base64Url {
+    param([string]$Base64Url)
+    if ([string]::IsNullOrWhiteSpace($Base64Url)) { return $null }
+    $padded = $Base64Url.Replace('-', '+').Replace('_', '/')
+    switch ($padded.Length % 4) {
+        2 { $padded += '==' }
+        3 { $padded += '=' }
+    }
+    return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($padded))
+}
+
+function Get-JwtClaims {
+    param([string]$Token)
+    if ([string]::IsNullOrWhiteSpace($Token)) { return $null }
+    $parts = $Token.Split('.')
+    if ($parts.Count -lt 2) { return $null }
+    try {
+        $payloadJson = ConvertFrom-Base64Url -Base64Url $parts[1]
+        if ([string]::IsNullOrWhiteSpace($payloadJson)) { return $null }
+        return ($payloadJson | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
 function Get-CorsHeaders {
     param($Request)
 
@@ -33,7 +58,9 @@ $corsHeaders = Get-CorsHeaders $Request
 # --- Management token (validazione identità) ---
 $authHeader = $Request.Headers['Authorization']
 if ($authHeader -is [array]) { $authHeader = $authHeader[0] }
-if ($authHeader -is [System.Security.SecureString]) {
+if ($null -eq $authHeader) {
+    $authHeader = ''
+} elseif ($authHeader -is [System.Security.SecureString]) {
     $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($authHeader)
     $authHeader = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
     [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
@@ -65,22 +92,50 @@ if (-not $graphTokenHeader -or $graphTokenHeader.Length -lt 100) {
 
 $subscriptionId = $Request.Query.SubscriptionId
 if (-not $subscriptionId) { $subscriptionId = $Request.Query.subscriptionId }
+if (-not $subscriptionId) { $subscriptionId = 'tenant-only' }
 
-if (-not $subscriptionId) {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 400; Body = '{"error":"SubscriptionId mancante"}'; Headers = $corsHeaders })
+$accessClaims = Get-JwtClaims -Token $accessToken
+$graphClaims  = Get-JwtClaims -Token $graphTokenHeader
+$accessTid = if ($accessClaims -and $accessClaims.tid) { "$($accessClaims.tid)" } else { $null }
+$graphTid  = if ($graphClaims -and $graphClaims.tid) { "$($graphClaims.tid)" } else { $null }
+
+# Validate management token + get tenantId (for real subscriptions)
+$tenantId = $null
+$subscriptionIdLower = $subscriptionId.ToLowerInvariant()
+$requiresArmValidation = ($subscriptionIdLower -ne 'tenant-only')
+
+if ($requiresArmValidation) {
+    try {
+        $headers = @{ 'Authorization' = "Bearer $accessToken"; 'Content-Type' = 'application/json' }
+        $url = "https://management.azure.com/subscriptions/${subscriptionId}?api-version=2022-12-01"
+        $result = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+        Write-Host "Token valid for subscription: $($result.displayName)"
+        $tenantId = $result.tenantId
+    } catch {
+        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Token non valido o subscription non accessibile"}'; Headers = $corsHeaders })
+        return
+    }
+} else {
+    Write-Host "Tenant-only mode: ARM subscription validation skipped"
+}
+
+if (-not $tenantId) {
+    if ($graphTid) { $tenantId = $graphTid }
+    elseif ($accessTid) { $tenantId = $accessTid }
+}
+
+if (-not $tenantId) {
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Impossibile determinare il tenant dai token ricevuti"}'; Headers = $corsHeaders })
     return
 }
 
-# Validate management token + get tenantId
-$tenantId = $null
-try {
-    $headers = @{ 'Authorization' = "Bearer $accessToken"; 'Content-Type' = 'application/json' }
-    $url = "https://management.azure.com/subscriptions/${subscriptionId}?api-version=2022-12-01"
-    $result = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
-    Write-Host "Token valid for subscription: $($result.displayName)"
-    $tenantId = $result.tenantId
-} catch {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Token non valido o subscription non accessibile"}'; Headers = $corsHeaders })
+if ($graphTid -and $accessTid -and ($graphTid -ne $accessTid)) {
+    Write-Warning "Access token tid ($accessTid) differs from Graph token tid ($graphTid)"
+}
+
+if ($requiresArmValidation -and $graphTid -and ($tenantId -ne $graphTid)) {
+    $msg = '{"error":"Il token Graph appartiene a un tenant diverso dalla subscription selezionata. Riautenticarsi e selezionare la subscription del tenant Intune corretto."}'
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = $msg; Headers = $corsHeaders })
     return
 }
 
