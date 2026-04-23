@@ -26,6 +26,10 @@ function psDownloadUrl(folderEncoded, scriptName) {
     return `${GITHUB_RAW}/${folderEncoded}/workload/scripts/${scriptName}`;
 }
 
+function rawFileUrl(pathEncoded) {
+    return `${GITHUB_RAW}/${pathEncoded}`;
+}
+
 function getSavedSubscriptionIds() {
     try {
         const raw = localStorage.getItem(LS_SUBS);
@@ -293,6 +297,33 @@ const SOLUTIONS = {
         portalUrl: '#',
         psCommand: '# Deploy tramite wizard baseline nel portale',
         psDownload: null,
+        apiEndpoint: null
+    },
+    'assessment-security-m365-azure': {
+        name: 'Assessment Security M365 + Azure',
+        detailsTitle: 'Assessment Security M365 + Azure — Dettagli',
+        details: {
+            whatIs: 'Framework PowerShell unico per assessment sicurezza e offensive simulation controllata su Microsoft 365, Entra ID e Azure. Produce finding con severita, evidenze, remediation e kill-chain simulata.',
+            features: [
+                'Assessment read-only su Identity, M365 e risorse Azure',
+                'Simulation non distruttiva di attack chain cloud (MITRE ATT&CK)',
+                'Modalita operative: Assessment, Simulation, Full, ReportOnly',
+                'Report HTML executive-ready con prioritizzazione dei rischi'
+            ],
+            notes: [
+                'Usare solo su tenant autorizzati: alcune simulazioni possono generare alert in Sentinel/Defender.',
+                'Richiede PowerShell 7+ e moduli Microsoft.Graph/Az (gestiti dallo script).',
+                'La soluzione e script-based: precheck e deploy dal portale saranno allineati in una fase successiva.'
+            ],
+            docsAnchor: 'assessment-security-m365-azure'
+        },
+        precheckTitle: 'Assessment Security M365 + Azure',
+        precheckDesc: 'Questa soluzione esegue assessment e simulazione tramite script PowerShell locale.',
+        deployTitle: 'Esecuzione Assessment Security M365 + Azure',
+        deployDesc: 'Scarica ed esegui lo script PowerShell per avviare assessment/simulation e generare il report HTML.',
+        portalUrl: '#',
+        psDownload: rawFileUrl('Solution%20-%20Assessment%20Security%20M365_Azure/Invoke-M365AzurePentest.ps1'),
+        psCommand: '.\\Invoke-M365AzurePentest.ps1 -Mode Full -AttackIntensity High',
         apiEndpoint: null
     },
     'update-manager': {
@@ -2109,6 +2140,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
+
+        if (currentSolution === 'assessment-security-m365-azure') {
+            alert('ℹ️ Questa soluzione e script-based.\n\nApri "Esegui Script" per scaricare ed eseguire Invoke-M365AzurePentest.ps1 in PowerShell 7.');
+            showDeployModal(currentSolution);
+            return;
+        }
 
         // Defender XDR e Conditional Access: precheck diretto browser → Graph API
         if (currentSolution === 'defender-xdr') { await runDefenderXdrPrecheckClientSide(); return; }
