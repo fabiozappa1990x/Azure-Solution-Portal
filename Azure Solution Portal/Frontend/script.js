@@ -88,6 +88,10 @@ function parseSubscriptionIds(input) {
     return Array.from(new Set(valid));
 }
 
+function isTenantWideSolution(solutionKey) {
+    return ['intune', 'defender-xdr', 'conditional-access', 'assessment-365'].includes(String(solutionKey || '').trim());
+}
+
 async function fetchSubscriptionsForUser(accessToken) {
     const resp = await fetch('https://management.azure.com/subscriptions?api-version=2022-12-01', {
         headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -2459,7 +2463,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Soluzioni tenant-wide: non richiedono subscription Azure
         let subscriptionIds;
-        if (currentSolution === 'intune' || currentSolution === 'defender-xdr' || currentSolution === 'conditional-access' || currentSolution === 'assessment-365') {
+        if (isTenantWideSolution(currentSolution)) {
             subscriptionIds = ['tenant-only'];
         } else {
             const subscriptionInput = document.getElementById('subscription-id').value.trim();
@@ -4401,7 +4405,7 @@ function showPrecheckModal(solution) {
     const subGroup = document.getElementById('subscription-id')?.closest('.form-group');
     const tenantGroup = document.getElementById('tenant-id')?.closest('.form-group');
     const rgGroup = document.getElementById('resource-group')?.closest('.form-group');
-    if (solution === 'intune' || solution === 'defender-xdr' || solution === 'conditional-access' || solution === 'assessment-365') {
+    if (isTenantWideSolution(solution)) {
         if (subGroup) subGroup.style.display = 'none';
         if (tenantGroup) tenantGroup.style.display = '';
         if (rgGroup) rgGroup.style.display = 'none';
