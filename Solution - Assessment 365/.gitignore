@@ -1,0 +1,70 @@
+# AI assistants
+.claude/
+.cursor/
+.copilot/
+.codeium/
+.windsurf/
+.aider*
+.continue/
+.cursorrules
+.github/copilot-instructions.md
+.claudeignore/
+.claudeignore
+claudeignore
+docs/superpowers/
+.playwright-mcp/
+
+# Assessment output (runtime output directories, not the source module)
+M365-Assessment/
+/M365-Assess/
+CIS/
+SCF/
+SecFrame/
+
+# Credentials and certificates
+.m365assess.json
+.env
+.env.*
+*.pfx
+*.pem
+*.key
+*.p12
+*.cer
+secrets.json
+credentials.json
+
+# Temp files
+_tmp*.ps1
+_run*.ps1
+*.tmp
+*~
+
+# OS artifacts
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# PowerShell artifacts
+PSScriptAnalyzerResults.*
+testResults.xml
+coverage.xml
+*.clixml
+*_transcript_*.txt
+
+# Module cache (local installs)
+Modules/
+
+# Bundled native DLLs (spike/experiment artifacts — never committed)
+src/M365-Assess/lib/
+
+# Node (report build tooling)
+node_modules/
+npm-debug.log*
+
+# IDE
+.vscode/
+.vs/
+*.code-workspace
+*.suo
+*.user
+.superpowers/

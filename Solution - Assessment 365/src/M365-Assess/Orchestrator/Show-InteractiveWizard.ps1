@@ -1,0 +1,433 @@
+function Show-InteractiveWizard {
+    <#
+    .SYNOPSIS
+        Presents an interactive menu-driven wizard for configuring the assessment.
+    .DESCRIPTION
+        Walks the user through selecting sections, tenant, auth method, and output
+        folder. Returns a hashtable of parameter values to drive the assessment.
+    #>
+    [CmdletBinding()]
+    param(
+        [string[]]$PreSelectedSections,
+        [string]$PreSelectedOutputFolder
+    )
+
+    # Colorblind-friendly palette
+    $cBorder  = 'Cyan'
+    $cPrompt  = 'Yellow'
+    $cNormal  = 'White'
+    $cMuted   = 'DarkGray'
+    $cSuccess = 'Cyan'
+    $errorDisplayDelay = 1  # seconds to pause after validation errors
+    $cError   = 'Magenta'
+
+    # Section definitions with default selection state
+    # Use string keys to avoid OrderedDictionary int-key vs ordinal-index ambiguity (GitHub #3)
+    $sections = [ordered]@{
+        '1'  = @{ Name = 'Tenant';          Label = 'Tenant Information';           Selected = $true }
+        '2'  = @{ Name = 'Identity';        Label = 'Identity & Access';            Selected = $true }
+        '3'  = @{ Name = 'Licensing';       Label = 'Licensing';                    Selected = $true }
+        '4'  = @{ Name = 'Email';           Label = 'Email & Exchange';             Selected = $true }
+        '5'  = @{ Name = 'Intune';          Label = 'Intune Devices';               Selected = $true }
+        '6'  = @{ Name = 'Security';        Label = 'Security';                     Selected = $true }
+        '7'  = @{ Name = 'Collaboration';   Label = 'Collaboration';                Selected = $true }
+        '8'  = @{ Name = 'Hybrid';          Label = 'Hybrid Sync';                  Selected = $true }
+        '9'  = @{ Name = 'PowerBI';         Label = 'Power BI';                     Selected = $true }
+        '10' = @{ Name = 'Inventory';       Label = 'M&A Inventory (opt-in)';       Selected = $false }
+        '11' = @{ Name = 'ActiveDirectory'; Label = 'Active Directory (RSAT)';      Selected = $false }
+        '12' = @{ Name = 'SOC2';            Label = 'SOC 2 Readiness (opt-in)';     Selected = $false }
+        '13' = @{ Name = 'ValueOpportunity'; Label = 'Value Opportunity (opt-in)';  Selected = $false }
+    }
+
+    # --- Header ---
+    function Show-Header {
+        Clear-Host
+        Write-Host ''
+        Write-Host '      ███╗   ███╗ ██████╗  ██████╗ ███████╗' -ForegroundColor Cyan
+        Write-Host '      ████╗ ████║ ╚════██╗ ██╔════╝ ██╔════╝' -ForegroundColor Cyan
+        Write-Host '      ██╔████╔██║  █████╔╝ ██████╗  ███████╗' -ForegroundColor Cyan
+        Write-Host '      ██║╚██╔╝██║  ╚═══██╗ ██╔══██╗ ╚════██║' -ForegroundColor Cyan
+        Write-Host '      ██║ ╚═╝ ██║ ██████╔╝ ╚█████╔╝ ███████║' -ForegroundColor Cyan
+        Write-Host '      ╚═╝     ╚═╝ ╚═════╝   ╚════╝  ╚══════╝' -ForegroundColor Cyan
+        Write-Host '     ─────────────────────────────────────────' -ForegroundColor DarkCyan
+        Write-Host '       █████╗ ███████╗███████╗███████╗███████╗███████╗' -ForegroundColor DarkCyan
+        Write-Host '      ██╔══██╗██╔════╝██╔════╝██╔════╝██╔════╝██╔════╝' -ForegroundColor DarkCyan
+        Write-Host '      ███████║███████╗███████╗█████╗  ███████╗███████╗' -ForegroundColor DarkCyan
+        Write-Host '      ██╔══██║╚════██║╚════██║██╔══╝  ╚════██║╚════██║' -ForegroundColor DarkCyan
+        Write-Host '      ██║  ██║███████║███████║███████╗███████║███████║' -ForegroundColor DarkCyan
+        Write-Host '      ╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝╚══════╝' -ForegroundColor DarkCyan
+        Write-Host ''
+        Write-Host '        ░▒▓█  M365 Environment Assessment  █▓▒░' -ForegroundColor DarkGray
+        Write-Host '        ░▒▓█  by  G A L V N Y Z             █▓▒░' -ForegroundColor DarkCyan
+        Write-Host ''
+    }
+
+    function Show-StepHeader {
+        param([int]$Step, [int]$Total, [string]$Title)
+        Write-Host "  STEP $Step of $Total`: $Title" -ForegroundColor $cPrompt
+        Write-Host '  ─────────────────────────────────────────────────────────' -ForegroundColor $cMuted
+        Write-Host ''
+    }
+
+    # Determine which steps to show and compute dynamic numbering
+    $skipSections = $PreSelectedSections.Count -gt 0
+    $skipOutput   = $PreSelectedOutputFolder -ne ''
+    $totalSteps   = 4  # Tenant + Auth + Report Options + Confirmation are always shown
+    if (-not $skipSections) { $totalSteps++ }
+    if (-not $skipOutput)   { $totalSteps++ }
+    $currentStep  = 0
+
+    # ================================================================
+    # STEP: Select Assessment Sections (skipped when -Section provided)
+    # ================================================================
+    if ($skipSections) {
+        $selectedSections = $PreSelectedSections
+    }
+    else {
+        $step1Done = $false
+        while (-not $step1Done) {
+            Show-Header
+            $currentStep = 1
+            Show-StepHeader -Step $currentStep -Total $totalSteps -Title 'Select Assessment Sections'
+            Write-Host '  Toggle sections by number, separated by spaces (e.g. 3 or 1 5 10).' -ForegroundColor $cNormal
+            Write-Host '  Press ENTER when done.' -ForegroundColor $cMuted
+            Write-Host ''
+
+            foreach ($key in $sections.Keys) {
+                $s = $sections[$key]
+                $marker = if ($s.Selected) { '●' } else { '○' }
+                $color = if ($s.Selected) { $cNormal } else { $cMuted }
+                Write-Host "  [$key] $marker $($s.Label)" -ForegroundColor $color
+            }
+
+            Write-Host ''
+            Write-Host '  [S] Standard    [A] Select all    [N] Select none' -ForegroundColor $cPrompt
+            Write-Host ''
+            Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+            $userChoice = (Read-Host) ?? ''
+
+            switch ($userChoice.Trim().ToUpper()) {
+                'S' {
+                    $optInSections = @('Inventory', 'ActiveDirectory')
+                    $rebuilt = [ordered]@{}
+                    foreach ($k in @($sections.Keys)) {
+                        $rebuilt["$k"] = @{ Name = $sections[$k].Name; Label = $sections[$k].Label; Selected = ($sections[$k].Name -notin $optInSections) }
+                    }
+                    $sections = $rebuilt
+                }
+                'A' {
+                    $rebuilt = [ordered]@{}
+                    foreach ($k in @($sections.Keys)) {
+                        $rebuilt["$k"] = @{ Name = $sections[$k].Name; Label = $sections[$k].Label; Selected = $true }
+                    }
+                    $sections = $rebuilt
+                }
+                'N' {
+                    $rebuilt = [ordered]@{}
+                    foreach ($k in @($sections.Keys)) {
+                        $rebuilt["$k"] = @{ Name = $sections[$k].Name; Label = $sections[$k].Label; Selected = $false }
+                    }
+                    $sections = $rebuilt
+                }
+                '' {
+                    $selectedNames = @($sections.Values | Where-Object { $_.Selected } | ForEach-Object { $_.Name })
+                    if ($selectedNames.Count -eq 0) {
+                        Write-Host ''
+                        Write-Host '  ✗ Please select at least one section.' -ForegroundColor $cError
+                        Start-Sleep -Seconds $errorDisplayDelay
+                    }
+                    else {
+                        $step1Done = $true
+                    }
+                }
+                default {
+                    $tokens = $userChoice.Trim() -split '[,\s]+'
+                    foreach ($token in $tokens) {
+                        $num = 0
+                        if ($token -ne '' -and [int]::TryParse($token, [ref]$num) -and $sections.Contains("$num")) {
+                            $sections["$num"].Selected = -not $sections["$num"].Selected
+                        }
+                    }
+                }
+            }
+        }
+
+        $selectedSections = @($sections.Values | Where-Object { $_.Selected } | ForEach-Object { $_.Name })
+    }
+
+    # ================================================================
+    # STEP: Tenant Identity
+    # ================================================================
+    $currentStep++
+    Show-Header
+    Show-StepHeader -Step $currentStep -Total $totalSteps -Title 'Tenant Identity'
+    Write-Host '  Enter your tenant ID or domain' -ForegroundColor $cNormal
+    Write-Host '  (e.g., contoso.onmicrosoft.com):' -ForegroundColor $cMuted
+    Write-Host ''
+    Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+    $tenantInput = (Read-Host) ?? ''
+
+    # ================================================================
+    # STEP: Authentication Method
+    # ================================================================
+    $currentStep++
+    $step3Done = $false
+    $authMethod = 'Interactive'
+    $wizClientId = ''
+    $wizCertThumb = ''
+    $wizUpn = ''
+
+    while (-not $step3Done) {
+        Show-Header
+        Show-StepHeader -Step $currentStep -Total $totalSteps -Title 'Authentication Method'
+
+        # Check for saved profiles
+        $profileHelper = Join-Path -Path $ProjectRoot -ChildPath 'Setup\Get-M365ConnectionProfile.ps1'
+        $savedProfiles = @()
+        if (Test-Path -Path $profileHelper) {
+            . $profileHelper
+            $savedProfiles = @(Get-M365ConnectionProfile -ErrorAction SilentlyContinue)
+        }
+
+        Write-Host '  [1] Interactive login (browser popup)' -ForegroundColor $cNormal
+        Write-Host '  [2] Device code login (choose your browser)' -ForegroundColor $cNormal
+        Write-Host '  [3] Certificate-based (app-only)' -ForegroundColor $cNormal
+        Write-Host '  [4] Skip connection (already connected)' -ForegroundColor $cNormal
+        if ($savedProfiles.Count -gt 0) {
+            Write-Host '  [5] Use saved connection profile' -ForegroundColor $cNormal
+        }
+        Write-Host ''
+        Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+        $authInput = (Read-Host) ?? ''
+
+        switch ($authInput.Trim()) {
+            '1' {
+                $authMethod = 'Interactive'
+                Write-Host ''
+                Write-Host '  Enter admin UPN for EXO/Purview (optional, press ENTER to skip):' -ForegroundColor $cNormal
+                Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+                $wizUpn = (Read-Host) ?? ''
+                $step3Done = $true
+            }
+            '2' {
+                $authMethod = 'DeviceCode'
+                $step3Done = $true
+            }
+            '3' {
+                $authMethod = 'Certificate'
+                Write-Host ''
+                Write-Host '  Enter Application (Client) ID:' -ForegroundColor $cNormal
+                Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+                $wizClientId = (Read-Host) ?? ''
+                Write-Host '  Enter Certificate Thumbprint:' -ForegroundColor $cNormal
+                Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+                $wizCertThumb = (Read-Host) ?? ''
+                $step3Done = $true
+            }
+            '4' {
+                $authMethod = 'Skip'
+                $step3Done = $true
+            }
+            '5' {
+                if ($savedProfiles.Count -eq 0) {
+                    Write-Host '  No saved profiles found.' -ForegroundColor $cError
+                    Start-Sleep -Seconds $errorDisplayDelay
+                }
+                else {
+                    Write-Host ''
+                    Write-Host '  Saved profiles:' -ForegroundColor $cNormal
+                    for ($i = 0; $i -lt $savedProfiles.Count; $i++) {
+                        $sp = $savedProfiles[$i]
+                        $envLabel = if ($sp.Environment -and $sp.Environment -ne 'commercial') { " [$($sp.Environment)]" } else { '' }
+                        Write-Host "    [$($i + 1)] $($sp.Name) -- $($sp.TenantId) ($($sp.AuthMethod))$envLabel" -ForegroundColor $cNormal
+                    }
+                    Write-Host ''
+                    Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+                    $profileInput = (Read-Host) ?? ''
+                    $profileIdx = 0
+                    if ([int]::TryParse($profileInput.Trim(), [ref]$profileIdx) -and $profileIdx -ge 1 -and $profileIdx -le $savedProfiles.Count) {
+                        $selected = $savedProfiles[$profileIdx - 1]
+                        $authMethod = $selected.AuthMethod
+                        $wizConnectionProfile = $selected.Name
+                        if ($selected.TenantId) { $wizTenantId = $selected.TenantId }
+                        if ($selected.ClientId) { $wizClientId = $selected.ClientId }
+                        if ($selected.Thumbprint) { $wizCertThumb = $selected.Thumbprint }
+                        if ($selected.UPN) { $wizUpn = $selected.UPN }
+                        $step3Done = $true
+                    }
+                    else {
+                        Write-Host '  Invalid selection.' -ForegroundColor $cError
+                        Start-Sleep -Seconds $errorDisplayDelay
+                    }
+                }
+            }
+            default {
+                $maxOpt = if ($savedProfiles.Count -gt 0) { '5' } else { '4' }
+                Write-Host "  Please enter 1 through $maxOpt." -ForegroundColor $cError
+                Start-Sleep -Seconds $errorDisplayDelay
+            }
+        }
+    }
+
+    # ================================================================
+    # STEP: Output Folder (skipped when -OutputFolder provided)
+    # ================================================================
+    if ($skipOutput) {
+        $wizOutputFolder = $PreSelectedOutputFolder
+    }
+    else {
+        $currentStep++
+        $defaultOutput = '.\M365-Assessment'
+        Show-Header
+        Show-StepHeader -Step $currentStep -Total $totalSteps -Title 'Output Folder'
+        Write-Host '  Assessment results will be saved to:' -ForegroundColor $cNormal
+        Write-Host "    $defaultOutput\" -ForegroundColor $cSuccess
+        Write-Host ''
+        Write-Host '  Press ENTER to accept, or type a custom path:' -ForegroundColor $cMuted
+        do {
+            $outputValid = $true
+            Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+            $outputInput = (Read-Host) ?? ''
+            if ($outputInput.Trim()) {
+                if ($outputInput.Trim() -match '@') {
+                    Write-Host ''
+                    Write-Host '  That looks like an email address or UPN, not a folder path.' -ForegroundColor $cError
+                    Write-Host "  Press ENTER to use the default ($defaultOutput), or type a valid path:" -ForegroundColor $cMuted
+                    $outputValid = $false
+                }
+                elseif ($outputInput.Trim() -match '[<>"|?*]') {
+                    Write-Host ''
+                    Write-Host '  Path contains invalid characters ( < > " | ? * ).' -ForegroundColor $cError
+                    Write-Host "  Press ENTER to use the default ($defaultOutput), or type a valid path:" -ForegroundColor $cMuted
+                    $outputValid = $false
+                }
+            }
+        } while (-not $outputValid)
+        $wizOutputFolder = if ($outputInput.Trim()) { $outputInput.Trim() } else { $defaultOutput }
+    }
+
+    # ================================================================
+    # STEP: Report Options
+    # ================================================================
+    $currentStep++
+    $reportOptions = [ordered]@{
+        '1' = @{ Name = 'CompactReport'; Label = 'Compact Report (no cover page, executive summary, or compliance overview)'; Selected = $false }
+        '2' = @{ Name = 'QuickScan';     Label = 'Quick Scan (Critical + High findings only)'; Selected = $false }
+    }
+
+    $reportStepDone = $false
+    while (-not $reportStepDone) {
+        Show-Header
+        Show-StepHeader -Step $currentStep -Total $totalSteps -Title 'Report Options'
+        Write-Host '  Toggle options by number, separated by spaces.' -ForegroundColor $cNormal
+        Write-Host '  Press ENTER when done.' -ForegroundColor $cMuted
+        Write-Host ''
+
+        foreach ($key in $reportOptions.Keys) {
+            $opt = $reportOptions[$key]
+            $marker = if ($opt.Selected) { [char]0x25CF } else { [char]0x25CB }
+            $color = if ($opt.Selected) { $cNormal } else { $cMuted }
+            Write-Host "  [$key] $marker $($opt.Label)" -ForegroundColor $color
+        }
+
+        Write-Host ''
+        Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+        $reportChoice = (Read-Host) ?? ''
+
+        switch ($reportChoice.Trim().ToUpper()) {
+            '' { $reportStepDone = $true }
+            default {
+                $tokens = $reportChoice.Trim() -split '[,\s]+'
+                foreach ($token in $tokens) {
+                    $num = 0
+                    if ($token -ne '' -and [int]::TryParse($token, [ref]$num) -and $reportOptions.Contains("$num")) {
+                        $reportOptions["$num"].Selected = -not $reportOptions["$num"].Selected
+                    }
+                }
+            }
+        }
+    }
+
+    # ================================================================
+    # Confirmation
+    # ================================================================
+    Show-Header
+
+    $sectionDisplay = $selectedSections -join ', '
+    $tenantDisplay = if ($tenantInput.Trim()) { $tenantInput.Trim() } else { '(not specified)' }
+    $authDisplay = switch ($authMethod) {
+        'Interactive'  {
+            if ($wizUpn.Trim()) { "Interactive login ($($wizUpn.Trim()))" }
+            else { 'Interactive login' }
+        }
+        'DeviceCode'   { 'Device code login' }
+        'Certificate'  { 'Certificate-based (app-only)' }
+        'Skip'         { 'Pre-existing connections' }
+    }
+
+    Write-Host '  ═══════════════════════════════════════════════════════' -ForegroundColor $cBorder
+    Write-Host ''
+    Write-Host '  Ready to start assessment:' -ForegroundColor $cPrompt
+    Write-Host ''
+    Write-Host "    Sections:  $sectionDisplay" -ForegroundColor $cNormal
+    Write-Host "    Tenant:    $tenantDisplay" -ForegroundColor $cNormal
+    Write-Host "    Auth:      $authDisplay" -ForegroundColor $cNormal
+    if ($M365Environment -ne 'commercial') {
+        Write-Host "    Cloud:     $M365Environment" -ForegroundColor $cNormal
+    }
+    Write-Host "    Output:    $wizOutputFolder\" -ForegroundColor $cNormal
+
+    # Report options summary
+    $reportModes = @()
+    if ($reportOptions['1'].Selected) { $reportModes += 'Compact' }
+    if ($reportOptions['2'].Selected) { $reportModes += 'Quick Scan' }
+    $reportDisplay = if ($reportModes.Count -gt 0) { $reportModes -join ', ' } else { 'Full report' }
+    Write-Host "    Report:    $reportDisplay" -ForegroundColor $cNormal
+    Write-Host ''
+    Write-Host '  Press ENTER to begin, or Q to quit.' -ForegroundColor $cPrompt
+    Write-Host '  > ' -ForegroundColor $cPrompt -NoNewline
+    $confirmInput = (Read-Host) ?? ''
+
+    if ($confirmInput.Trim().ToUpper() -eq 'Q') {
+        Write-Host ''
+        Write-Host '  Assessment cancelled.' -ForegroundColor $cMuted
+        return $null
+    }
+
+    # Build result hashtable
+    $wizardResult = @{
+        Section      = $selectedSections
+        OutputFolder = $wizOutputFolder
+    }
+
+    # Report options
+    if ($reportOptions['1'].Selected) { $wizardResult['CompactReport'] = $true }
+    if ($reportOptions['2'].Selected) { $wizardResult['QuickScan'] = $true }
+
+    if ($wizConnectionProfile) {
+        $wizardResult['ConnectionProfile'] = $wizConnectionProfile
+        # Profile overrides tenant input when selected
+        if ($wizTenantId) { $wizardResult['TenantId'] = $wizTenantId }
+    }
+    elseif ($tenantInput.Trim()) {
+        $wizardResult['TenantId'] = $tenantInput.Trim()
+    }
+
+    switch ($authMethod) {
+        'Skip' {
+            $wizardResult['SkipConnection'] = $true
+        }
+        'Certificate' {
+            if ($wizClientId.Trim()) { $wizardResult['ClientId'] = $wizClientId.Trim() }
+            if ($wizCertThumb.Trim()) { $wizardResult['CertificateThumbprint'] = $wizCertThumb.Trim() }
+        }
+        'DeviceCode' {
+            $wizardResult['UseDeviceCode'] = $true
+        }
+        'Interactive' {
+            if ($wizUpn.Trim()) { $wizardResult['UserPrincipalName'] = $wizUpn.Trim() }
+        }
+    }
+
+    return $wizardResult
+}

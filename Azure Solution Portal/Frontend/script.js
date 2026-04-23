@@ -422,6 +422,33 @@ const SOLUTIONS = {
         psCommand: '.\\Invoke-M365AzurePentest.ps1 -Mode Full -AttackIntensity High',
         apiEndpoint: '/api/precheck-assessment-security'
     },
+    'assessment-365': {
+        name: 'Assessment 365',
+        detailsTitle: 'Assessment 365 (M365-Assess) — Dettagli',
+        details: {
+            whatIs: 'Assessment 365 integra il progetto M365-Assess (Galvnyz): un framework PowerShell read-only per valutare la postura di sicurezza Microsoft 365 con output consulenziale pronto per stakeholder tecnici e compliance.',
+            features: [
+                'Assessment multi-sezione: Tenant, Identity, Email, Intune, Security, Collaboration, Hybrid, PowerBI, SOC2',
+                'Report HTML + export CSV + compliance matrix XLSX',
+                'Modalità QuickScan, NonInteractive, baseline compare e white-label',
+                'Mapping a framework di compliance (NIST, ISO 27001, SOC2, CIS, PCI DSS, HIPAA...)'
+            ],
+            notes: [
+                'Soluzione script-based: usa il pulsante "Scarica Script" e avvia l\'assessment in locale.',
+                'Il codice sorgente completo della soluzione è incluso nella cartella Solution - Assessment 365.',
+                'Prerequisiti principali: PowerShell 7, Microsoft.Graph, ExchangeOnlineManagement.'
+            ],
+            docsAnchor: 'assessment-365'
+        },
+        precheckTitle: 'Assessment 365',
+        precheckDesc: 'Questa soluzione è script-based: il precheck dal portale apre le istruzioni di esecuzione.',
+        deployTitle: 'Scarica script Assessment 365',
+        deployDesc: 'Scarica il wrapper PowerShell e avvia M365-Assess in locale con i parametri desiderati.',
+        portalUrl: '#',
+        psDownload: rawFileUrl('Solution%20-%20Assessment%20365/Invoke-M365Assessment-Portal.ps1'),
+        psCommand: '.\\Invoke-M365Assessment-Portal.ps1 -TenantId "contoso.onmicrosoft.com" -QuickScan -OpenReport',
+        apiEndpoint: null
+    },
     'update-manager': {
         name: 'Azure Update Manager',
         detailsTitle: 'Azure Update Manager — Dettagli',
@@ -2390,6 +2417,12 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         saveTenantId(selectedTenantId);
+
+        if (currentSolution === 'assessment-365') {
+            alert('ℹ️ Assessment 365 è script-based.\n\nApri "Scarica Script" per eseguire M365-Assess in locale.');
+            showDeployModal(currentSolution);
+            return;
+        }
 
         // Defender XDR e Conditional Access: precheck diretto browser → Graph API
         if (currentSolution === 'defender-xdr') { await runDefenderXdrPrecheckClientSide(selectedTenantId); return; }
