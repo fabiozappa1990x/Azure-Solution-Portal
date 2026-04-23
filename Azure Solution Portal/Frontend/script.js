@@ -2296,8 +2296,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('btn-load-tenants')?.click();
                 return;
             }
-            const accessToken = await getAccessToken(selectedTenantId);
-            const subs = await fetchSubscriptionsForUser(accessToken);
+            let subs = [];
+            let usedFallback = false;
+
+            // 1) Try strict tenant token first
+            try {
+                const accessToken = await getAccessToken(selectedTenantId);
+                subs = await fetchSubscriptionsForUser(accessToken);
+            } catch {
+                // ignore here, fallback below
+            }
+
+            // 2) Fallback: global token + client-side tenant filter
+            if (!Array.isArray(subs) || subs.length === 0) {
+                const globalToken = await getAccessToken();
+                const allSubs = await fetchSubscriptionsForUser(globalToken);
+                subs = (allSubs || []).filter(s => parseTenantId(s.tenantId) === selectedTenantId);
+                usedFallback = true;
+            }
+
             lastLoadedSubscriptions = Array.isArray(subs) ? subs : [];
 
             const picker = document.getElementById('precheck-sub-picker');
@@ -2309,6 +2326,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const preselected = current.length ? current : saved;
 
             renderSubscriptionPicker(picker, subs, preselected);
+
+            if (!subs.length) {
+                picker.insertAdjacentHTML('beforeend', `
+                    <div style="margin-top:10px;padding:10px 12px;border:1px solid #ffd8a8;background:#fff4e6;border-radius:8px;color:#8a4b08;font-size:13px;">
+                        Nessuna subscription visibile nel tenant selezionato <code>${selectedTenantId}</code>.
+                        Verifica ruolo RBAC in quel tenant oppure prova logout/login.
+                    </div>`);
+            } else if (usedFallback) {
+                picker.insertAdjacentHTML('beforeend', `
+                    <div style="margin-top:10px;padding:10px 12px;border:1px solid #c0d4f5;background:#f0f6ff;border-radius:8px;color:#0b4f9c;font-size:13px;">
+                        Elenco subscription ottenuto con fallback e filtrato per tenant selezionato.
+                    </div>`);
+            }
 
             picker.querySelector('#btn-hide-subs')?.addEventListener('click', () => { picker.style.display = 'none'; });
             picker.querySelector('#btn-use-subs')?.addEventListener('click', () => {
