@@ -2373,19 +2373,55 @@ document.addEventListener('DOMContentLoaded', function() {
                 // ignore here, fallback below
             }
 
-            // 2) Fallback: global token.
-            // Prefer selected-tenant subscriptions, but if none are found (B2B/multi-tenant),
-            // show all accessible subscriptions so the user can still select.
+            // 2) Fallback robusto multi-tenant/B2B:
+            // prova a enumerare i tenant accessibili e raccogliere le subscription per ciascun tenant.
             if (!Array.isArray(subs) || subs.length === 0) {
                 const globalToken = await getAccessToken();
-                const allSubs = await fetchSubscriptionsForUser(globalToken);
-                const all = Array.isArray(allSubs) ? allSubs : [];
-                const tenantMatched = all.filter(s => parseTenantId(s.tenantId) === selectedTenantId);
+                const tenants = await fetchTenantsForUser(globalToken).catch(() => []);
+                const tenantIds = Array.from(new Set(
+                    (Array.isArray(tenants) ? tenants : [])
+                        .map(t => parseTenantId(t.tenantId || t.tenantID || t.id || ''))
+                        .filter(Boolean)
+                ));
+                if (selectedTenantId && !tenantIds.includes(selectedTenantId)) {
+                    tenantIds.unshift(selectedTenantId);
+                }
+
+                const merged = [];
+                const seen = new Set();
+                for (const tid of tenantIds) {
+                    try {
+                        const tkn = await getAccessToken(tid);
+                        const tenantSubs = await fetchSubscriptionsForUser(tkn);
+                        (Array.isArray(tenantSubs) ? tenantSubs : []).forEach(s => {
+                            const sid = String(s.subscriptionId || '').trim();
+                            if (!sid || seen.has(sid)) return;
+                            seen.add(sid);
+                            if (!parseTenantId(s.tenantId)) s.tenantId = tid;
+                            merged.push(s);
+                        });
+                    } catch {
+                        // ignora tenant non accessibili
+                    }
+                }
+
+                // ultimo tentativo: endpoint subscriptions con token globale
+                if (!merged.length) {
+                    const allSubs = await fetchSubscriptionsForUser(globalToken).catch(() => []);
+                    (Array.isArray(allSubs) ? allSubs : []).forEach(s => {
+                        const sid = String(s.subscriptionId || '').trim();
+                        if (!sid || seen.has(sid)) return;
+                        seen.add(sid);
+                        merged.push(s);
+                    });
+                }
+
+                const tenantMatched = merged.filter(s => parseTenantId(s.tenantId) === selectedTenantId);
                 if (tenantMatched.length > 0) {
                     subs = tenantMatched;
                     fallbackMode = 'filtered';
                 } else {
-                    subs = all;
+                    subs = merged;
                     fallbackMode = 'all';
                 }
             }
