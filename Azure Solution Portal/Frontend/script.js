@@ -97,6 +97,15 @@ async function fetchSubscriptionsForUser(accessToken) {
     return data.value || [];
 }
 
+async function fetchTenantsForUser(accessToken) {
+    const resp = await fetch('https://management.azure.com/tenants?api-version=2022-12-01', {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (!resp.ok) throw new Error(`Impossibile leggere tenants (HTTP ${resp.status})`);
+    const data = await resp.json();
+    return data.value || [];
+}
+
 function renderSubscriptionPicker(container, subs, preselected) {
     const selected = new Set(preselected || []);
     const rows = subs.slice(0, 80).map(s => {
@@ -138,6 +147,57 @@ function renderSubscriptionPicker(container, subs, preselected) {
 
     const search = container.querySelector('#precheck-sub-search');
     const list = container.querySelector('#precheck-sub-list');
+    if (search && list) {
+        search.addEventListener('input', () => {
+            const q = search.value.trim().toLowerCase();
+            list.querySelectorAll('.sub-item').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = !q || text.includes(q) ? '' : 'none';
+            });
+        });
+    }
+}
+
+function renderTenantPicker(container, tenants, selectedTenantId) {
+    const selected = parseTenantId(selectedTenantId);
+    const rows = tenants.slice(0, 120).map(t => {
+        const tid = parseTenantId(t.tenantId || t.tenantID || t.id || '');
+        const label = String(t.displayName || t.tenantType || 'Directory');
+        const checked = (tid && tid === selected) ? 'checked' : '';
+        return `
+            <label class="sub-item">
+                <input type="radio" name="precheck-tenant-radio" class="precheck-tenant-radio" value="${tid}" ${checked} />
+                <span class="sub-meta">
+                    <span class="sub-name">${label}</span>
+                    <span class="sub-id">${tid || 'Tenant non disponibile'}</span>
+                </span>
+            </label>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="sub-picker">
+            <div class="sub-picker-header">
+                <div class="sub-picker-title">Seleziona directory</div>
+                <div class="sub-picker-search">
+                    <i class="fas fa-search" style="color:#666"></i>
+                    <input type="text" id="precheck-tenant-search" placeholder="Cerca directory..." />
+                </div>
+            </div>
+            <div class="sub-picker-body" id="precheck-tenant-list">
+                ${rows}
+            </div>
+            <div class="sub-picker-actions">
+                <button type="button" class="btn-primary" id="btn-use-tenant">Usa directory</button>
+                <button type="button" class="btn-secondary" id="btn-hide-tenant">Chiudi</button>
+            </div>
+            <div class="sub-picker-note">
+                Mostrate ${Math.min(tenants.length, 120)}/${tenants.length}.
+            </div>
+        </div>
+    `;
+
+    const search = container.querySelector('#precheck-tenant-search');
+    const list = container.querySelector('#precheck-tenant-list');
     if (search && list) {
         search.addEventListener('input', () => {
             const q = search.value.trim().toLowerCase();
@@ -2198,10 +2258,44 @@ document.addEventListener('DOMContentLoaded', function() {
     // ESEGUI PRECHECK
     // ========================================
 
+    document.getElementById('btn-load-tenants')?.addEventListener('click', async function() {
+        try {
+            if (!currentAccount) { alert('⚠️ Effettua il login prima di caricare le directory.'); return; }
+            const accessToken = await getAccessToken();
+            const tenants = await fetchTenantsForUser(accessToken);
+            const picker = document.getElementById('precheck-tenant-picker');
+            if (!picker) return;
+            picker.style.display = 'block';
+
+            renderTenantPicker(picker, tenants, getSelectedTenantId() || getSavedTenantId());
+
+            picker.querySelector('#btn-hide-tenant')?.addEventListener('click', () => { picker.style.display = 'none'; });
+            picker.querySelector('#btn-use-tenant')?.addEventListener('click', () => {
+                const selected = picker.querySelector('.precheck-tenant-radio:checked');
+                const tenantId = parseTenantId(selected?.value || '');
+                if (!tenantId) { alert('⚠️ Seleziona una directory valida.'); return; }
+                const tenantInput = document.getElementById('tenant-id');
+                if (tenantInput) tenantInput.value = tenantId;
+                saveTenantId(tenantId);
+                // Reset subscriptions when tenant changes to avoid stale selection
+                document.getElementById('subscription-id').value = '';
+                try { localStorage.removeItem(LS_SUBS); } catch {}
+                picker.style.display = 'none';
+            });
+        } catch (e) {
+            alert('❌ Errore nel caricamento directory: ' + e.message);
+        }
+    });
+
     document.getElementById('btn-load-subs')?.addEventListener('click', async function() {
         try {
             if (!currentAccount) { alert('⚠️ Effettua il login prima di caricare le subscriptions.'); return; }
             const selectedTenantId = getSelectedTenantId();
+            if (!selectedTenantId) {
+                alert('⚠️ Seleziona prima la Directory/Tenant.');
+                document.getElementById('btn-load-tenants')?.click();
+                return;
+            }
             const accessToken = await getAccessToken(selectedTenantId);
             const subs = await fetchSubscriptionsForUser(accessToken);
             lastLoadedSubscriptions = Array.isArray(subs) ? subs : [];
@@ -2259,6 +2353,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedTenantId = getSelectedTenantId();
         if (document.getElementById('tenant-id')?.value && !selectedTenantId) {
             alert('⚠️ Tenant ID non valido. Inserisci un GUID valido oppure lascia vuoto.');
+            return;
+        }
+        if (!selectedTenantId) {
+            alert('⚠️ Seleziona prima la Directory/Tenant dal pulsante "Seleziona directory".');
             return;
         }
         saveTenantId(selectedTenantId);
