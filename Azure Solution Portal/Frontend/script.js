@@ -2363,7 +2363,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             let subs = [];
-            let usedFallback = false;
+            let fallbackMode = '';
 
             // 1) Try strict tenant token first
             try {
@@ -2373,12 +2373,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 // ignore here, fallback below
             }
 
-            // 2) Fallback: global token + client-side tenant filter
+            // 2) Fallback: global token.
+            // Prefer selected-tenant subscriptions, but if none are found (B2B/multi-tenant),
+            // show all accessible subscriptions so the user can still select.
             if (!Array.isArray(subs) || subs.length === 0) {
                 const globalToken = await getAccessToken();
                 const allSubs = await fetchSubscriptionsForUser(globalToken);
-                subs = (allSubs || []).filter(s => parseTenantId(s.tenantId) === selectedTenantId);
-                usedFallback = true;
+                const all = Array.isArray(allSubs) ? allSubs : [];
+                const tenantMatched = all.filter(s => parseTenantId(s.tenantId) === selectedTenantId);
+                if (tenantMatched.length > 0) {
+                    subs = tenantMatched;
+                    fallbackMode = 'filtered';
+                } else {
+                    subs = all;
+                    fallbackMode = 'all';
+                }
             }
 
             lastLoadedSubscriptions = Array.isArray(subs) ? subs : [];
@@ -2399,10 +2408,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         Nessuna subscription visibile nel tenant selezionato <code>${selectedTenantId}</code>.
                         Verifica ruolo RBAC in quel tenant oppure prova logout/login.
                     </div>`);
-            } else if (usedFallback) {
+            } else if (fallbackMode === 'filtered') {
                 picker.insertAdjacentHTML('beforeend', `
                     <div style="margin-top:10px;padding:10px 12px;border:1px solid #c0d4f5;background:#f0f6ff;border-radius:8px;color:#0b4f9c;font-size:13px;">
                         Elenco subscription ottenuto con fallback e filtrato per tenant selezionato.
+                    </div>`);
+            } else if (fallbackMode === 'all') {
+                picker.insertAdjacentHTML('beforeend', `
+                    <div style="margin-top:10px;padding:10px 12px;border:1px solid #c0d4f5;background:#f0f6ff;border-radius:8px;color:#0b4f9c;font-size:13px;">
+                        Nessuna subscription trovata nel tenant selezionato. Mostro tutte le subscription accessibili dal tuo account (scenario multi-tenant/B2B).
                     </div>`);
             }
 
@@ -2421,9 +2435,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         .map(s => parseTenantId(s.tenantId))
                         .filter(Boolean)
                 ));
-                if (matchedTenants.length === 1) {
+                if (matchedTenants.length === 1 && !isTenantWideSolution(currentSolution)) {
                     const tenantInput = document.getElementById('tenant-id');
-                    if (tenantInput && !parseTenantId(tenantInput.value)) {
+                    if (tenantInput && parseTenantId(tenantInput.value) !== matchedTenants[0]) {
                         tenantInput.value = matchedTenants[0];
                     }
                     saveTenantId(matchedTenants[0]);
@@ -4515,6 +4529,27 @@ function showDetailsModal(solution) {
     modal.style.display = 'block';
 }
 
+// Global helper for assessment renderers defined in the outer scope.
+function renderReportHtmlInRecommendationsGlobal(data) {
+    const recContainer = document.getElementById('recommendations-content');
+    if (!recContainer) return;
+    recContainer.innerHTML = '';
+
+    if (!data?.ReportHTML) {
+        recContainer.innerHTML = '<p>Report HTML non disponibile per questa esecuzione.</p>';
+        return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.style.width = '100%';
+    iframe.style.height = '720px';
+    iframe.style.border = '1px solid #e1e1e1';
+    iframe.style.borderRadius = '8px';
+    iframe.setAttribute('sandbox', 'allow-same-origin');
+    iframe.srcdoc = data.ReportHTML;
+    recContainer.appendChild(iframe);
+}
+
 function renderAssessmentSecurityPrecheck(data) {
     const summary = data?.Summary || {};
 
@@ -4555,7 +4590,7 @@ function renderAssessmentSecurityPrecheck(data) {
             <tr><td>Findings High</td><td>N/A</td><td>N/A</td><td>Count</td><td>${summary.HighFindings ?? 0}</td></tr>`;
     }
 
-    renderReportHtmlInRecommendations(data);
+    renderReportHtmlInRecommendationsGlobal(data);
 }
 
 function renderAssessment365Precheck(data) {
@@ -4609,7 +4644,7 @@ function renderAssessment365Precheck(data) {
             <tr><td>Pass Rate</td><td>N/A</td><td>M365</td><td>Percentage</td><td>${summary.PassRate ?? 'N/A'}</td></tr>`;
     }
 
-    renderReportHtmlInRecommendations(data);
+    renderReportHtmlInRecommendationsGlobal(data);
 }
 
 // ============================================================
