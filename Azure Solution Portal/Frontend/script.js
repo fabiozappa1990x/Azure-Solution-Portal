@@ -313,18 +313,19 @@ const SOLUTIONS = {
             notes: [
                 'Usare solo su tenant autorizzati: alcune simulazioni possono generare alert in Sentinel/Defender.',
                 'Richiede PowerShell 7+ e moduli Microsoft.Graph/Az (gestiti dallo script).',
-                'La soluzione e script-based: precheck e deploy dal portale saranno allineati in una fase successiva.'
+                'Assessment cloud disponibile via Azure Function del portale.',
+                'Il pulsante "Scarica Script" resta utile per esecuzione locale avanzata.'
             ],
             docsAnchor: 'assessment-security-m365-azure'
         },
         precheckTitle: 'Assessment Security M365 + Azure',
-        precheckDesc: 'Questa soluzione esegue assessment e simulazione tramite script PowerShell locale.',
-        deployTitle: 'Esecuzione Assessment Security M365 + Azure',
-        deployDesc: 'Scarica ed esegui lo script PowerShell per avviare assessment/simulation e generare il report HTML.',
+        precheckDesc: 'Esegue un assessment cloud su Azure + Entra ID via Function App e genera report HTML nel portale.',
+        deployTitle: 'Scarica script Assessment Security M365 + Azure',
+        deployDesc: 'Scarica lo script PowerShell per esecuzione locale (assessment/simulation avanzata).',
         portalUrl: '#',
         psDownload: rawFileUrl('Solution%20-%20Assessment%20Security%20M365_Azure/Invoke-M365AzurePentest.ps1'),
         psCommand: '.\\Invoke-M365AzurePentest.ps1 -Mode Full -AttackIntensity High',
-        apiEndpoint: null
+        apiEndpoint: '/api/precheck-assessment-security'
     },
     'update-manager': {
         name: 'Azure Update Manager',
@@ -431,6 +432,15 @@ async function initializeAuth() {
                     }, 800);
                 }
 
+                // Se stavamo aspettando il consenso Graph per Assessment Security M365+Azure, riavvia il precheck
+                if (sessionStorage.getItem('assessment_graph_consent_pending') === '1') {
+                    sessionStorage.removeItem('assessment_graph_consent_pending');
+                    setTimeout(() => {
+                        showPrecheckModal('assessment-security-m365-azure');
+                        document.getElementById('run-precheck')?.click();
+                    }, 800);
+                }
+
                 // Se stavamo aspettando il consenso Graph per Conditional Access, riavvia il precheck
                 const caPending = sessionStorage.getItem('ca_consent_pending');
                 if (caPending) {
@@ -509,6 +519,13 @@ const GRAPH_SCOPES_INTUNE = [
     "https://graph.microsoft.com/Organization.Read.All"
 ];
 
+const GRAPH_SCOPES_ASSESSMENT = [
+    "https://graph.microsoft.com/Directory.Read.All",
+    "https://graph.microsoft.com/Policy.Read.All",
+    "https://graph.microsoft.com/Organization.Read.All",
+    "https://graph.microsoft.com/User.Read.All"
+];
+
 async function getGraphToken() {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
@@ -520,6 +537,19 @@ async function getGraphToken() {
         sessionStorage.setItem('intune_graph_consent_pending', '1');
         await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES_INTUNE, account: currentAccount, prompt: 'consent' });
         // La riga seguente non viene mai raggiunta (pagina si ricarica dopo il redirect)
+        throw new Error('Redirect in corso per il consenso...');
+    }
+}
+
+async function getAssessmentGraphToken() {
+    if (!msalInstance) throw new Error("Autenticazione non inizializzata");
+    if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    try {
+        const response = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES_ASSESSMENT, account: currentAccount });
+        return response.accessToken;
+    } catch {
+        sessionStorage.setItem('assessment_graph_consent_pending', '1');
+        await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES_ASSESSMENT, account: currentAccount, prompt: 'consent' });
         throw new Error('Redirect in corso per il consenso...');
     }
 }
@@ -2141,12 +2171,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
 
-        if (currentSolution === 'assessment-security-m365-azure') {
-            alert('ℹ️ Questa soluzione e script-based.\n\nApri "Esegui Script" per scaricare ed eseguire Invoke-M365AzurePentest.ps1 in PowerShell 7.');
-            showDeployModal(currentSolution);
-            return;
-        }
-
         // Defender XDR e Conditional Access: precheck diretto browser → Graph API
         if (currentSolution === 'defender-xdr') { await runDefenderXdrPrecheckClientSide(); return; }
         if (currentSolution === 'conditional-access') { await runCaPrecheckClientSide(); return; }
@@ -2181,6 +2205,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     graphToken = await getGraphToken();
                 } catch (e) {
                     throw new Error(`Impossibile ottenere il token Microsoft Graph.\n\nAssicurati che l'App Registration abbia il consenso per DeviceManagementApps.Read.All e DeviceManagementManagedDevices.Read.All.\n\nDettaglio: ${e.message}`);
+                }
+            }
+            if (currentSolution === 'assessment-security-m365-azure') {
+                try {
+                    graphToken = await getAssessmentGraphToken();
+                } catch (e) {
+                    throw new Error(`Impossibile ottenere il token Microsoft Graph per l'assessment.\n\nConcedi il consenso admin agli scope: Directory.Read.All, Policy.Read.All, Organization.Read.All, User.Read.All.\n\nDettaglio: ${e.message}`);
                 }
             }
 
@@ -2573,6 +2604,29 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabVisible('workspaces', true);
             setTabVisible('dcr', false);
             setTabVisible('recommendations', false);
+            return;
+        }
+
+        if (solution === 'assessment-security-m365-azure') {
+            setSummaryLabels('VM Analizzate:', 'Findings:');
+            setTabText('overview', 'Panoramica');
+            setTabText('virtual-machines', 'Azure Inventory');
+            setTabText('workspaces', 'Identity Controls');
+            setTabText('dcr', 'Security KPIs');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', 'Stato Assessment Security M365 + Azure');
+            setPaneTitle('virtual-machines', 'Inventario workload Azure');
+            setPaneTitle('workspaces', 'Controlli Identity');
+            setPaneTitle('dcr', 'KPI sicurezza');
+            setPaneTitle('recommendations', 'Report');
+            setOverviewLabels(['VM Totali', 'CA Enabled', 'Findings High', 'Secure Score (%)']);
+            setTableHeaders('vm-table', ['Risorsa', 'RG', 'Stato', 'Dettaglio', 'Valore']);
+            setTableHeaders('workspace-table', ['Controllo', 'Valore', 'Ambito', 'Area', 'Note']);
+            setTableHeaders('dcr-table', ['Metrica', 'RG', 'Scope', 'Tipo', 'Valore']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', true);
+            setTabVisible('recommendations', true);
             return;
         }
 
@@ -3862,6 +3916,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (currentSolution === 'assessment-security-m365-azure') {
+            renderAssessmentSecurityPrecheck(data);
+            return;
+        }
+
         // Fallback: mostra report HTML e tenta di mettere qualche KPI
         const summary = data?.Summary || {};
         document.getElementById('overview-vm-total').textContent = summary.TotalVMs ?? summary.TotalVaults ?? summary.TotalPlans ?? summary.TotalMaintenanceConfigs ?? 0;
@@ -4131,6 +4190,49 @@ function showDetailsModal(solution) {
     }
 
     modal.style.display = 'block';
+}
+
+function renderAssessmentSecurityPrecheck(data) {
+    const summary = data?.Summary || {};
+
+    document.getElementById('overview-vm-total').textContent = summary.TotalVMs ?? 0;
+    document.getElementById('overview-vm-monitored').textContent = summary.EnabledCaPolicies ?? 0;
+    document.getElementById('overview-workspaces').textContent = summary.HighFindings ?? 0;
+    document.getElementById('overview-dcr').textContent = summary.SecureScorePercent ?? 'N/A';
+    document.getElementById('vm-count').textContent = summary.TotalVMs ?? 0;
+    document.getElementById('workspace-count').textContent = summary.TotalFindings ?? 0;
+
+    const crit = Number(summary.CriticalFindings || 0);
+    const high = Number(summary.HighFindings || 0);
+    if (crit > 0) setOverallStatus('Rischio elevato: findings critici presenti', 'error');
+    else if (high > 0) setOverallStatus('Rischio medio-alto: findings high presenti', 'warning');
+    else setOverallStatus('Assessment completato: nessun finding critico/high', 'success');
+
+    const vmTbody = document.querySelector('#vm-table tbody');
+    if (vmTbody) {
+        vmTbody.innerHTML = `
+            <tr><td>Virtual Machines</td><td>N/A</td><td>Inventario</td><td>N/A</td><td>${summary.TotalVMs ?? 0}</td></tr>
+            <tr><td>Storage Accounts</td><td>N/A</td><td>Inventario</td><td>N/A</td><td>${summary.TotalStorageAccounts ?? 0}</td></tr>
+            <tr><td>Key Vaults</td><td>N/A</td><td>Inventario</td><td>N/A</td><td>${summary.TotalKeyVaults ?? 0}</td></tr>`;
+    }
+
+    const wsTbody = document.querySelector('#workspace-table tbody');
+    if (wsTbody) {
+        wsTbody.innerHTML = `
+            <tr><td>Conditional Access (Enabled)</td><td>${summary.EnabledCaPolicies ?? 0}</td><td>Tenant</td><td>Identity</td><td>N/A</td></tr>
+            <tr><td>Conditional Access (Report-Only)</td><td>${summary.ReportOnlyCaPolicies ?? 0}</td><td>Tenant</td><td>Identity</td><td>N/A</td></tr>
+            <tr><td>Security Defaults</td><td>${summary.SecurityDefaultsEnabled ? 'Enabled' : 'Disabled'}</td><td>Tenant</td><td>Identity</td><td>N/A</td></tr>`;
+    }
+
+    const dcrTbody = document.querySelector('#dcr-table tbody');
+    if (dcrTbody) {
+        dcrTbody.innerHTML = `
+            <tr><td>Defender Secure Score</td><td>N/A</td><td>N/A</td><td>Percentage</td><td>${summary.SecureScorePercent ?? 'N/A'}</td></tr>
+            <tr><td>Findings Critical</td><td>N/A</td><td>N/A</td><td>Count</td><td>${summary.CriticalFindings ?? 0}</td></tr>
+            <tr><td>Findings High</td><td>N/A</td><td>N/A</td><td>Count</td><td>${summary.HighFindings ?? 0}</td></tr>`;
+    }
+
+    renderReportHtmlInRecommendations(data);
 }
 
 // ============================================================
