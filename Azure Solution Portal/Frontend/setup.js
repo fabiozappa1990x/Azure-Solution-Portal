@@ -537,6 +537,7 @@ async function checkFunctionApp() {
         { name: 'precheck-backup',     path: '/api/precheck-backup' },
         { name: 'precheck-defender',   path: '/api/precheck-defender' },
         { name: 'precheck-assessment-security', path: '/api/precheck-assessment-security' },
+        { name: 'execute-assessment-365', path: '/api/execute-assessment-365' },
         { name: 'precheck-updates',    path: '/api/precheck-updates' }
     ];
 

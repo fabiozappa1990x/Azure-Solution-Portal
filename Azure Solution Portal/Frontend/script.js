@@ -434,20 +434,21 @@ const SOLUTIONS = {
                 'Mapping a framework di compliance (NIST, ISO 27001, SOC2, CIS, PCI DSS, HIPAA...)'
             ],
             notes: [
-                'Soluzione script-based: usa il pulsante "Scarica Script" e avvia l\'assessment in locale.',
+                'Assessment cloud disponibile via Azure Function (bottone "Esegui Assessment").',
+                'Il pulsante "Scarica Script" resta disponibile per esecuzione locale.',
                 'Il codice sorgente completo della soluzione è incluso nella cartella Solution - Assessment 365.',
                 'Prerequisiti principali: PowerShell 7, Microsoft.Graph, ExchangeOnlineManagement.'
             ],
             docsAnchor: 'assessment-365'
         },
-        precheckTitle: 'Assessment 365',
-        precheckDesc: 'Questa soluzione è script-based: il precheck dal portale apre le istruzioni di esecuzione.',
+        precheckTitle: 'Esegui Assessment 365',
+        precheckDesc: 'Esegue l\'assessment M365-Assess direttamente in Azure Function e mostra il report nel portale.',
         deployTitle: 'Scarica script Assessment 365',
         deployDesc: 'Scarica il wrapper PowerShell e avvia M365-Assess in locale con i parametri desiderati.',
         portalUrl: '#',
         psDownload: rawFileUrl('Solution%20-%20Assessment%20365/Invoke-M365Assessment-Portal.ps1'),
         psCommand: '.\\Invoke-M365Assessment-Portal.ps1 -TenantId "contoso.onmicrosoft.com" -QuickScan -OpenReport',
-        apiEndpoint: null
+        apiEndpoint: '/api/execute-assessment-365'
     },
     'update-manager': {
         name: 'Azure Update Manager',
@@ -563,6 +564,14 @@ async function initializeAuth() {
                     }, 800);
                 }
 
+                if (sessionStorage.getItem('assessment365_graph_consent_pending') === '1') {
+                    sessionStorage.removeItem('assessment365_graph_consent_pending');
+                    setTimeout(() => {
+                        showPrecheckModal('assessment-365');
+                        document.getElementById('run-precheck')?.click();
+                    }, 800);
+                }
+
                 // Se stavamo aspettando il consenso Graph per Conditional Access, riavvia il precheck
                 const caPending = sessionStorage.getItem('ca_consent_pending');
                 if (caPending) {
@@ -652,6 +661,15 @@ const GRAPH_SCOPES_ASSESSMENT = [
     "https://graph.microsoft.com/User.Read.All"
 ];
 
+const GRAPH_SCOPES_ASSESSMENT365 = [
+    "https://graph.microsoft.com/Directory.Read.All",
+    "https://graph.microsoft.com/Group.Read.All",
+    "https://graph.microsoft.com/Organization.Read.All",
+    "https://graph.microsoft.com/Policy.Read.All",
+    "https://graph.microsoft.com/RoleManagement.Read.Directory",
+    "https://graph.microsoft.com/User.Read.All"
+];
+
 async function getGraphToken(tenantId = '') {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
@@ -683,6 +701,23 @@ async function getAssessmentGraphToken(tenantId = '') {
         return response.accessToken;
     } catch {
         sessionStorage.setItem('assessment_graph_consent_pending', '1');
+        await msalInstance.acquireTokenRedirect({ ...tokenRequest, prompt: 'consent' });
+        throw new Error('Redirect in corso per il consenso...');
+    }
+}
+
+async function getAssessment365GraphToken(tenantId = '') {
+    if (!msalInstance) throw new Error("Autenticazione non inizializzata");
+    if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    const authority = getAuthorityForTenant(tenantId);
+    const tokenRequest = authority
+        ? { scopes: GRAPH_SCOPES_ASSESSMENT365, account: currentAccount, authority }
+        : { scopes: GRAPH_SCOPES_ASSESSMENT365, account: currentAccount };
+    try {
+        const response = await msalInstance.acquireTokenSilent(tokenRequest);
+        return response.accessToken;
+    } catch {
+        sessionStorage.setItem('assessment365_graph_consent_pending', '1');
         await msalInstance.acquireTokenRedirect({ ...tokenRequest, prompt: 'consent' });
         throw new Error('Redirect in corso per il consenso...');
     }
@@ -2418,19 +2453,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         saveTenantId(selectedTenantId);
 
-        if (currentSolution === 'assessment-365') {
-            alert('ℹ️ Assessment 365 è script-based.\n\nApri "Scarica Script" per eseguire M365-Assess in locale.');
-            showDeployModal(currentSolution);
-            return;
-        }
-
         // Defender XDR e Conditional Access: precheck diretto browser → Graph API
         if (currentSolution === 'defender-xdr') { await runDefenderXdrPrecheckClientSide(selectedTenantId); return; }
         if (currentSolution === 'conditional-access') { await runCaPrecheckClientSide(selectedTenantId); return; }
 
-        // Intune e Defender XDR sono tenant-wide: non richiedono subscription Azure
+        // Soluzioni tenant-wide: non richiedono subscription Azure
         let subscriptionIds;
-        if (currentSolution === 'intune' || currentSolution === 'defender-xdr' || currentSolution === 'conditional-access') {
+        if (currentSolution === 'intune' || currentSolution === 'defender-xdr' || currentSolution === 'conditional-access' || currentSolution === 'assessment-365') {
             subscriptionIds = ['tenant-only'];
         } else {
             const subscriptionInput = document.getElementById('subscription-id').value.trim();
@@ -2465,6 +2494,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     graphToken = await getAssessmentGraphToken(selectedTenantId);
                 } catch (e) {
                     throw new Error(`Impossibile ottenere il token Microsoft Graph per l'assessment.\n\nConcedi il consenso admin agli scope: Directory.Read.All, Policy.Read.All, Organization.Read.All, User.Read.All.\n\nDettaglio: ${e.message}`);
+                }
+            }
+            if (currentSolution === 'assessment-365') {
+                try {
+                    graphToken = await getAssessment365GraphToken(selectedTenantId);
+                } catch (e) {
+                    throw new Error(`Impossibile ottenere il token Microsoft Graph per Assessment 365.\n\nConcedi il consenso admin agli scope richiesti (Directory/Group/Organization/Policy/User read).\n\nDettaglio: ${e.message}`);
                 }
             }
 
@@ -4186,6 +4222,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (currentSolution === 'assessment-365') {
+            renderAssessment365Precheck(data);
+            return;
+        }
+
         // Fallback: mostra report HTML e tenta di mettere qualche KPI
         const summary = data?.Summary || {};
         document.getElementById('overview-vm-total').textContent = summary.TotalVMs ?? summary.TotalVaults ?? summary.TotalPlans ?? summary.TotalMaintenanceConfigs ?? 0;
@@ -4360,7 +4401,7 @@ function showPrecheckModal(solution) {
     const subGroup = document.getElementById('subscription-id')?.closest('.form-group');
     const tenantGroup = document.getElementById('tenant-id')?.closest('.form-group');
     const rgGroup = document.getElementById('resource-group')?.closest('.form-group');
-    if (solution === 'intune' || solution === 'defender-xdr' || solution === 'conditional-access') {
+    if (solution === 'intune' || solution === 'defender-xdr' || solution === 'conditional-access' || solution === 'assessment-365') {
         if (subGroup) subGroup.style.display = 'none';
         if (tenantGroup) tenantGroup.style.display = '';
         if (rgGroup) rgGroup.style.display = 'none';
@@ -4371,7 +4412,13 @@ function showPrecheckModal(solution) {
             note.style.cssText = 'padding:12px 14px;background:#f0f6ff;border:1px solid #c0d4f5;border-radius:8px;margin-bottom:14px;font-size:13px;color:#0078d4;';
             document.querySelector('.precheck-form').insertBefore(note, document.getElementById('run-precheck'));
         }
-        const label = solution === 'defender-xdr' ? 'Defender XDR' : solution === 'conditional-access' ? 'Conditional Access' : 'Intune';
+        const label = solution === 'defender-xdr'
+            ? 'Defender XDR'
+            : solution === 'conditional-access'
+                ? 'Conditional Access'
+                : solution === 'assessment-365'
+                    ? 'Assessment 365'
+                    : 'Intune';
         note.innerHTML = `<strong>ℹ️ ${label} è tenant-wide</strong> — non richiede una subscription Azure. Seleziona il Tenant ID corretto per evitare mismatch directory.`;
         note.style.display = '';
     } else {
@@ -4502,6 +4549,60 @@ function renderAssessmentSecurityPrecheck(data) {
             <tr><td>Defender Secure Score</td><td>N/A</td><td>N/A</td><td>Percentage</td><td>${summary.SecureScorePercent ?? 'N/A'}</td></tr>
             <tr><td>Findings Critical</td><td>N/A</td><td>N/A</td><td>Count</td><td>${summary.CriticalFindings ?? 0}</td></tr>
             <tr><td>Findings High</td><td>N/A</td><td>N/A</td><td>Count</td><td>${summary.HighFindings ?? 0}</td></tr>`;
+    }
+
+    renderReportHtmlInRecommendations(data);
+}
+
+function renderAssessment365Precheck(data) {
+    const summary = data?.Summary || {};
+    const findings = Array.isArray(data?.Findings) ? data.Findings : [];
+
+    document.getElementById('overview-vm-total').textContent = summary.TotalChecks ?? findings.length ?? 0;
+    document.getElementById('overview-vm-monitored').textContent = summary.CriticalFindings ?? 0;
+    document.getElementById('overview-workspaces').textContent = summary.HighFindings ?? 0;
+    document.getElementById('overview-dcr').textContent = summary.PassRate ?? 'N/A';
+    document.getElementById('vm-count').textContent = summary.TotalChecks ?? findings.length ?? 0;
+    document.getElementById('workspace-count').textContent = summary.FailedChecks ?? findings.length ?? 0;
+
+    const crit = Number(summary.CriticalFindings || 0);
+    const high = Number(summary.HighFindings || 0);
+    if (crit > 0) setOverallStatus('Assessment completato: criticità elevate presenti', 'error');
+    else if (high > 0) setOverallStatus('Assessment completato: presenti finding High', 'warning');
+    else setOverallStatus('Assessment completato: nessun finding critico/high', 'success');
+
+    const vmTbody = document.querySelector('#vm-table tbody');
+    if (vmTbody) {
+        vmTbody.innerHTML = '';
+        findings.slice(0, 50).forEach(f => {
+            const sev = String(f.Severity || 'Info');
+            const sevCls = sev.toLowerCase() === 'critical' ? 'status-danger' : sev.toLowerCase() === 'high' ? 'status-warning' : 'status-success';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${escapeHtml(f.CheckId || f.Id || 'N/A')}</td>
+                <td>${escapeHtml(f.Area || 'M365')}</td>
+                <td><span class="status-badge ${sevCls}">${escapeHtml(sev)}</span></td>
+                <td>${escapeHtml(f.Title || 'N/A')}</td>
+                <td>${escapeHtml(f.Remediation || '')}</td>`;
+            vmTbody.appendChild(tr);
+        });
+        if (!findings.length) vmTbody.innerHTML = '<tr><td colspan="5">Nessun finding disponibile.</td></tr>';
+    }
+
+    const wsTbody = document.querySelector('#workspace-table tbody');
+    if (wsTbody) {
+        wsTbody.innerHTML = `
+            <tr><td>Tenant</td><td>${escapeHtml(data?.Tenant?.DisplayName || 'N/A')}</td><td>Directory</td><td>M365</td><td>${escapeHtml(data?.Tenant?.TenantId || '')}</td></tr>
+            <tr><td>Total Checks</td><td>${summary.TotalChecks ?? 0}</td><td>Assessment</td><td>Execution</td><td>N/A</td></tr>
+            <tr><td>Failed Checks</td><td>${summary.FailedChecks ?? 0}</td><td>Assessment</td><td>Execution</td><td>N/A</td></tr>`;
+    }
+
+    const dcrTbody = document.querySelector('#dcr-table tbody');
+    if (dcrTbody) {
+        dcrTbody.innerHTML = `
+            <tr><td>Critical Findings</td><td>N/A</td><td>M365</td><td>Count</td><td>${summary.CriticalFindings ?? 0}</td></tr>
+            <tr><td>High Findings</td><td>N/A</td><td>M365</td><td>Count</td><td>${summary.HighFindings ?? 0}</td></tr>
+            <tr><td>Pass Rate</td><td>N/A</td><td>M365</td><td>Percentage</td><td>${summary.PassRate ?? 'N/A'}</td></tr>`;
     }
 
     renderReportHtmlInRecommendations(data);
