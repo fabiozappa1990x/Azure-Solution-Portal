@@ -4,6 +4,9 @@
 
 const API_BASE_URL = 'https://func-azsolportal-089fb2a1.azurewebsites.net';
 const LS_SUBS = 'azsp.selectedSubIds';
+const LS_TENANT = 'azsp.selectedTenantId';
+const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+let lastLoadedSubscriptions = [];
 
 console.log('🌍 Ambiente rilevato:', window.location.hostname === 'localhost' ? 'LOCALE' : 'AZURE');
 console.log('🔗 API Base URL:', API_BASE_URL);
@@ -42,6 +45,38 @@ function getSavedSubscriptionIds() {
     }
 }
 
+function getSavedTenantId() {
+    try {
+        const raw = String(localStorage.getItem(LS_TENANT) || '').trim();
+        return GUID_RE.test(raw) ? raw : '';
+    } catch {
+        return '';
+    }
+}
+
+function parseTenantId(input) {
+    const raw = String(input || '').trim();
+    return GUID_RE.test(raw) ? raw : '';
+}
+
+function saveTenantId(tenantId) {
+    try {
+        const valid = parseTenantId(tenantId);
+        if (valid) localStorage.setItem(LS_TENANT, valid);
+        else localStorage.removeItem(LS_TENANT);
+    } catch {}
+}
+
+function getSelectedTenantId() {
+    const input = document.getElementById('tenant-id');
+    return parseTenantId(input?.value || '');
+}
+
+function getAuthorityForTenant(tenantId) {
+    const tid = parseTenantId(tenantId);
+    return tid ? `https://login.microsoftonline.com/${tid}` : undefined;
+}
+
 function parseSubscriptionIds(input) {
     const parts = String(input || '')
         .split(',')
@@ -49,8 +84,7 @@ function parseSubscriptionIds(input) {
         .filter(Boolean);
 
     // Keep only GUID-like ids (avoid accidental text)
-    const guidRe = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-    const valid = parts.filter(p => guidRe.test(p));
+    const valid = parts.filter(p => GUID_RE.test(p));
     return Array.from(new Set(valid));
 }
 
@@ -68,13 +102,14 @@ function renderSubscriptionPicker(container, subs, preselected) {
     const rows = subs.slice(0, 80).map(s => {
         const id = String(s.subscriptionId || '').trim();
         const name = String(s.displayName || '');
+        const tenant = parseTenantId(s.tenantId);
         const checked = selected.has(id) ? 'checked' : '';
         return `
             <label class="sub-item">
                 <input type="checkbox" class="precheck-sub-check" value="${id}" ${checked} />
                 <span class="sub-meta">
                     <span class="sub-name">${name}</span>
-                    <span class="sub-id">${id}</span>
+                    <span class="sub-id">${id}${tenant ? ` · tenant ${tenant}` : ''}</span>
                 </span>
             </label>`;
     }).join('');
@@ -497,15 +532,19 @@ async function handleAuthentication() {
     }
 }
 
-async function getAccessToken() {
+async function getAccessToken(tenantId = '') {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    const authority = getAuthorityForTenant(tenantId);
+    const tokenRequest = authority
+        ? { ...loginRequest, account: currentAccount, authority }
+        : { ...loginRequest, account: currentAccount };
     try {
-        const response = await msalInstance.acquireTokenSilent({ ...loginRequest, account: currentAccount });
+        const response = await msalInstance.acquireTokenSilent(tokenRequest);
         currentAccessToken = response.accessToken;
         return currentAccessToken;
     } catch {
-        const response = await msalInstance.acquireTokenPopup(loginRequest);
+        const response = await msalInstance.acquireTokenPopup(tokenRequest);
         currentAccessToken = response.accessToken;
         return currentAccessToken;
     }
@@ -526,38 +565,57 @@ const GRAPH_SCOPES_ASSESSMENT = [
     "https://graph.microsoft.com/User.Read.All"
 ];
 
-async function getGraphToken() {
+async function getGraphToken(tenantId = '') {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    const authority = getAuthorityForTenant(tenantId);
+    const tokenRequest = authority
+        ? { scopes: GRAPH_SCOPES_INTUNE, account: currentAccount, authority }
+        : { scopes: GRAPH_SCOPES_INTUNE, account: currentAccount };
     try {
-        const response = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES_INTUNE, account: currentAccount });
+        const response = await msalInstance.acquireTokenSilent(tokenRequest);
         return response.accessToken;
     } catch {
         // Popup bloccato da COOP → usa redirect flow che non usa finestre popup
         sessionStorage.setItem('intune_graph_consent_pending', '1');
-        await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES_INTUNE, account: currentAccount, prompt: 'consent' });
+        await msalInstance.acquireTokenRedirect({ ...tokenRequest, prompt: 'consent' });
         // La riga seguente non viene mai raggiunta (pagina si ricarica dopo il redirect)
         throw new Error('Redirect in corso per il consenso...');
     }
 }
 
-async function getAssessmentGraphToken() {
+async function getAssessmentGraphToken(tenantId = '') {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
+    const authority = getAuthorityForTenant(tenantId);
+    const tokenRequest = authority
+        ? { scopes: GRAPH_SCOPES_ASSESSMENT, account: currentAccount, authority }
+        : { scopes: GRAPH_SCOPES_ASSESSMENT, account: currentAccount };
     try {
-        const response = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES_ASSESSMENT, account: currentAccount });
+        const response = await msalInstance.acquireTokenSilent(tokenRequest);
         return response.accessToken;
     } catch {
         sessionStorage.setItem('assessment_graph_consent_pending', '1');
-        await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES_ASSESSMENT, account: currentAccount, prompt: 'consent' });
+        await msalInstance.acquireTokenRedirect({ ...tokenRequest, prompt: 'consent' });
         throw new Error('Redirect in corso per il consenso...');
     }
 }
 
-async function getGraphTokenWithWrite() {
+async function getGraphTokenWithWrite(tenantId = '') {
     if (!msalInstance) throw new Error("Autenticazione non inizializzata");
     if (!currentAccount) throw new Error("Non autenticato. Effettua prima il login.");
-    const graphRequest = {
+    const authority = getAuthorityForTenant(tenantId);
+    const graphRequest = authority ? {
+        scopes: [
+            "https://graph.microsoft.com/DeviceManagementApps.Read.All",
+            "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+            "https://graph.microsoft.com/DeviceManagementConfiguration.ReadWrite.All",
+            "https://graph.microsoft.com/DeviceManagementServiceConfig.ReadWrite.All",
+            "https://graph.microsoft.com/Organization.Read.All"
+        ],
+        account: currentAccount,
+        authority
+    } : {
         scopes: [
             "https://graph.microsoft.com/DeviceManagementApps.Read.All",
             "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
@@ -590,15 +648,19 @@ const CA_SCOPES_WRITE = [
     "https://graph.microsoft.com/Directory.Read.All"
 ];
 
-async function getCaToken(write = false) {
+async function getCaToken(write = false, tenantId = '') {
     if (!msalInstance || !currentAccount) throw new Error("Non autenticato.");
     const scopes = write ? CA_SCOPES_WRITE : CA_SCOPES_READ;
+    const authority = getAuthorityForTenant(tenantId);
+    const tokenRequest = authority
+        ? { scopes, account: currentAccount, authority }
+        : { scopes, account: currentAccount };
     try {
-        const r = await msalInstance.acquireTokenSilent({ scopes, account: currentAccount });
+        const r = await msalInstance.acquireTokenSilent(tokenRequest);
         return r.accessToken;
     } catch {
         sessionStorage.setItem('ca_consent_pending', write ? 'write' : 'read');
-        await msalInstance.acquireTokenRedirect({ scopes, account: currentAccount, prompt: 'consent' });
+        await msalInstance.acquireTokenRedirect({ ...tokenRequest, prompt: 'consent' });
         throw new Error('Redirect in corso...');
     }
 }
@@ -1538,7 +1600,7 @@ function describeExistingProfile(p) {
 // Fetcha tutti i device configs con full settings e calcola copertura per ogni entry MDE_BASELINE
 async function scanMdeCoverage() {
     try {
-        const token = await getGraphToken();
+        const token = await getGraphToken(getSelectedTenantId());
         const h = { 'Authorization': `Bearer ${token}` };
 
         let configs = [], url = 'https://graph.microsoft.com/beta/deviceManagement/deviceConfigurations?$top=100';
@@ -1773,7 +1835,7 @@ async function runMdeBaselineDeploy() {
     log('Acquisizione token Graph con permessi di scrittura...', '#569cd6');
     let token;
     try {
-        token = await getGraphTokenWithWrite();
+        token = await getGraphTokenWithWrite(getSelectedTenantId());
         log('✓ Token acquisito.', '#4ec9b0');
     } catch (e) {
         log(`✗ Errore token: ${e.message}`, '#f44747');
@@ -2018,7 +2080,7 @@ async function runBaselineDeploy() {
     log('Acquisizione token Graph con permessi di scrittura...', '#569cd6');
     let token;
     try {
-        token = await getGraphTokenWithWrite();
+        token = await getGraphTokenWithWrite(getSelectedTenantId());
         log('✓ Token acquisito.', '#4ec9b0');
     } catch (e) {
         log(`✗ Errore token: ${e.message}`, '#f44747');
@@ -2139,8 +2201,10 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('btn-load-subs')?.addEventListener('click', async function() {
         try {
             if (!currentAccount) { alert('⚠️ Effettua il login prima di caricare le subscriptions.'); return; }
-            const accessToken = await getAccessToken();
+            const selectedTenantId = getSelectedTenantId();
+            const accessToken = await getAccessToken(selectedTenantId);
             const subs = await fetchSubscriptionsForUser(accessToken);
+            lastLoadedSubscriptions = Array.isArray(subs) ? subs : [];
 
             const picker = document.getElementById('precheck-sub-picker');
             if (!picker) return;
@@ -2161,6 +2225,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!checked.length) { alert('⚠️ Seleziona almeno una subscription.'); return; }
                 document.getElementById('subscription-id').value = checked.join(',');
                 try { localStorage.setItem(LS_SUBS, JSON.stringify(checked)); } catch {}
+                const matchedTenants = Array.from(new Set(
+                    (lastLoadedSubscriptions || [])
+                        .filter(s => checked.includes(String(s.subscriptionId || '').trim()))
+                        .map(s => parseTenantId(s.tenantId))
+                        .filter(Boolean)
+                ));
+                if (matchedTenants.length === 1) {
+                    const tenantInput = document.getElementById('tenant-id');
+                    if (tenantInput && !parseTenantId(tenantInput.value)) {
+                        tenantInput.value = matchedTenants[0];
+                    }
+                    saveTenantId(matchedTenants[0]);
+                }
                 picker.style.display = 'none';
             });
         } catch (e) {
@@ -2168,12 +2245,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    document.getElementById('tenant-id')?.addEventListener('change', function() {
+        const valid = parseTenantId(this.value);
+        if (this.value.trim() && !valid) {
+            alert('⚠️ Tenant ID non valido. Inserisci un GUID valido.');
+            return;
+        }
+        saveTenantId(valid);
+    });
+
     document.getElementById('run-precheck')?.addEventListener('click', async function() {
         if (!currentAccount) { alert('⚠️ Devi effettuare il login prima di eseguire il precheck.\n\n🔐 Clicca su "Accedi con Microsoft".'); return; }
+        const selectedTenantId = getSelectedTenantId();
+        if (document.getElementById('tenant-id')?.value && !selectedTenantId) {
+            alert('⚠️ Tenant ID non valido. Inserisci un GUID valido oppure lascia vuoto.');
+            return;
+        }
+        saveTenantId(selectedTenantId);
 
         // Defender XDR e Conditional Access: precheck diretto browser → Graph API
-        if (currentSolution === 'defender-xdr') { await runDefenderXdrPrecheckClientSide(); return; }
-        if (currentSolution === 'conditional-access') { await runCaPrecheckClientSide(); return; }
+        if (currentSolution === 'defender-xdr') { await runDefenderXdrPrecheckClientSide(selectedTenantId); return; }
+        if (currentSolution === 'conditional-access') { await runCaPrecheckClientSide(selectedTenantId); return; }
 
         // Intune e Defender XDR sono tenant-wide: non richiedono subscription Azure
         let subscriptionIds;
@@ -2192,7 +2284,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('precheck-results').style.display = 'none';
 
         try {
-            const accessToken = await getAccessToken();
+            const accessToken = await getAccessToken(selectedTenantId);
             const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
             const useV2 = (currentSolution === 'azure-monitor') && document.getElementById('use-precheck2')?.checked && solConfig.apiEndpointV2;
             const endpoint = useV2 ? solConfig.apiEndpointV2 : solConfig.apiEndpoint;
@@ -2202,21 +2294,22 @@ document.addEventListener('DOMContentLoaded', function() {
             let graphToken = null;
             if (currentSolution === 'intune' || currentSolution === 'defender-xdr') {
                 try {
-                    graphToken = await getGraphToken();
+                    graphToken = await getGraphToken(selectedTenantId);
                 } catch (e) {
                     throw new Error(`Impossibile ottenere il token Microsoft Graph.\n\nAssicurati che l'App Registration abbia il consenso per DeviceManagementApps.Read.All e DeviceManagementManagedDevices.Read.All.\n\nDettaglio: ${e.message}`);
                 }
             }
             if (currentSolution === 'assessment-security-m365-azure') {
                 try {
-                    graphToken = await getAssessmentGraphToken();
+                    graphToken = await getAssessmentGraphToken(selectedTenantId);
                 } catch (e) {
                     throw new Error(`Impossibile ottenere il token Microsoft Graph per l'assessment.\n\nConcedi il consenso admin agli scope: Directory.Read.All, Policy.Read.All, Organization.Read.All, User.Read.All.\n\nDettaglio: ${e.message}`);
                 }
             }
 
             for (const subId of subscriptionIds) {
-                const apiUrl = `${API_BASE_URL}${endpoint}?subscriptionId=${encodeURIComponent(subId)}`;
+                const tenantPart = selectedTenantId ? `&tenantId=${encodeURIComponent(selectedTenantId)}` : '';
+                const apiUrl = `${API_BASE_URL}${endpoint}?subscriptionId=${encodeURIComponent(subId)}${tenantPart}`;
                 const reqHeaders = {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
@@ -3619,13 +3712,13 @@ document.addEventListener('DOMContentLoaded', function() {
         renderIntuneRecommendations(data, gap);
     }
 
-    async function runDefenderXdrPrecheckClientSide() {
+    async function runDefenderXdrPrecheckClientSide(tenantId = '') {
         document.querySelector('.precheck-form').style.display = 'none';
         document.getElementById('precheck-loading').style.display = 'block';
         document.getElementById('precheck-results').style.display = 'none';
 
         try {
-            const token = await getGraphToken();
+            const token = await getGraphToken(tenantId || getSelectedTenantId());
             const headers = { 'Authorization': `Bearer ${token}` };
 
             // Usa /beta per avere tutti i campi (v1.0 taglia proprietà come advancedThreatProtectionAutoPopulateOnboardingBlob)
@@ -4018,11 +4111,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Copia comando PowerShell
     document.getElementById('copy-precheck-command')?.addEventListener('click', function() {
         const input = document.getElementById('subscription-id').value.trim();
+        const tenantId = getSelectedTenantId();
         const subs = parseSubscriptionIds(input);
         const subscriptionId = subs[0] || '';
         if (!subscriptionId) { alert('⚠️ Inserisci prima un SubscriptionId valido'); return; }
         const solConfig = SOLUTIONS[currentSolution] || SOLUTIONS['azure-monitor'];
-        const command = solConfig.psCommand.replace('YOUR-SUB-ID', subscriptionId);
+        const commandBase = solConfig.psCommand.replace('YOUR-SUB-ID', subscriptionId);
+        const command = tenantId ? `${commandBase} -TenantId "${tenantId}"` : commandBase;
         navigator.clipboard.writeText(command).then(() => {
             const orig = this.textContent;
             this.textContent = '✓ Copiato!';
@@ -4080,6 +4175,8 @@ function showPrecheckModal(solution) {
     document.getElementById('precheck-results').style.display = 'none';
     const saved = getSavedSubscriptionIds();
     document.getElementById('subscription-id').value = saved.length ? saved.join(',') : '';
+    const tenantInput = document.getElementById('tenant-id');
+    if (tenantInput && !tenantInput.value.trim()) tenantInput.value = getSavedTenantId();
 
     // Show Precheck 2.0 toggle only for Azure Monitor
     const toggleRow = document.getElementById('monitor-precheck2-toggle');
@@ -4089,9 +4186,11 @@ function showPrecheckModal(solution) {
 
     // Intune è tenant-wide: nascondi il campo subscription
     const subGroup = document.getElementById('subscription-id')?.closest('.form-group');
+    const tenantGroup = document.getElementById('tenant-id')?.closest('.form-group');
     const rgGroup = document.getElementById('resource-group')?.closest('.form-group');
     if (solution === 'intune' || solution === 'defender-xdr' || solution === 'conditional-access') {
         if (subGroup) subGroup.style.display = 'none';
+        if (tenantGroup) tenantGroup.style.display = '';
         if (rgGroup) rgGroup.style.display = 'none';
         let note = document.getElementById('intune-tenant-note');
         if (!note) {
@@ -4101,10 +4200,11 @@ function showPrecheckModal(solution) {
             document.querySelector('.precheck-form').insertBefore(note, document.getElementById('run-precheck'));
         }
         const label = solution === 'defender-xdr' ? 'Defender XDR' : solution === 'conditional-access' ? 'Conditional Access' : 'Intune';
-        note.innerHTML = `<strong>ℹ️ ${label} è tenant-wide</strong> — non richiede una subscription Azure. Il precheck verrà eseguito direttamente sul tenant associato al tuo account.`;
+        note.innerHTML = `<strong>ℹ️ ${label} è tenant-wide</strong> — non richiede una subscription Azure. Seleziona il Tenant ID corretto per evitare mismatch directory.`;
         note.style.display = '';
     } else {
         if (subGroup) subGroup.style.display = '';
+        if (tenantGroup) tenantGroup.style.display = '';
         if (rgGroup) rgGroup.style.display = '';
         const note = document.getElementById('intune-tenant-note');
         if (note) note.style.display = 'none';
@@ -4238,12 +4338,12 @@ function renderAssessmentSecurityPrecheck(data) {
 // ============================================================
 // CONDITIONAL ACCESS — PRECHECK CLIENT-SIDE
 // ============================================================
-async function runCaPrecheckClientSide() {
+async function runCaPrecheckClientSide(tenantId = '') {
     document.querySelector('.precheck-form').style.display = 'none';
     document.getElementById('precheck-loading').style.display = 'block';
     document.getElementById('precheck-results').style.display = 'none';
     try {
-        const token = await getCaToken(false);
+        const token = await getCaToken(false, tenantId || getSelectedTenantId());
         const headers = { 'Authorization': `Bearer ${token}` };
 
         let allPolicies = [];
@@ -4442,7 +4542,7 @@ async function runCaBaselineDeploy() {
     log('Acquisizione token con permessi CA + Group...', '#569cd6');
     let token;
     try {
-        token = await getCaToken(true);
+        token = await getCaToken(true, getSelectedTenantId());
         log('✓ Token acquisito.', '#4ec9b0');
     } catch (e) {
         log(`✗ Errore token: ${e.message}`, '#f44747');

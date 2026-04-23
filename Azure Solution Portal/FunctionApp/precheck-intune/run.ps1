@@ -20,6 +20,24 @@ function Get-CorsHeaders {
     }
 }
 
+function Get-JwtTenantId {
+    param([string]$Token)
+    try {
+        if (-not $Token) { return $null }
+        $parts = $Token.Split('.')
+        if ($parts.Length -lt 2) { return $null }
+        $payload = $parts[1]
+        $mod4 = $payload.Length % 4
+        if ($mod4 -gt 0) { $payload += '=' * (4 - $mod4) }
+        $payload = $payload.Replace('-', '+').Replace('_', '/')
+        $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($payload))
+        $claims = $decoded | ConvertFrom-Json
+        return [string]$claims.tid
+    } catch {
+        return $null
+    }
+}
+
 if ($Request.Method -eq 'OPTIONS') {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 200
@@ -66,6 +84,9 @@ if (-not $graphTokenHeader -or $graphTokenHeader.Length -lt 100) {
 $subscriptionId = $Request.Query.SubscriptionId
 if (-not $subscriptionId) { $subscriptionId = $Request.Query.subscriptionId }
 if (-not $subscriptionId) { $subscriptionId = 'tenant-only' }
+$requestedTenantId = $Request.Query.TenantId
+if (-not $requestedTenantId) { $requestedTenantId = $Request.Query.tenantId }
+if ($requestedTenantId) { $requestedTenantId = $requestedTenantId.ToString().Trim() }
 
 # Per Intune il subscriptionId è opzionale (tenant-wide).
 # Se è 'tenant-only', estrai il tenantId direttamente dal JWT del Graph token.
@@ -102,6 +123,31 @@ if ($subscriptionId -eq 'tenant-only') {
     }
 }
 
+$azureTokenTenantId = Get-JwtTenantId $accessToken
+$graphTokenTenantId = Get-JwtTenantId $graphTokenHeader
+if (-not $tenantId -and $graphTokenTenantId) { $tenantId = $graphTokenTenantId }
+
+if ($requestedTenantId -and $graphTokenTenantId -and ($graphTokenTenantId -ne $requestedTenantId)) {
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Il token Graph non appartiene al Tenant ID selezionato"}'; Headers = $corsHeaders })
+    return
+}
+if ($requestedTenantId -and $azureTokenTenantId -and ($azureTokenTenantId -ne $requestedTenantId)) {
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Il token Azure non appartiene al Tenant ID selezionato"}'; Headers = $corsHeaders })
+    return
+}
+if ($requestedTenantId -and $tenantId -and ($tenantId -ne $requestedTenantId)) {
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"La subscription/tenant target non appartiene al Tenant ID indicato"}'; Headers = $corsHeaders })
+    return
+}
+if ($azureTokenTenantId -and $tenantId -and ($azureTokenTenantId -ne $tenantId)) {
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Mismatch tra tenant del token Azure e tenant target"}'; Headers = $corsHeaders })
+    return
+}
+if ($graphTokenTenantId -and $tenantId -and ($graphTokenTenantId -ne $tenantId)) {
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Mismatch tra tenant del token Graph e tenant target"}'; Headers = $corsHeaders })
+    return
+}
+
 $scriptPath = $null
 $paths = @(
     (Join-Path $PSScriptRoot '..\scripts\precheck-intune.ps1'),
@@ -120,7 +166,7 @@ if (-not $scriptPath) {
 $env:AZURE_ACCESS_TOKEN    = $accessToken
 $env:AZURE_SUBSCRIPTION_ID = $subscriptionId
 $env:AZURE_GRAPH_TOKEN     = $graphTokenHeader
-$env:AZURE_TENANT_ID       = if ($tenantId) { $tenantId } else { '' }
+$env:AZURE_TENANT_ID       = if ($requestedTenantId) { $requestedTenantId } elseif ($tenantId) { $tenantId } else { '' }
 
 $tempDir = if ($env:TEMP) { $env:TEMP } else { '/tmp' }
 $outHtml = Join-Path $tempDir "intune_report_$subscriptionId.html"

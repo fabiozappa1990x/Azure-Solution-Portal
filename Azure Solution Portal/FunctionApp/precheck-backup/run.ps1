@@ -20,6 +20,24 @@ function Get-CorsHeaders {
     }
 }
 
+function Get-JwtTenantId {
+    param([string]$Token)
+    try {
+        if (-not $Token) { return $null }
+        $parts = $Token.Split('.')
+        if ($parts.Length -lt 2) { return $null }
+        $payload = $parts[1]
+        $mod4 = $payload.Length % 4
+        if ($mod4 -gt 0) { $payload += '=' * (4 - $mod4) }
+        $payload = $payload.Replace('-', '+').Replace('_', '/')
+        $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($payload))
+        $claims = $decoded | ConvertFrom-Json
+        return [string]$claims.tid
+    } catch {
+        return $null
+    }
+}
+
 if ($Request.Method -eq 'OPTIONS') {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 200
@@ -54,6 +72,9 @@ if ($accessToken.Length -lt 100) {
 
 $subscriptionId = $Request.Query.SubscriptionId
 if (-not $subscriptionId) { $subscriptionId = $Request.Query.subscriptionId }
+$requestedTenantId = $Request.Query.TenantId
+if (-not $requestedTenantId) { $requestedTenantId = $Request.Query.tenantId }
+if ($requestedTenantId) { $requestedTenantId = $requestedTenantId.ToString().Trim() }
 
 if (-not $subscriptionId) {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 400; Body = '{"error":"SubscriptionId mancante"}'; Headers = $corsHeaders })
@@ -64,6 +85,21 @@ try {
     $headers = @{ 'Authorization' = "Bearer $accessToken"; 'Content-Type' = 'application/json' }
     $url = "https://management.azure.com/subscriptions/${subscriptionId}?api-version=2022-12-01"
     $result = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+    $tokenTenantId = Get-JwtTenantId $accessToken
+    $subscriptionTenantId = if ($result.tenantId) { $result.tenantId.ToString().Trim() } else { $null }
+
+    if ($requestedTenantId -and $tokenTenantId -and ($tokenTenantId -ne $requestedTenantId)) {
+        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Il token Azure non appartiene al Tenant ID selezionato"}'; Headers = $corsHeaders })
+        return
+    }
+    if ($requestedTenantId -and $subscriptionTenantId -and ($subscriptionTenantId -ne $requestedTenantId)) {
+        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"La subscription selezionata non appartiene al Tenant ID indicato"}'; Headers = $corsHeaders })
+        return
+    }
+    if ($tokenTenantId -and $subscriptionTenantId -and ($tokenTenantId -ne $subscriptionTenantId)) {
+        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Mismatch tra tenant del token e tenant della subscription"}'; Headers = $corsHeaders })
+        return
+    }
     Write-Host "Token valid for: $($result.displayName)"
 } catch {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Token non valido"}'; Headers = $corsHeaders })
@@ -87,6 +123,7 @@ if (-not $scriptPath) {
 
 $env:AZURE_ACCESS_TOKEN    = $accessToken
 $env:AZURE_SUBSCRIPTION_ID = $subscriptionId
+$env:AZURE_TENANT_ID       = if ($requestedTenantId) { $requestedTenantId } else { '' }
 
 $tempDir = if ($env:TEMP) { $env:TEMP } else { '/tmp' }
 $outHtml = Join-Path $tempDir "backup_report_$subscriptionId.html"
@@ -110,5 +147,6 @@ try {
 } finally {
     Remove-Item Env:AZURE_ACCESS_TOKEN    -ErrorAction SilentlyContinue
     Remove-Item Env:AZURE_SUBSCRIPTION_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:AZURE_TENANT_ID       -ErrorAction SilentlyContinue
     Write-Host "=== END precheck-backup ==="
 }
