@@ -151,9 +151,23 @@ try {
         return
     }
 } catch {
+    $statusCode = $null
+    try { $statusCode = [int]$_.Exception.Response.StatusCode.value__ } catch {}
+    $errMsg = $_.Exception.Message
+    $errText = if ($errMsg) { $errMsg.ToString() } else { '' }
+
+    if ($statusCode -eq 403 -or $errText -match 'AuthorizationFailed|does not have authorization|Forbidden') {
+        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+            StatusCode = 403
+            Body       = '{"error":"Token valido ma senza accesso alla subscription nel tenant selezionato"}'
+            Headers    = $corsHeaders
+        })
+        return
+    }
+
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
         StatusCode = 401
-        Body       = '{"error":"Token non valido o subscription non accessibile"}'
+        Body       = '{"error":"Token non valido o tenant/subscription non accessibile"}'
         Headers    = $corsHeaders
     })
     return

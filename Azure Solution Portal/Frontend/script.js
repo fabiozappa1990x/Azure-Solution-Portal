@@ -2322,10 +2322,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    if (response.status === 401) throw new Error('Token scaduto. Effettua nuovamente il login.');
-                    if (response.status === 403) throw new Error(`Accesso negato sulla subscription ${subId}. Verifica i permessi Reader.`);
+                    let apiError = errorText;
+                    try {
+                        const parsed = JSON.parse(errorText);
+                        apiError = parsed?.error || errorText;
+                    } catch {}
+                    if (response.status === 401) {
+                        const msg = String(apiError || '');
+                        if (msg.toLowerCase().includes('subscription non accessibile')) {
+                            throw new Error(`Token valido ma senza accesso alla subscription ${subId} nel tenant selezionato.`);
+                        }
+                        throw new Error(`Autenticazione non valida per la chiamata API: ${msg || '401 Unauthorized'}`);
+                    }
+                    if (response.status === 403) throw new Error(`Accesso negato sulla subscription ${subId}: ${apiError}`);
                     if (response.status === 404) throw new Error(`Subscription non trovata: ${subId}.`);
-                    throw new Error(`Errore HTTP ${response.status} su ${subId}: ${errorText}`);
+                    throw new Error(`Errore HTTP ${response.status} su ${subId}: ${apiError}`);
                 }
 
                 const data = await response.json();
