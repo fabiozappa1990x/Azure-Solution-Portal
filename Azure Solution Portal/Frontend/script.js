@@ -2962,22 +2962,45 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (solution === 'assessment-365') {
+            setSummaryLabels('Check totali:', 'Findings:');
+            setTabText('overview', 'Panoramica');
+            setTabText('virtual-machines', 'Findings');
+            setTabText('workspaces', 'Tenant Info');
+            setTabText('dcr', 'Statistiche');
+            setTabText('recommendations', 'Analisi');
+            setPaneTitle('overview', 'Stato Assessment Microsoft 365');
+            setPaneTitle('virtual-machines', 'Findings di sicurezza M365');
+            setPaneTitle('workspaces', 'Informazioni tenant e check');
+            setPaneTitle('dcr', 'Statistiche assessment');
+            setPaneTitle('recommendations', 'Analisi e Raccomandazioni');
+            setOverviewLabels(['Check Totali', 'Critical', 'High', 'Pass Rate']);
+            setTableHeaders('vm-table', ['ID', 'Area', 'Severità', 'Finding', 'Remediation']);
+            setTableHeaders('workspace-table', ['Metrica', 'Valore', 'Ambito', '', '']);
+            setTableHeaders('dcr-table', ['Metrica', 'Valore', 'Ambito', '', '']);
+            setTabVisible('virtual-machines', true);
+            setTabVisible('workspaces', true);
+            setTabVisible('dcr', true);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
         if (solution === 'assessment-security-m365-azure') {
             setSummaryLabels('VM Analizzate:', 'Findings:');
             setTabText('overview', 'Panoramica');
-            setTabText('virtual-machines', 'Azure Inventory');
-            setTabText('workspaces', 'Identity Controls');
+            setTabText('virtual-machines', 'Findings');
+            setTabText('workspaces', 'Inventario');
             setTabText('dcr', 'Security KPIs');
-            setTabText('recommendations', 'Report');
+            setTabText('recommendations', 'Analisi');
             setPaneTitle('overview', 'Stato Assessment Security M365 + Azure');
-            setPaneTitle('virtual-machines', 'Inventario workload Azure');
-            setPaneTitle('workspaces', 'Controlli Identity');
+            setPaneTitle('virtual-machines', 'Findings di sicurezza');
+            setPaneTitle('workspaces', 'Inventario risorse Azure e Identity');
             setPaneTitle('dcr', 'KPI sicurezza');
-            setPaneTitle('recommendations', 'Report');
-            setOverviewLabels(['VM Totali', 'CA Enabled', 'Findings High', 'Secure Score (%)']);
-            setTableHeaders('vm-table', ['Risorsa', 'RG', 'Stato', 'Dettaglio', 'Valore']);
-            setTableHeaders('workspace-table', ['Controllo', 'Valore', 'Ambito', 'Area', 'Note']);
-            setTableHeaders('dcr-table', ['Metrica', 'RG', 'Scope', 'Tipo', 'Valore']);
+            setPaneTitle('recommendations', 'Analisi e Raccomandazioni');
+            setOverviewLabels(['VM Totali', 'Critical', 'High', 'Secure Score (%)']);
+            setTableHeaders('vm-table', ['Severità', 'Area', 'Finding', 'Remediation', 'ID']);
+            setTableHeaders('workspace-table', ['Risorsa', 'Valore', 'Ambito', '', '']);
+            setTableHeaders('dcr-table', ['Metrica', 'Valore', 'Ambito', 'Tipo', '']);
             setTabVisible('virtual-machines', true);
             setTabVisible('workspaces', true);
             setTabVisible('dcr', true);
@@ -4570,27 +4593,27 @@ function renderReportHtmlInRecommendationsGlobal(data) {
     const recContainer = document.getElementById('recommendations-content');
     if (!recContainer) return;
     recContainer.innerHTML = '';
-
     if (!data?.ReportHTML) {
         recContainer.innerHTML = '<p>Report HTML non disponibile per questa esecuzione.</p>';
         return;
     }
-
+    const details = document.createElement('details');
+    details.style.cssText = 'margin-top:8px;border:1px solid #d1dce5;border-radius:8px;overflow:hidden;';
+    details.innerHTML = `<summary style="padding:10px 14px;background:#f0f4f8;cursor:pointer;font-weight:600;color:#0f3d56;font-size:13px;">Report HTML completo (appendice tecnica)</summary>`;
     const iframe = document.createElement('iframe');
-    iframe.style.width = '100%';
-    iframe.style.height = '720px';
-    iframe.style.border = '1px solid #e1e1e1';
-    iframe.style.borderRadius = '8px';
+    iframe.style.cssText = 'width:100%;height:680px;border:none;display:block;';
     iframe.setAttribute('sandbox', 'allow-same-origin');
     iframe.srcdoc = data.ReportHTML;
-    recContainer.appendChild(iframe);
+    details.appendChild(iframe);
+    recContainer.appendChild(details);
 }
 
 function renderAssessmentSecurityPrecheck(data) {
     const summary = data?.Summary || {};
+    const findings = Array.isArray(data?.Findings) ? data.Findings : [];
 
     document.getElementById('overview-vm-total').textContent = summary.TotalVMs ?? 0;
-    document.getElementById('overview-vm-monitored').textContent = summary.EnabledCaPolicies ?? 0;
+    document.getElementById('overview-vm-monitored').textContent = summary.CriticalFindings ?? 0;
     document.getElementById('overview-workspaces').textContent = summary.HighFindings ?? 0;
     document.getElementById('overview-dcr').textContent = summary.SecureScorePercent ?? 'N/A';
     document.getElementById('vm-count').textContent = summary.TotalVMs ?? 0;
@@ -4598,32 +4621,114 @@ function renderAssessmentSecurityPrecheck(data) {
 
     const crit = Number(summary.CriticalFindings || 0);
     const high = Number(summary.HighFindings || 0);
-    if (crit > 0) setOverallStatus('Rischio elevato: findings critici presenti', 'error');
+    if (crit > 0) setOverallStatus('Rischio elevato: findings critici presenti', 'danger');
     else if (high > 0) setOverallStatus('Rischio medio-alto: findings high presenti', 'warning');
     else setOverallStatus('Assessment completato: nessun finding critico/high', 'success');
 
+    // Tab: Findings (vm-table)
     const vmTbody = document.querySelector('#vm-table tbody');
     if (vmTbody) {
-        vmTbody.innerHTML = `
-            <tr><td>Virtual Machines</td><td>N/A</td><td>Inventario</td><td>N/A</td><td>${summary.TotalVMs ?? 0}</td></tr>
-            <tr><td>Storage Accounts</td><td>N/A</td><td>Inventario</td><td>N/A</td><td>${summary.TotalStorageAccounts ?? 0}</td></tr>
-            <tr><td>Key Vaults</td><td>N/A</td><td>Inventario</td><td>N/A</td><td>${summary.TotalKeyVaults ?? 0}</td></tr>`;
+        vmTbody.innerHTML = '';
+        const toShow = findings.slice(0, 100);
+        if (!toShow.length) {
+            vmTbody.innerHTML = '<tr><td colspan="5">Nessun finding trovato.</td></tr>';
+        } else {
+            toShow.forEach(f => {
+                const sev = String(f.Severity || 'Info');
+                const sevCls = sev.toLowerCase() === 'critical' ? 'status-danger' : sev.toLowerCase() === 'high' ? 'status-warning' : '';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><span class="status-badge ${sevCls}">${escapeHtml(sev)}</span></td>
+                    <td>${escapeHtml(f.Area || '')}</td>
+                    <td><strong>${escapeHtml(f.Title || f.Id || 'N/A')}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(f.Description||'')}</div></td>
+                    <td style="font-size:11px;">${escapeHtml(f.Remediation || '')}</td>
+                    <td>${escapeHtml(f.Id || '')}</td>`;
+                vmTbody.appendChild(tr);
+            });
+            if (findings.length > 100) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="5" style="color:#666;font-size:12px;">Mostrati i primi 100 finding su ${findings.length} totali.</td>`;
+                vmTbody.appendChild(tr);
+            }
+        }
     }
 
+    // Tab: Inventario risorse (workspace-table)
     const wsTbody = document.querySelector('#workspace-table tbody');
     if (wsTbody) {
         wsTbody.innerHTML = `
-            <tr><td>Conditional Access (Enabled)</td><td>${summary.EnabledCaPolicies ?? 0}</td><td>Tenant</td><td>Identity</td><td>N/A</td></tr>
-            <tr><td>Conditional Access (Report-Only)</td><td>${summary.ReportOnlyCaPolicies ?? 0}</td><td>Tenant</td><td>Identity</td><td>N/A</td></tr>
-            <tr><td>Security Defaults</td><td>${summary.SecurityDefaultsEnabled ? 'Enabled' : 'Disabled'}</td><td>Tenant</td><td>Identity</td><td>N/A</td></tr>`;
+            <tr><td>Virtual Machines</td><td>${summary.TotalVMs ?? 0}</td><td>Inventario</td><td></td><td></td></tr>
+            <tr><td>Storage Accounts</td><td>${summary.TotalStorageAccounts ?? 0}</td><td>Inventario</td><td></td><td></td></tr>
+            <tr><td>Key Vaults</td><td>${summary.TotalKeyVaults ?? 0}</td><td>Inventario</td><td></td><td></td></tr>
+            <tr><td>CA Policy (Enabled)</td><td>${summary.EnabledCaPolicies ?? 0}</td><td>Identity</td><td></td><td></td></tr>
+            <tr><td>CA Policy (Report-Only)</td><td>${summary.ReportOnlyCaPolicies ?? 0}</td><td>Identity</td><td></td><td></td></tr>
+            <tr><td>Security Defaults</td><td>${summary.SecurityDefaultsEnabled ? 'Enabled' : 'Disabled'}</td><td>Identity</td><td></td><td></td></tr>`;
     }
 
+    // Tab: Score/metriche (dcr-table)
     const dcrTbody = document.querySelector('#dcr-table tbody');
     if (dcrTbody) {
         dcrTbody.innerHTML = `
-            <tr><td>Defender Secure Score</td><td>N/A</td><td>N/A</td><td>Percentage</td><td>${summary.SecureScorePercent ?? 'N/A'}</td></tr>
-            <tr><td>Findings Critical</td><td>N/A</td><td>N/A</td><td>Count</td><td>${summary.CriticalFindings ?? 0}</td></tr>
-            <tr><td>Findings High</td><td>N/A</td><td>N/A</td><td>Count</td><td>${summary.HighFindings ?? 0}</td></tr>`;
+            <tr><td>Defender Secure Score</td><td>${summary.SecureScorePercent ?? 'N/A'}%</td><td>Azure</td><td>Postura</td><td></td></tr>
+            <tr><td>Findings Critical</td><td><strong style="color:#b3261e">${summary.CriticalFindings ?? 0}</strong></td><td>Assessment</td><td>Severity</td><td></td></tr>
+            <tr><td>Findings High</td><td><strong style="color:#c44d00">${summary.HighFindings ?? 0}</strong></td><td>Assessment</td><td>Severity</td><td></td></tr>
+            <tr><td>Findings Totali</td><td>${summary.TotalFindings ?? findings.length}</td><td>Assessment</td><td>Count</td><td></td></tr>`;
+    }
+
+    // Recommendations: summary stats box + iframe appendix
+    const recContainer = document.getElementById('recommendations-content');
+    if (recContainer) {
+        recContainer.innerHTML = '';
+        const scoreColor = (summary.SecureScorePercent ?? 0) >= 80 ? '#107c10' : (summary.SecureScorePercent ?? 0) >= 50 ? '#d97706' : '#b3261e';
+        const scoreBg    = (summary.SecureScorePercent ?? 0) >= 80 ? '#e6f4ea' : (summary.SecureScorePercent ?? 0) >= 50 ? '#fff8eb' : '#fce8e6';
+        const box = document.createElement('div');
+        box.style.cssText = `padding:14px 16px;background:${scoreBg};border:1px solid ${scoreColor}33;border-radius:10px;margin-bottom:16px;`;
+        box.innerHTML = `
+            <div style="font-weight:700;color:${scoreColor};font-size:14px;margin-bottom:8px;">Risultati Assessment</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;font-size:13px;">
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:#b3261e;">${summary.CriticalFindings ?? 0}</div>
+                    <div style="color:#555;">Critical</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:#c44d00;">${summary.HighFindings ?? 0}</div>
+                    <div style="color:#555;">High</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:#0078d4;">${summary.TotalFindings ?? findings.length}</div>
+                    <div style="color:#555;">Totali</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:${scoreColor};">${summary.SecureScorePercent ?? 'N/A'}%</div>
+                    <div style="color:#555;">Secure Score</div>
+                </div>
+            </div>`;
+        recContainer.appendChild(box);
+
+        if (findings.length) {
+            const criticalFindings = findings.filter(f => String(f.Severity||'').toLowerCase() === 'critical');
+            const highFindings     = findings.filter(f => String(f.Severity||'').toLowerCase() === 'high');
+            const topFindings = [...criticalFindings, ...highFindings].slice(0, 20);
+            if (topFindings.length) {
+                const topBox = document.createElement('div');
+                topBox.style.cssText = 'margin-bottom:16px;padding:14px 16px;border:1px solid #f5c2bf;background:#fce8e6;border-radius:10px;';
+                const rows = topFindings.map(f => {
+                    const sev = String(f.Severity||'');
+                    const cls = sev.toLowerCase() === 'critical' ? '#b3261e' : '#c44d00';
+                    return `<tr style="border-bottom:1px solid #f8d7d4;">
+                        <td style="padding:7px 10px;"><span style="background:${cls}22;color:${cls};border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;">${escapeHtml(sev)}</span></td>
+                        <td style="padding:7px 10px;font-size:12px;color:#555;">${escapeHtml(f.Area||'')}</td>
+                        <td style="padding:7px 10px;"><div style="font-weight:600;">${escapeHtml(f.Title||f.Id||'')}</div><div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(f.Remediation||'')}</div></td>
+                    </tr>`;
+                }).join('');
+                topBox.innerHTML = `
+                    <div style="font-weight:700;color:#b3261e;margin-bottom:8px;">Top Findings da correggere (Critical + High)</div>
+                    <div style="max-height:300px;overflow:auto;border-radius:6px;background:white;">
+                        <table style="width:100%;border-collapse:collapse;">${rows}</table>
+                    </div>`;
+                recContainer.appendChild(topBox);
+            }
+        }
     }
 
     renderReportHtmlInRecommendationsGlobal(data);
@@ -4649,35 +4754,100 @@ function renderAssessment365Precheck(data) {
     const vmTbody = document.querySelector('#vm-table tbody');
     if (vmTbody) {
         vmTbody.innerHTML = '';
-        findings.slice(0, 50).forEach(f => {
-            const sev = String(f.Severity || 'Info');
-            const sevCls = sev.toLowerCase() === 'critical' ? 'status-danger' : sev.toLowerCase() === 'high' ? 'status-warning' : 'status-success';
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${escapeHtml(f.CheckId || f.Id || 'N/A')}</td>
-                <td>${escapeHtml(f.Area || 'M365')}</td>
-                <td><span class="status-badge ${sevCls}">${escapeHtml(sev)}</span></td>
-                <td>${escapeHtml(f.Title || 'N/A')}</td>
-                <td>${escapeHtml(f.Remediation || '')}</td>`;
-            vmTbody.appendChild(tr);
-        });
-        if (!findings.length) vmTbody.innerHTML = '<tr><td colspan="5">Nessun finding disponibile.</td></tr>';
+        const toShow = findings.slice(0, 100);
+        if (!toShow.length) {
+            vmTbody.innerHTML = '<tr><td colspan="5">Nessun finding disponibile.</td></tr>';
+        } else {
+            toShow.forEach(f => {
+                const sev = String(f.Severity || 'Info');
+                const sevCls = sev.toLowerCase() === 'critical' ? 'status-danger' : sev.toLowerCase() === 'high' ? 'status-warning' : '';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${escapeHtml(f.CheckId || f.Id || 'N/A')}</td>
+                    <td>${escapeHtml(f.Area || 'M365')}</td>
+                    <td><span class="status-badge ${sevCls}">${escapeHtml(sev)}</span></td>
+                    <td><strong>${escapeHtml(f.Title || 'N/A')}</strong></td>
+                    <td style="font-size:11px;">${escapeHtml(f.Remediation || '')}</td>`;
+                vmTbody.appendChild(tr);
+            });
+            if (findings.length > 100) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="5" style="color:#666;font-size:12px;">Mostrati i primi 100 finding su ${findings.length} totali.</td>`;
+                vmTbody.appendChild(tr);
+            }
+        }
     }
 
     const wsTbody = document.querySelector('#workspace-table tbody');
     if (wsTbody) {
         wsTbody.innerHTML = `
-            <tr><td>Tenant</td><td>${escapeHtml(data?.Tenant?.DisplayName || 'N/A')}</td><td>Directory</td><td>M365</td><td>${escapeHtml(data?.Tenant?.TenantId || '')}</td></tr>
-            <tr><td>Total Checks</td><td>${summary.TotalChecks ?? 0}</td><td>Assessment</td><td>Execution</td><td>N/A</td></tr>
-            <tr><td>Failed Checks</td><td>${summary.FailedChecks ?? 0}</td><td>Assessment</td><td>Execution</td><td>N/A</td></tr>`;
+            <tr><td>Tenant</td><td>${escapeHtml(data?.Tenant?.DisplayName || 'N/A')}</td><td>Directory</td><td></td><td></td></tr>
+            <tr><td>Tenant ID</td><td>${escapeHtml(data?.Tenant?.TenantId || 'N/A')}</td><td>Directory</td><td></td><td></td></tr>
+            <tr><td>Check Totali</td><td>${summary.TotalChecks ?? findings.length}</td><td>Assessment</td><td></td><td></td></tr>
+            <tr><td>Check Falliti</td><td>${summary.FailedChecks ?? 0}</td><td>Assessment</td><td></td><td></td></tr>`;
     }
 
     const dcrTbody = document.querySelector('#dcr-table tbody');
     if (dcrTbody) {
         dcrTbody.innerHTML = `
-            <tr><td>Critical Findings</td><td>N/A</td><td>M365</td><td>Count</td><td>${summary.CriticalFindings ?? 0}</td></tr>
-            <tr><td>High Findings</td><td>N/A</td><td>M365</td><td>Count</td><td>${summary.HighFindings ?? 0}</td></tr>
-            <tr><td>Pass Rate</td><td>N/A</td><td>M365</td><td>Percentage</td><td>${summary.PassRate ?? 'N/A'}</td></tr>`;
+            <tr><td>Critical</td><td><strong style="color:#b3261e">${summary.CriticalFindings ?? 0}</strong></td><td>M365</td><td></td><td></td></tr>
+            <tr><td>High</td><td><strong style="color:#c44d00">${summary.HighFindings ?? 0}</strong></td><td>M365</td><td></td><td></td></tr>
+            <tr><td>Pass Rate</td><td>${summary.PassRate ?? 'N/A'}</td><td>M365</td><td></td><td></td></tr>`;
+    }
+
+    // Recommendations: findings summary card
+    const recContainer = document.getElementById('recommendations-content');
+    if (recContainer) {
+        recContainer.innerHTML = '';
+        const passRate = Number(String(summary.PassRate || '0').replace('%', ''));
+        const prColor = passRate >= 80 ? '#107c10' : passRate >= 60 ? '#d97706' : '#b3261e';
+        const prBg    = passRate >= 80 ? '#e6f4ea' : passRate >= 60 ? '#fff8eb' : '#fce8e6';
+        const box = document.createElement('div');
+        box.style.cssText = `padding:14px 16px;background:${prBg};border:1px solid ${prColor}33;border-radius:10px;margin-bottom:16px;`;
+        box.innerHTML = `
+            <div style="font-weight:700;color:${prColor};font-size:14px;margin-bottom:8px;">Risultati Assessment Microsoft 365</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;font-size:13px;">
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:#1a2e3b;">${summary.TotalChecks ?? findings.length}</div>
+                    <div style="color:#555;">Check</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:#b3261e;">${summary.CriticalFindings ?? 0}</div>
+                    <div style="color:#555;">Critical</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:#c44d00;">${summary.HighFindings ?? 0}</div>
+                    <div style="color:#555;">High</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:white;border-radius:8px;border:1px solid #e0e0e0;">
+                    <div style="font-size:20px;font-weight:800;color:${prColor};">${summary.PassRate ?? 'N/A'}</div>
+                    <div style="color:#555;">Pass Rate</div>
+                </div>
+            </div>`;
+        recContainer.appendChild(box);
+
+        const criticalFindings = findings.filter(f => String(f.Severity||'').toLowerCase() === 'critical');
+        const highFindings     = findings.filter(f => String(f.Severity||'').toLowerCase() === 'high');
+        const topFindings = [...criticalFindings, ...highFindings].slice(0, 20);
+        if (topFindings.length) {
+            const topBox = document.createElement('div');
+            topBox.style.cssText = 'margin-bottom:16px;padding:14px 16px;border:1px solid #f5c2bf;background:#fce8e6;border-radius:10px;';
+            const rows = topFindings.map(f => {
+                const sev = String(f.Severity||'');
+                const cls = sev.toLowerCase() === 'critical' ? '#b3261e' : '#c44d00';
+                return `<tr style="border-bottom:1px solid #f8d7d4;">
+                    <td style="padding:7px 10px;"><span style="background:${cls}22;color:${cls};border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;">${escapeHtml(sev)}</span></td>
+                    <td style="padding:7px 10px;font-size:12px;color:#555;">${escapeHtml(f.Area||'')}</td>
+                    <td style="padding:7px 10px;"><div style="font-weight:600;">${escapeHtml(f.Title||f.CheckId||f.Id||'')}</div><div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(f.Remediation||'')}</div></td>
+                </tr>`;
+            }).join('');
+            topBox.innerHTML = `
+                <div style="font-weight:700;color:#b3261e;margin-bottom:8px;">Priorità corrective (Critical + High)</div>
+                <div style="max-height:280px;overflow:auto;border-radius:6px;background:white;">
+                    <table style="width:100%;border-collapse:collapse;">${rows}</table>
+                </div>`;
+            recContainer.appendChild(topBox);
+        }
     }
 
     renderReportHtmlInRecommendationsGlobal(data);
