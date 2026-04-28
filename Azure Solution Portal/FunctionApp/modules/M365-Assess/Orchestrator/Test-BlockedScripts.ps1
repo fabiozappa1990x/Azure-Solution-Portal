@@ -8,8 +8,40 @@ function Test-BlockedScripts {
 if ($IsWindows -or $null -eq $IsWindows) {
     $policy = Get-ExecutionPolicy -Scope CurrentUser
     if ($policy -eq 'Undefined') { $policy = Get-ExecutionPolicy -Scope LocalMachine }
+
+    # Check if the filesystem supports NTFS Alternate Data Streams.
+    # Azure Functions wwwroot is an SMB mount — ADS not supported there.
+    # Attempting Get-Item -Stream on SMB throws "Incorrect function." as a
+    # terminating exception that bypasses -ErrorAction SilentlyContinue.
+    $adsSupported = $false
+    try {
+        $probe = Get-ChildItem -Path $ProjectRoot -Filter '*.ps1' -Recurse -ErrorAction Stop |
+            Select-Object -First 1
+        if ($probe) {
+            $null = Get-Item -Path $probe.FullName -Stream Zone.Identifier -ErrorAction Stop
+        }
+        $adsSupported = $true
+    } catch [System.IO.IOException] {
+        # "Incorrect function." or similar — drive does not support ADS
+        $adsSupported = $false
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        # Zone.Identifier not present on the file, but ADS IS supported
+        $adsSupported = $true
+    } catch {
+        $adsSupported = $false
+    }
+
+    if (-not $adsSupported) {
+        # SMB / non-NTFS filesystem: Zone.Identifier marks cannot exist.
+        # Scripts cannot be blocked by zone policy on this drive — skip check.
+        return $true
+    }
+
     $blockedFiles = @(Get-ChildItem -Path $projectRoot -Recurse -Filter '*.ps1' |
-        Where-Object { (Get-Item -Path $_.FullName -Stream Zone.Identifier -ErrorAction SilentlyContinue) })
+        Where-Object {
+            try { Get-Item -Path $_.FullName -Stream Zone.Identifier -ErrorAction Stop }
+            catch { $false }
+        })
 
     if ($blockedFiles.Count -gt 0 -and $policy -notin @('Bypass', 'Unrestricted')) {
         Write-Host ''
