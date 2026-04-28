@@ -666,12 +666,31 @@ const GRAPH_SCOPES_ASSESSMENT = [
 ];
 
 const GRAPH_SCOPES_ASSESSMENT365 = [
+    // Core identity
     "https://graph.microsoft.com/Directory.Read.All",
-    "https://graph.microsoft.com/Group.Read.All",
     "https://graph.microsoft.com/Organization.Read.All",
+    "https://graph.microsoft.com/Domain.Read.All",
+    "https://graph.microsoft.com/User.Read.All",
+    "https://graph.microsoft.com/Group.Read.All",
+    // Policies & roles
     "https://graph.microsoft.com/Policy.Read.All",
     "https://graph.microsoft.com/RoleManagement.Read.Directory",
-    "https://graph.microsoft.com/User.Read.All"
+    "https://graph.microsoft.com/Agreement.Read.All",
+    // Auth & MFA
+    "https://graph.microsoft.com/AuditLog.Read.All",
+    "https://graph.microsoft.com/UserAuthenticationMethod.Read.All",
+    "https://graph.microsoft.com/Reports.Read.All",
+    // Applications
+    "https://graph.microsoft.com/Application.Read.All",
+    // Intune / Devices
+    "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+    "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
+    // Security
+    "https://graph.microsoft.com/SecurityEvents.Read.All",
+    "https://graph.microsoft.com/SecurityAlert.Read.All",
+    // Collaboration
+    "https://graph.microsoft.com/SharePointTenantSettings.Read.All",
+    "https://graph.microsoft.com/TeamSettings.Read.All"
 ];
 
 async function getGraphToken(tenantId = '') {

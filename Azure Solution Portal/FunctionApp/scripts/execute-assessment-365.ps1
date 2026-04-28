@@ -1,154 +1,175 @@
 param(
-    [Parameter(Mandatory = $true)] [string] $TenantId,
-    [Parameter(Mandatory = $false)] [string] $OutputPath = ".\\assessment365-report.html"
+    [Parameter(Mandatory = $true)]  [string] $TenantId,
+    [Parameter(Mandatory = $false)] [string] $OutputPath = ".\assessment365-report.html"
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-$graphToken = $env:AZURE_GRAPH_TOKEN
-if (-not $graphToken) { throw "AZURE_GRAPH_TOKEN non disponibile." }
-
-function Invoke-GraphApi {
-    param([Parameter(Mandatory)] [string] $Uri)
-    $headers = @{ Authorization = "Bearer $graphToken"; 'Content-Type' = 'application/json' }
-    try { return Invoke-RestMethod -Uri $Uri -Headers $headers -Method GET -ErrorAction Stop } catch { return $null }
-}
-
-function Add-Finding {
-    param(
-        [string]$CheckId,
-        [string]$Severity,
-        [string]$Area,
-        [string]$Title,
-        [string]$Remediation
-    )
-    $script:Findings += [PSCustomObject]@{
-        CheckId = $CheckId
-        Severity = $Severity
-        Area = $Area
-        Title = $Title
-        Remediation = $Remediation
-    }
-}
-
-function Escape-Html {
-    param([string]$Text)
-    if ($null -eq $Text) { return '' }
-    return [System.Net.WebUtility]::HtmlEncode([string]$Text)
-}
-
-$script:Findings = @()
 $start = Get-Date
 
-# Lightweight tenant-wide checks inspired by M365-Assess focus areas.
-$org = Invoke-GraphApi -Uri "https://graph.microsoft.com/v1.0/organization?`$select=id,displayName"
-$tenantName = "Unknown tenant"
-$tenantGuid = $TenantId
-if ($org -and $org.value -and @($org.value).Count -gt 0) {
-    $tenantName = [string]@($org.value)[0].displayName
-    $tenantGuid = [string]@($org.value)[0].id
-}
-
-$secDefaults = Invoke-GraphApi -Uri "https://graph.microsoft.com/v1.0/policies/identitySecurityDefaultsEnforcementPolicy"
-$secDefaultsEnabled = $false
-if ($secDefaults -and ($secDefaults.PSObject.Properties.Name -contains 'isEnabled')) {
-    $secDefaultsEnabled = [bool]$secDefaults.isEnabled
-}
-
-$ca = Invoke-GraphApi -Uri "https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies?`$top=999"
-$caPolicies = @()
-if ($ca -and $ca.value) { $caPolicies = @($ca.value) }
-$caEnabled = @($caPolicies | Where-Object { $_.state -eq 'enabled' }).Count
-
-$users = Invoke-GraphApi -Uri "https://graph.microsoft.com/v1.0/users?`$select=id,accountEnabled,userType&`$top=999"
-$enabledUsers = 0
-if ($users -and $users.value) {
-    $enabledUsers = @($users.value | Where-Object { $_.accountEnabled -eq $true -and $_.userType -eq 'Member' }).Count
-}
-
-if (-not $secDefaultsEnabled -and $caEnabled -eq 0) {
-    Add-Finding -CheckId "A365-001" -Severity "Critical" -Area "Identity" `
-        -Title "Nessuna protezione di accesso attiva" `
-        -Remediation "Abilitare Security Defaults o policy CA baseline (MFA, legacy auth block)."
-}
-if ($caEnabled -eq 0) {
-    Add-Finding -CheckId "A365-002" -Severity "High" -Area "Identity" `
-        -Title "Conditional Access non in enforcement" `
-        -Remediation "Attivare almeno policy CA baseline ad alta priorità."
-}
-if ($enabledUsers -gt 2000 -and $caEnabled -lt 5) {
-    Add-Finding -CheckId "A365-003" -Severity "Medium" -Area "Identity" `
-        -Title "Copertura CA bassa rispetto al numero utenti" `
-        -Remediation "Rafforzare la copertura CA per utenti interni e admin."
-}
-
-$totalChecks = 3
-$failedChecks = $script:Findings.Count
-$critical = @($script:Findings | Where-Object Severity -eq 'Critical').Count
-$high = @($script:Findings | Where-Object Severity -eq 'High').Count
-$passRate = [math]::Round((($totalChecks - $failedChecks) / [math]::Max($totalChecks,1)) * 100, 1)
-
-$rows = ''
-foreach ($f in $script:Findings) {
-    $color = switch ($f.Severity) {
-        'Critical' { '#d13438' }
-        'High' { '#f7630c' }
-        'Medium' { '#ffb900' }
-        default { '#107c10' }
+# ------------------------------------------------------------------
+# Locate bundled M365-Assess
+# ------------------------------------------------------------------
+$m365Root = $null
+$candidates = @(
+    (Join-Path $PSScriptRoot '..\modules\M365-Assess'),
+    'D:\home\site\wwwroot\modules\M365-Assess',
+    '/home/site/wwwroot/modules/M365-Assess'
+)
+foreach ($c in $candidates) {
+    $resolved = [System.IO.Path]::GetFullPath($c)
+    if (Test-Path (Join-Path $resolved 'Invoke-M365Assessment.ps1')) {
+        $m365Root = $resolved
+        break
     }
-    $rows += "<tr><td>$(Escape-Html $f.CheckId)</td><td><span style='background:$color;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;'>$(Escape-Html $f.Severity)</span></td><td>$(Escape-Html $f.Area)</td><td>$(Escape-Html $f.Title)</td><td>$(Escape-Html $f.Remediation)</td></tr>"
 }
-if (-not $rows) { $rows = "<tr><td colspan='5'>Nessun finding rilevato nel quick assessment.</td></tr>" }
+if (-not $m365Root) {
+    throw "M365-Assess non trovato. Verificare che il deploy includa modules\M365-Assess."
+}
+Write-Host "M365-Assess: $m365Root"
 
-$reportHtml = @"
-<html>
-<head><meta charset='utf-8'><title>Assessment 365</title>
-<style>
-body { font-family: Segoe UI, Arial, sans-serif; margin: 16px; color: #1f2937; }
-h1 { margin: 0 0 8px 0; }
-.meta { color: #555; margin-bottom: 14px; }
-.kpi { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin: 12px 0 16px; }
-.card { border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#f8fafc; }
-.card .t { color:#64748b; font-size:12px; }
-.card .v { font-size:22px; font-weight:700; }
-table { width:100%; border-collapse:collapse; font-size:12px; }
-th, td { border:1px solid #e5e7eb; padding:8px; text-align:left; }
-th { background:#f1f5f9; }
-</style>
-</head>
-<body>
-<h1>Assessment 365 (Cloud Execution)</h1>
-<div class='meta'>Tenant: <b>$(Escape-Html $tenantName)</b> | TenantId: <b>$(Escape-Html $tenantGuid)</b> | Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</div>
-<div class='kpi'>
-<div class='card'><div class='t'>Total Checks</div><div class='v'>$totalChecks</div></div>
-<div class='card'><div class='t'>Failed Checks</div><div class='v'>$failedChecks</div></div>
-<div class='card'><div class='t'>Critical</div><div class='v'>$critical</div></div>
-<div class='card'><div class='t'>High</div><div class='v'>$high</div></div>
-<div class='card'><div class='t'>Pass Rate</div><div class='v'>$passRate%</div></div>
+# Unblock scripts (Zone.Identifier mark from deploy causes Test-BlockedScripts to abort)
+Get-ChildItem -Path $m365Root -Recurse -Include '*.ps1','*.psm1' -ErrorAction SilentlyContinue |
+    Unblock-File -ErrorAction SilentlyContinue
+Write-Host "Script sbloccati."
+
+# ------------------------------------------------------------------
+# Output folder
+# ------------------------------------------------------------------
+$tempBase    = if ($env:TEMP) { $env:TEMP } else { '/tmp' }
+$safeTenant  = $TenantId -replace '[^a-zA-Z0-9]', '_'
+$tempFolder  = Join-Path $tempBase "m365assess_$safeTenant"
+if (Test-Path $tempFolder) { Remove-Item $tempFolder -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -Path $tempFolder -ItemType Directory -Force | Out-Null
+
+# ------------------------------------------------------------------
+# Run M365-Assess with Managed Identity
+#
+# The Function App's system-assigned Managed Identity must have been
+# granted the following permissions (one-time admin setup):
+#
+# Graph application permissions:
+#   User.Read.All, UserAuthenticationMethod.Read.All,
+#   Directory.Read.All, Policy.Read.All, Application.Read.All,
+#   SecurityEvents.Read.All, SecurityAlert.Read.All,
+#   DeviceManagementConfiguration.Read.All,
+#   DeviceManagementManagedDevices.Read.All,
+#   Sites.Read.All, TeamSettings.Read.All,
+#   AuditLog.Read.All, Reports.Read.All,
+#   RoleManagement.Read.Directory, Group.Read.All,
+#   Organization.Read.All, Domain.Read.All,
+#   Agreement.Read.All, TeamworkAppSettings.Read.All,
+#   OrgSettings-Forms.Read.All, SharePointTenantSettings.Read.All
+#
+# Exchange Online (for Email section):
+#   Exchange.ManageAsApp application role +
+#   "Global Reader" or "Exchange Administrator" directory role
+#   assigned to the Managed Identity service principal
+#
+# Run Grant-M365AssessPermissions.ps1 (in this folder) to set up.
+# ------------------------------------------------------------------
+$invokeScript = Join-Path $m365Root 'Invoke-M365Assessment.ps1'
+
+$sections = @(
+    'Tenant', 'Identity', 'Licensing',
+    'Email',                              # needs EXO managed identity permission
+    'Intune', 'Security', 'Collaboration',
+    'Hybrid', 'ValueOpportunity'
+)
+
+Write-Host "Avvio Invoke-M365Assessment -ManagedIdentity per tenant $TenantId ..."
+Write-Host "Sezioni: $($sections -join ', ')"
+
+try {
+    & $invokeScript `
+        -TenantId       $TenantId `
+        -ManagedIdentity `
+        -Section        $sections `
+        -OutputFolder   $tempFolder `
+        -NonInteractive `
+        -SkipPurview `
+        -CompactReport
+} catch {
+    Write-Host "Invoke-M365Assessment errore (provo a recuperare il report parziale): $($_.Exception.Message)"
+}
+
+# ------------------------------------------------------------------
+# Recover generated HTML report
+# ------------------------------------------------------------------
+$assessmentDir = Get-ChildItem -Path $tempFolder -Directory -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+$reportHtml = ''
+if ($assessmentDir) {
+    $htmlFile = Get-ChildItem -Path $assessmentDir.FullName -Filter '_Assessment-Report*.html' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($htmlFile) {
+        $reportHtml = Get-Content -Path $htmlFile.FullName -Raw -Encoding UTF8
+        Write-Host "Report generato: $($htmlFile.Name) ($([math]::Round($reportHtml.Length / 1KB, 1)) KB)"
+    } else {
+        Write-Host "WARNING: HTML report non trovato. Contenuto cartella:"
+        Get-ChildItem $assessmentDir.FullName | ForEach-Object { Write-Host "  $($_.Name)" }
+    }
+} else {
+    Write-Host "WARNING: nessuna cartella assessment in $tempFolder"
+}
+
+# ------------------------------------------------------------------
+# Summary from _Assessment-Summary CSV
+# ------------------------------------------------------------------
+$collectors = 0; $passed = 0; $failed = 0; $skipped = 0
+if ($assessmentDir) {
+    $summaryFile = Get-ChildItem -Path $assessmentDir.FullName -Filter '_Assessment-Summary*.csv' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($summaryFile) {
+        $rows       = Import-Csv -Path $summaryFile.FullName
+        $collectors = @($rows).Count
+        $passed     = @($rows | Where-Object Status -eq 'Complete').Count
+        $failed     = @($rows | Where-Object Status -eq 'Failed').Count
+        $skipped    = @($rows | Where-Object Status -eq 'Skipped').Count
+    }
+}
+
+# ------------------------------------------------------------------
+# Fallback HTML if report was not generated
+# ------------------------------------------------------------------
+if (-not $reportHtml) {
+    $reportHtml = @"
+<!DOCTYPE html><html><head><meta charset='utf-8'><title>Assessment 365 — Errore</title>
+<style>body{font-family:sans-serif;padding:32px;max-width:700px;margin:0 auto;}
+.alert{background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:20px;margin:16px 0;}
+h2{color:#DC2626;}code{background:#F1F5F9;padding:2px 6px;border-radius:4px;font-size:13px;}</style>
+</head><body>
+<h2>&#x26A0; Report non generato</h2>
+<div class='alert'>
+<p><strong>Tenant:</strong> $TenantId</p>
+<p><strong>Durata:</strong> $([math]::Round(((Get-Date)-$start).TotalSeconds,1))s</p>
+<p><strong>Causa pi&ugrave; probabile:</strong> la Managed Identity della Function App non ha i permessi necessari su questo tenant.</p>
+<p>Eseguire <code>Grant-M365AssessPermissions.ps1</code> sul tenant target e riprovare.</p>
 </div>
-<table>
-<thead><tr><th>CheckId</th><th>Severity</th><th>Area</th><th>Finding</th><th>Remediation</th></tr></thead>
-<tbody>$rows</tbody>
-</table>
+<p>Controllare i log della Function App (Application Insights) per dettagli.</p>
 </body></html>
 "@
-
-$output = [ordered]@{
-    GeneratedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
-    Tenant = @{ DisplayName = $tenantName; TenantId = $tenantGuid }
-    Summary = @{
-        TotalChecks = $totalChecks
-        FailedChecks = $failedChecks
-        CriticalFindings = $critical
-        HighFindings = $high
-        PassRate = "$passRate%"
-    }
-    Findings = $script:Findings
-    ReportHTML = $reportHtml
-    DurationSeconds = [math]::Round(((Get-Date) - $start).TotalSeconds, 1)
 }
 
+# ------------------------------------------------------------------
+# Write output JSON (run.ps1 reads this and returns it to the frontend)
+# ------------------------------------------------------------------
 $jsonPath = [System.IO.Path]::ChangeExtension($OutputPath, '.json')
+
+$output = [ordered]@{
+    GeneratedAtUtc  = (Get-Date).ToUniversalTime().ToString('o')
+    Tenant          = @{ TenantId = $TenantId }
+    Summary         = @{
+        Collectors      = $collectors
+        Passed          = $passed
+        Failed          = $failed
+        Skipped         = $skipped
+        Sections        = $sections -join ', '
+        DurationSeconds = [math]::Round(((Get-Date) - $start).TotalSeconds, 1)
+    }
+    ReportHTML      = $reportHtml
+}
+
 $reportHtml | Out-File -FilePath $OutputPath -Encoding utf8 -Force
-($output | ConvertTo-Json -Depth 8) | Out-File -FilePath $jsonPath -Encoding utf8 -Force
+($output | ConvertTo-Json -Depth 6 -Compress) | Out-File -FilePath $jsonPath -Encoding utf8 -Force
+Write-Host "JSON scritto: $jsonPath ($([math]::Round((Get-Item $jsonPath).Length/1KB,1)) KB)"

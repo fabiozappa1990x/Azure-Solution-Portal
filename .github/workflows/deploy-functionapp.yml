@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'Azure Solution Portal/FunctionApp/**'
+      - 'Solution - Assessment 365/src/M365-Assess/**'
   workflow_dispatch:
 
 jobs:

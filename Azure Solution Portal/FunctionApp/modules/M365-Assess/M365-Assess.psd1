@@ -1,0 +1,238 @@
+@{
+    # Module manifest for M365-Assess
+    # Generated: 2026-03-08
+
+    RootModule        = 'M365-Assess.psm1'
+    ModuleVersion     = '2.4.0'
+    GUID              = 'f7e3b2a1-4c5d-6e8f-9a0b-1c2d3e4f5a6b'
+    Author            = 'Galvnyz'
+    CompanyName       = 'Community'
+    Copyright         = '(c) 2026 Galvnyz. All rights reserved.'
+    Description       = 'Comprehensive read-only Microsoft 365 security assessment tool for IT consultants and administrators. Covers Entra ID, Exchange Online, Intune, Defender, SharePoint, Teams, Purview, and Active Directory.'
+
+    # Minimum PowerShell version
+    PowerShellVersion = '7.0'
+
+    # Required modules (must be installed before running)
+    # Known compatible: Graph SDK 2.25+ with EXO 3.7.x
+    # EXO 3.8.0+ has MSAL conflicts with Graph SDK 2.x -- do not use
+    # EXO excluded from RequiredModules because ModuleVersion only supports minimum,
+    # and we need a ceiling (< 3.8.0). The orchestrator handles EXO gating at runtime.
+    RequiredModules   = @(
+        @{ ModuleName = 'Microsoft.Graph.Authentication';               ModuleVersion = '2.25.0' }
+        @{ ModuleName = 'Microsoft.Graph.Applications';                 ModuleVersion = '2.25.0' }
+        @{ ModuleName = 'Microsoft.Graph.DeviceManagement';             ModuleVersion = '2.25.0' }
+        @{ ModuleName = 'Microsoft.Graph.Identity.DirectoryManagement'; ModuleVersion = '2.25.0' }
+        @{ ModuleName = 'Microsoft.Graph.Identity.SignIns';             ModuleVersion = '2.25.0' }
+        @{ ModuleName = 'Microsoft.Graph.Reports';                      ModuleVersion = '2.25.0' }
+        @{ ModuleName = 'Microsoft.Graph.Security';                     ModuleVersion = '2.25.0' }
+        @{ ModuleName = 'Microsoft.Graph.Users';                        ModuleVersion = '2.25.0' }
+    )
+
+    # Functions to export from this module
+    FunctionsToExport = @(
+        'Invoke-M365Assessment'
+        'Get-M365ExoSecurityConfig'
+        'Get-M365DnsSecurityConfig'
+        'Get-M365EntraSecurityConfig'
+        'Get-M365CASecurityConfig'
+        'Get-M365EntAppSecurityConfig'
+        'Get-M365IntuneSecurityConfig'
+        'Get-M365DefenderSecurityConfig'
+        'Get-M365ComplianceSecurityConfig'
+        'Get-M365SharePointSecurityConfig'
+        'Get-M365TeamsSecurityConfig'
+        'Get-M365FormsSecurityConfig'
+        'Get-M365PowerBISecurityConfig'
+        'Get-M365PurviewRetentionConfig'
+        'Grant-M365AssessConsent'
+        'New-M365ConnectionProfile'
+        'Set-M365ConnectionProfile'
+        'Remove-M365ConnectionProfile'
+        'Get-M365ConnectionProfile'
+        'Compare-M365Baseline'
+    )
+    CmdletsToExport   = @()
+    VariablesToExport = @()
+    AliasesToExport   = @()
+
+    # Scripts included in this module
+    ScriptsToProcess  = @()
+
+    # Files included in this module package
+    FileList          = @(
+        'M365-Assess.psm1'
+        'Invoke-M365Assessment.ps1'
+        'Orchestrator\Show-InteractiveWizard.ps1'
+        'Orchestrator\Resolve-M365Environment.ps1'
+        'Orchestrator\AssessmentHelpers.ps1'
+        'Orchestrator\AssessmentMaps.ps1'
+        'Orchestrator\Test-ModuleCompatibility.ps1'
+        'Orchestrator\Connect-RequiredService.ps1'
+        'Orchestrator\Test-BlockedScripts.ps1'
+        'Orchestrator\Test-GraphPermissions.ps1'
+        'Orchestrator\Invoke-DnsAuthentication.ps1'
+        'Orchestrator\Export-AssessmentBaseline.ps1'
+        'Orchestrator\Compare-AssessmentBaseline.ps1'
+        'Orchestrator\Compare-M365Baseline.ps1'
+        'Common\SecurityConfigHelper.ps1'
+        'Common\Connect-Service.ps1'
+        'Common\Resolve-DnsRecord.ps1'
+        'Common\Resolve-TenantLicenses.ps1'
+        'Common\Export-AssessmentReport.ps1'
+        'Common\Export-AssessmentBridgeJson.ps1'
+        'Common\New-M365BrandingConfig.ps1'
+        'Common\ReportHelpers.ps1'
+        'Common\Build-SectionHtml.ps1'
+        'Common\Build-RemediationPlanHtml.ps1'
+        'Common\Build-ReportData.ps1'
+        'Common\Get-ReportTemplate.ps1'
+        'Common\Export-ComplianceMatrix.ps1'
+        'Common\Export-ComplianceOverview.ps1'
+        'Common\Export-FrameworkCatalog.ps1'
+        'Common\Build-ValueOpportunityHtml.ps1'
+        'Common\Build-DriftHtml.ps1'
+        'Common\Build-IntuneOverviewHtml.ps1'
+        'Common\Import-ControlRegistry.ps1'
+        'Common\Import-FrameworkDefinitions.ps1'
+        'Common\Show-CheckProgress.ps1'
+        'Common\ConvertTo-FrameworkFilter.ps1'
+        'Entra\Get-TenantInfo.ps1'
+        'Entra\Get-UserSummary.ps1'
+        'Entra\Get-MfaReport.ps1'
+        'Entra\Get-AdminRoleReport.ps1'
+        'Entra\Get-ConditionalAccessReport.ps1'
+        'Entra\Get-AppRegistrationReport.ps1'
+        'Entra\Get-PasswordPolicyReport.ps1'
+        'Entra\Get-EntraSecurityConfig.ps1'
+        'Entra\EntraHelpers.ps1'
+        'Entra\EntraPasswordAuthChecks.ps1'
+        'Entra\EntraAdminRoleChecks.ps1'
+        'Entra\EntraConditionalAccessChecks.ps1'
+        'Entra\EntraUserGroupChecks.ps1'
+        'Entra\Get-CASecurityConfig.ps1'
+        'Entra\Get-EntAppSecurityConfig.ps1'
+        'Entra\Get-LicenseReport.ps1'
+        'Entra\Get-InactiveUsers.ps1'
+        'Entra\Get-EntraSoDConfig.ps1'
+        'Entra\Get-EntraTouConfig.ps1'
+        'Entra\Get-EntraPrivRemoteConfig.ps1'
+        'Entra\Get-EntraAdminRoleSeparationConfig.ps1'
+        'Entra\Get-EntraCaRemoteDevicePolicy.ps1'
+        'Exchange-Online\Get-MailboxSummary.ps1'
+        'Exchange-Online\Get-MailFlowReport.ps1'
+        'Exchange-Online\Get-EmailSecurityReport.ps1'
+        'Exchange-Online\Get-ExoSecurityConfig.ps1'
+        'Exchange-Online\Get-DnsSecurityConfig.ps1'
+        'Exchange-Online\Get-MailboxPermissionReport.ps1'
+        'Intune\Get-DeviceSummary.ps1'
+        'Intune\Get-CompliancePolicyReport.ps1'
+        'Intune\Get-ConfigProfileReport.ps1'
+        'Intune\Get-DeviceComplianceReport.ps1'
+        'Intune\Get-IntuneSecurityConfig.ps1'
+        'Intune\Get-IntuneMobileEncryptConfig.ps1'
+        'Intune\Get-IntunePortStorageConfig.ps1'
+        'Intune\Get-IntuneAppControlConfig.ps1'
+        'Intune\Get-IntuneFipsConfig.ps1'
+        'Intune\Get-IntuneInventoryConfig.ps1'
+        'Intune\Get-IntuneAutoDiscConfig.ps1'
+        'Intune\Get-IntuneRemovableMediaConfig.ps1'
+        'Intune\Get-IntuneAlwaysOnVpnConfig.ps1'
+        'Intune\Get-IntuneVpnSplitTunnelConfig.ps1'
+        'Intune\Get-IntuneWifiEapConfig.ps1'
+        'Security\Get-SecureScoreReport.ps1'
+        'Security\Get-DefenderPolicyReport.ps1'
+        'Security\Get-DefenderSecurityConfig.ps1'
+        'Security\DefenderHelpers.ps1'
+        'Security\DefenderAntiPhishingChecks.ps1'
+        'Security\DefenderAntiSpamChecks.ps1'
+        'Security\DefenderAntiMalwareChecks.ps1'
+        'Security\DefenderSafeAttLinksChecks.ps1'
+        'Security\DefenderPresetZapChecks.ps1'
+        'Security\Get-DlpPolicyReport.ps1'
+        'Security\Get-ComplianceSecurityConfig.ps1'
+        'Security\Get-StrykerIncidentReadiness.ps1'
+        'Security\Get-LocalAdmins.ps1'
+        'Security\Get-DefenderVulnScanConfig.ps1'
+        'Security\Get-DefenderScanConfig.ps1'
+        'Security\Get-DefenderSecureMonConfig.ps1'
+        'Security\Get-DefenderCfgDetectConfig.ps1'
+        'Collaboration\Get-SharePointOneDriveReport.ps1'
+        'Collaboration\Get-SharePointSecurityConfig.ps1'
+        'Collaboration\Get-TeamsAccessReport.ps1'
+        'Collaboration\Get-TeamsSecurityConfig.ps1'
+        'Collaboration\Get-FormsSecurityConfig.ps1'
+        'ActiveDirectory\Get-HybridSyncReport.ps1'
+        'ActiveDirectory\Get-ADDomainReport.ps1'
+        'ActiveDirectory\Get-ADDCHealthReport.ps1'
+        'ActiveDirectory\Get-ADReplicationReport.ps1'
+        'ActiveDirectory\Get-ADSecurityReport.ps1'
+        'ActiveDirectory\Get-StaleComputers.ps1'
+        'Inventory\Get-MailboxInventory.ps1'
+        'Inventory\Get-GroupInventory.ps1'
+        'Inventory\Get-TeamsInventory.ps1'
+        'Inventory\Get-SharePointInventory.ps1'
+        'Inventory\Get-OneDriveInventory.ps1'
+        'PowerBI\Get-PowerBISecurityConfig.ps1'
+        'Purview\Get-AuditRetentionReport.ps1'
+        'Purview\Get-PurviewRetentionConfig.ps1'
+        'Purview\Search-AuditLog.ps1'
+        'SOC2\Get-SOC2SecurityControls.ps1'
+        'SOC2\Get-SOC2ConfidentialityControls.ps1'
+        'SOC2\Get-SOC2AuditEvidence.ps1'
+        'SOC2\Get-SOC2ReadinessChecklist.ps1'
+        'ValueOpportunity\Get-LicenseUtilization.ps1'
+        'ValueOpportunity\Get-FeatureAdoption.ps1'
+        'ValueOpportunity\Get-FeatureReadiness.ps1'
+        'ValueOpportunity\Measure-ValueOpportunity.ps1'
+        'Networking\Test-PortConnectivity.ps1'
+        'Windows\Get-InstalledSoftware.ps1'
+        'controls\role-tiers.json'
+        'controls\sku-feature-map.json'
+        'controls\registry.json'
+        'controls\licensing-overlay.json'
+        'controls\risk-severity.json'
+        'controls\learn-more.json'
+        'controls\mitre-technique-map.json'
+        'controls\frameworks\cis-controls-v8.json'
+        'controls\frameworks\cis-m365-v6.json'
+        'controls\frameworks\cisa-scuba.json'
+        'controls\frameworks\cmmc.json'
+        'controls\frameworks\essential-eight.json'
+        'controls\frameworks\fedramp.json'
+        'controls\frameworks\hipaa.json'
+        'controls\frameworks\iso-27001.json'
+        'controls\frameworks\mitre-attack.json'
+        'controls\frameworks\nist-800-53-r5.json'
+        'controls\frameworks\nist-csf.json'
+        'controls\frameworks\pci-dss-v4.json'
+        'controls\frameworks\soc2-tsc.json'
+        'controls\frameworks\stig.json'
+        'Setup\Grant-M365AssessConsent.ps1'
+        'Setup\Save-M365ConnectionProfile.ps1'
+        'Setup\Get-M365ConnectionProfile.ps1'
+        'Setup\PermissionDefinitions.ps1'
+        'assets\m365-assess-bg.png'
+        'assets\m365-assess-logo-white.png'
+        'assets\m365-assess-logo.png'
+        'assets\sku-friendly-names.csv'
+        'assets\report-app.js'
+        'assets\react.production.min.js'
+        'assets\react-dom.production.min.js'
+        'assets\report-themes.css'
+        'assets\report-shell.css'
+    )
+
+    # Private data / PSData for PowerShell Gallery
+    PrivateData       = @{
+        PSData = @{
+            Tags         = @('Microsoft365', 'M365', 'Security', 'Assessment', 'Compliance', 'Audit',
+                             'EntraID', 'Exchange', 'Intune', 'Defender', 'SharePoint', 'Teams',
+                             'PowerBI', 'CIS', 'NIST', 'SOC2', 'HIPAA', 'ZeroTrust', 'SecurityBaseline')
+            IconUri      = 'https://raw.githubusercontent.com/Galvnyz/M365-Assess/main/src/M365-Assess/assets/m365-assess-logo.png'
+            LicenseUri   = 'https://github.com/Galvnyz/M365-Assess/blob/main/LICENSE'
+            ProjectUri   = 'https://github.com/Galvnyz/M365-Assess'
+            ReleaseNotes = 'v2.4.0 - UX polish: EDIT MODE banner at top, sidebar DOMAINS collapsed + DETAILS emphasized, 3-row sticky filter bar, expand/collapse-all findings, topbar text-scale cycle, print auto-expands framework, per-domain email-auth segments, colored domain/framework counts + explicit skipped segment, duplicate Domain Posture headings removed, topbar right-align on wrap, Secure Score split hidden when broken, remaining Azure AD → Microsoft Entra branding'
+        }
+    }
+}
