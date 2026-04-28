@@ -6,6 +6,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $start = Get-Date
 
+$graphToken = $env:AZURE_GRAPH_TOKEN
+if (-not $graphToken) { throw "AZURE_GRAPH_TOKEN non disponibile." }
+
 # ------------------------------------------------------------------
 # Locate bundled M365-Assess
 # ------------------------------------------------------------------
@@ -42,47 +45,31 @@ if (Test-Path $tempFolder) { Remove-Item $tempFolder -Recurse -Force -ErrorActio
 New-Item -Path $tempFolder -ItemType Directory -Force | Out-Null
 
 # ------------------------------------------------------------------
-# Run M365-Assess with Managed Identity
-#
-# The Function App's system-assigned Managed Identity must have been
-# granted the following permissions (one-time admin setup):
-#
-# Graph application permissions:
-#   User.Read.All, UserAuthenticationMethod.Read.All,
-#   Directory.Read.All, Policy.Read.All, Application.Read.All,
-#   SecurityEvents.Read.All, SecurityAlert.Read.All,
-#   DeviceManagementConfiguration.Read.All,
-#   DeviceManagementManagedDevices.Read.All,
-#   Sites.Read.All, TeamSettings.Read.All,
-#   AuditLog.Read.All, Reports.Read.All,
-#   RoleManagement.Read.Directory, Group.Read.All,
-#   Organization.Read.All, Domain.Read.All,
-#   Agreement.Read.All, TeamworkAppSettings.Read.All,
-#   OrgSettings-Forms.Read.All, SharePointTenantSettings.Read.All
-#
-# Exchange Online (for Email section):
-#   Exchange.ManageAsApp application role +
-#   "Global Reader" or "Exchange Administrator" directory role
-#   assigned to the Managed Identity service principal
-#
-# Run Grant-M365AssessPermissions.ps1 (in this folder) to set up.
+# Connect Microsoft Graph using the user's delegated token from MSAL.
+# The user authenticated in the browser → token sent to Function App
+# → injected here so M365-Assess collectors use the active session.
+# Exchange Online sections are skipped (require separate EXO auth).
 # ------------------------------------------------------------------
+Write-Host "Connessione a Microsoft Graph con token utente..."
+$secToken = ConvertTo-SecureString $graphToken -AsPlainText -Force
+Connect-MgGraph -AccessToken $secToken -NoWelcome -ErrorAction Stop
+Write-Host "Graph connesso. Tenant: $((Get-MgContext).TenantId)"
+
 $invokeScript = Join-Path $m365Root 'Invoke-M365Assessment.ps1'
 
 $sections = @(
     'Tenant', 'Identity', 'Licensing',
-    'Email',                              # needs EXO managed identity permission
     'Intune', 'Security', 'Collaboration',
     'Hybrid', 'ValueOpportunity'
 )
 
-Write-Host "Avvio Invoke-M365Assessment -ManagedIdentity per tenant $TenantId ..."
+Write-Host "Avvio Invoke-M365Assessment -SkipConnection per tenant $TenantId ..."
 Write-Host "Sezioni: $($sections -join ', ')"
 
 try {
     & $invokeScript `
         -TenantId       $TenantId `
-        -ManagedIdentity `
+        -SkipConnection `
         -Section        $sections `
         -OutputFolder   $tempFolder `
         -NonInteractive `

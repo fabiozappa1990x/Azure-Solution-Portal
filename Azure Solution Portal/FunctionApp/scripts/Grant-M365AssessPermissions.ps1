@@ -93,14 +93,14 @@ Write-Step "Step 1: Managed Identity on Function App '$FunctionAppName'"
 
 $miJson = az functionapp identity show `
     --name $FunctionAppName `
-    --resource-group $FunctionAppResourceGroup 2>/dev/null | ConvertFrom-Json
+    --resource-group $FunctionAppResourceGroup 2>&1 | Where-Object { $_ -notmatch '^ERROR' } | ConvertFrom-Json -ErrorAction SilentlyContinue
 
 if (-not $miJson -or -not $miJson.principalId) {
     Write-Warn "Managed Identity non abilitata. Abilitazione in corso..."
     $miJson = az functionapp identity assign `
         --name $FunctionAppName `
         --resource-group $FunctionAppResourceGroup `
-        --identities '[system]' 2>/dev/null | ConvertFrom-Json
+        --identities '[system]' 2>&1 | Where-Object { $_ -notmatch '^ERROR' } | ConvertFrom-Json -ErrorAction SilentlyContinue
     if (-not $miJson.principalId) {
         throw "Impossibile abilitare Managed Identity. Verificare permessi az CLI."
     }
