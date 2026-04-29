@@ -59,10 +59,11 @@ $invokeScript = Join-Path $m365Root 'Invoke-M365Assessment.ps1'
 
 $sections = @(
     'Tenant', 'Identity', 'Licensing',
-    'Intune', 'Security', 'Hybrid'
+    'Intune', 'Security', 'Collaboration',
+    'Hybrid', 'ValueOpportunity'
 )
 
-Write-Host "Avvio Invoke-M365Assessment -SkipConnection -QuickScan per tenant $TenantId ..."
+Write-Host "Avvio Invoke-M365Assessment -SkipConnection per tenant $TenantId ..."
 Write-Host "Sezioni: $($sections -join ', ')"
 
 try {
@@ -73,7 +74,7 @@ try {
         -OutputFolder   $tempFolder `
         -NonInteractive `
         -SkipPurview `
-        -QuickScan
+        -CompactReport
 } catch {
     Write-Host "Invoke-M365Assessment errore (provo a recuperare il report parziale): $($_.Exception.Message)"
 }

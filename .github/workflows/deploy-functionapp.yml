@@ -17,11 +17,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy to Azure Functions
+      - name: Deploy to Azure Functions (Premium)
         uses: Azure/functions-action@v1
         with:
-          app-name: func-azsolportal-089fb2a1
+          app-name: func-azsolportal-premium
           package: './Azure Solution Portal/FunctionApp'
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          # Per PowerShell runtime, non serve build step aggiuntivo
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PREMIUM_PUBLISH_PROFILE }}
           scm-do-build-during-deployment: false

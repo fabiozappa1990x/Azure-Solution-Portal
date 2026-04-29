@@ -2,7 +2,7 @@
 // CONFIGURAZIONE — aggiornata da Bootstrap.ps1
 // ============================================================
 
-const FUNCTION_APP_URL   = 'https://func-azsolportal-089fb2a1.azurewebsites.net';
+const FUNCTION_APP_URL   = 'https://func-azsolportal-premium.azurewebsites.net';
 const CLIENT_ID          = '4ace231a-ee3c-4bb8-aa9f-85105cecce6c';
 const RESOURCE_GROUP_NAME = 'rg-azure-solution-portal';
 const FUNCTION_APP_NAME  = FUNCTION_APP_URL.replace('https://', '').split('.')[0];
