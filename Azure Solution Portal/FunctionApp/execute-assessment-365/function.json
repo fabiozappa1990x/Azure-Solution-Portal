@@ -12,6 +12,13 @@
       "type": "http",
       "direction": "out",
       "name": "Response"
+    },
+    {
+      "name": "JobQueue",
+      "type": "queue",
+      "direction": "out",
+      "queueName": "m365assessment-jobs",
+      "connection": "AzureWebJobsStorage"
     }
   ]
 }

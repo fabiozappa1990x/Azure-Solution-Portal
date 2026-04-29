@@ -2,7 +2,7 @@ using namespace System.Net
 
 param($Request, $TriggerMetadata)
 
-Write-Host "=== START execute-assessment-365 ==="
+Write-Host "=== START execute-assessment-365 (async) ==="
 
 function Get-CorsHeaders {
     param($Request)
@@ -12,7 +12,7 @@ function Get-CorsHeaders {
     return @{
         'Content-Type'                 = 'application/json'
         'Access-Control-Allow-Origin'  = $origin
-        'Access-Control-Allow-Methods' = 'GET,OPTIONS'
+        'Access-Control-Allow-Methods' = 'GET,POST,OPTIONS'
         'Access-Control-Allow-Headers' = 'Authorization,Content-Type,X-Graph-Token'
         'Vary'                         = 'Origin'
     }
@@ -31,9 +31,7 @@ function Get-JwtTenantId {
         $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($payload))
         $claims = $decoded | ConvertFrom-Json
         return [string]$claims.tid
-    } catch {
-        return $null
-    }
+    } catch { return $null }
 }
 
 if ($Request.Method -eq 'OPTIONS') {
@@ -43,6 +41,7 @@ if ($Request.Method -eq 'OPTIONS') {
 
 $corsHeaders = Get-CorsHeaders $Request
 
+# --- Auth validation ---
 $authHeader = $Request.Headers['Authorization']
 if ($authHeader -is [array]) { $authHeader = $authHeader[0] }
 if ($authHeader -is [System.Security.SecureString]) {
@@ -57,7 +56,7 @@ if (-not $authHeader -or -not $authHeader.StartsWith('Bearer ')) {
 }
 $accessToken = $authHeader.Substring(7).Trim()
 if ($accessToken.Length -lt 100) {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Token Azure non valido"}'; Headers = $corsHeaders })
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 401; Body = '{"error":"Token non valido"}'; Headers = $corsHeaders })
     return
 }
 
@@ -73,81 +72,39 @@ $requestedTenantId = $Request.Query.TenantId
 if (-not $requestedTenantId) { $requestedTenantId = $Request.Query.tenantId }
 if ($requestedTenantId) { $requestedTenantId = $requestedTenantId.ToString().Trim() }
 
-$azureTokenTenantId = Get-JwtTenantId $accessToken
 $graphTokenTenantId = Get-JwtTenantId $graphToken
-$tenantId = if ($requestedTenantId) { $requestedTenantId } elseif ($graphTokenTenantId) { $graphTokenTenantId } else { $azureTokenTenantId }
+$tenantId = if ($requestedTenantId) { $requestedTenantId } elseif ($graphTokenTenantId) { $graphTokenTenantId } else { (Get-JwtTenantId $accessToken) }
 
 if ($requestedTenantId -and $graphTokenTenantId -and ($requestedTenantId -ne $graphTokenTenantId)) {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Il token Graph non appartiene al Tenant ID selezionato"}'; Headers = $corsHeaders })
-    return
-}
-if ($requestedTenantId -and $azureTokenTenantId -and ($requestedTenantId -ne $azureTokenTenantId)) {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Il token Azure non appartiene al Tenant ID selezionato"}'; Headers = $corsHeaders })
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Token non appartiene al tenant selezionato"}'; Headers = $corsHeaders })
     return
 }
 
-# Attempt module bootstrap (best effort, no hard fail if already embedded)
-try {
-    if (-not (Get-Module -ListAvailable -Name M365-Assess)) {
-        Write-Host "M365-Assess module not found on Function host, installing..."
-        Install-Module M365-Assess -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-        Write-Host "M365-Assess module installed."
-    }
-} catch {
-    Write-Host "Warning: unable to install M365-Assess module: $($_.Exception.Message)"
+# --- Generate jobId and enqueue ---
+$jobId = [System.Guid]::NewGuid().ToString('N')
+$jobMessage = [ordered]@{
+    jobId       = $jobId
+    tenantId    = $tenantId
+    graphToken  = $graphToken
+    startedAt   = (Get-Date).ToUniversalTime().ToString('o')
 }
+$jobJson = $jobMessage | ConvertTo-Json -Compress -Depth 3
 
-$scriptPath = $null
-$paths = @(
-    (Join-Path $PSScriptRoot '..\scripts\execute-assessment-365.ps1'),
-    'D:\home\site\wwwroot\scripts\execute-assessment-365.ps1',
-    '/home/site/wwwroot/scripts/execute-assessment-365.ps1'
-)
-foreach ($path in $paths) { if (Test-Path $path) { $scriptPath = $path; break } }
-if (-not $scriptPath) {
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 500; Body = '{"error":"Script execute-assessment-365.ps1 non trovato"}'; Headers = $corsHeaders })
-    return
-}
+# Write job to queue (output binding)
+Push-OutputBinding -Name JobQueue -Value $jobJson
 
-$env:AZURE_ACCESS_TOKEN = $accessToken
-$env:AZURE_GRAPH_TOKEN = $graphToken
-$env:AZURE_TENANT_ID = if ($tenantId) { $tenantId } else { '' }
+Write-Host "Job enqueued: $jobId for tenant $tenantId"
 
-$tempDir = if ($env:TEMP) { $env:TEMP } else { '/tmp' }
-$outHtml = Join-Path $tempDir "assessment365_$($tenantId).html"
-$outJson = Join-Path $tempDir "assessment365_$($tenantId).json"
-if (Test-Path $outHtml) { Remove-Item $outHtml -Force }
-if (Test-Path $outJson) { Remove-Item $outJson -Force }
+# Return jobId immediately — client will poll /api/get-assessment-result?jobId=...
+$response = [ordered]@{
+    jobId   = $jobId
+    status  = 'pending'
+    pollUrl = "/api/get-assessment-result?jobId=$jobId"
+} | ConvertTo-Json -Compress
 
-try {
-    & $scriptPath -TenantId $tenantId -OutputPath $outHtml
-    if (Test-Path $outJson) {
-        $jsonContent = Get-Content $outJson -Raw
-        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = 200
-            Body = $jsonContent
-            Headers = $corsHeaders
-        })
-    } else {
-        Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = 500
-            Body = '{"error":"Report JSON Assessment 365 non generato"}'
-            Headers = $corsHeaders
-        })
-    }
-} catch {
-    $err = @{
-        error = $_.Exception.Message
-        stack = if ($_.ScriptStackTrace) { $_.ScriptStackTrace } else { $null }
-    } | ConvertTo-Json -Depth 5
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-        StatusCode = 500
-        Body = $err
-        Headers = $corsHeaders
-    })
-} finally {
-    Remove-Item Env:AZURE_ACCESS_TOKEN -ErrorAction SilentlyContinue
-    Remove-Item Env:AZURE_GRAPH_TOKEN -ErrorAction SilentlyContinue
-    Remove-Item Env:AZURE_TENANT_ID -ErrorAction SilentlyContinue
-    Write-Host "=== END execute-assessment-365 ==="
-}
+Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    StatusCode = 202
+    Body       = $response
+    Headers    = $corsHeaders
+})
+Write-Host "=== END execute-assessment-365 (async) — returned 202 in <1s ==="

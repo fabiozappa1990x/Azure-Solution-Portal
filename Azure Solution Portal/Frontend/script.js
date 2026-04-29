@@ -2585,6 +2585,56 @@ document.addEventListener('DOMContentLoaded', function() {
                     'Content-Type': 'application/json'
                 };
                 if (graphToken) reqHeaders['X-Graph-Token'] = graphToken;
+
+                // Assessment 365: async pattern — start job, then poll for result
+                if (currentSolution === 'assessment-365') {
+                    const startResp = await fetch(apiUrl, { method: 'GET', headers: reqHeaders });
+                    if (!startResp.ok) {
+                        const errTxt = await startResp.text();
+                        let apiError = errTxt;
+                        try { apiError = JSON.parse(errTxt)?.error || errTxt; } catch {}
+                        throw new Error(`Errore HTTP ${startResp.status}: ${apiError}`);
+                    }
+                    const startData = await startResp.json();
+                    const jobId = startData.jobId;
+                    if (!jobId) throw new Error('Job ID non ricevuto dalla Function App.');
+
+                    // Update loading message
+                    const loadingEl = document.getElementById('precheck-loading');
+                    if (loadingEl) {
+                        const msgEl = loadingEl.querySelector('p') || loadingEl;
+                        msgEl.textContent = '⏳ Assessment in corso… (può richiedere 10-15 minuti)';
+                    }
+
+                    // Poll every 10 seconds until complete or error
+                    const pollUrl = `${API_BASE_URL}/api/get-assessment-result?jobId=${jobId}`;
+                    let data = null;
+                    let attempts = 0;
+                    const maxAttempts = 120; // 20 minutes max
+                    while (attempts < maxAttempts) {
+                        await new Promise(r => setTimeout(r, 10000));
+                        attempts++;
+                        try {
+                            const pollResp = await fetch(pollUrl, { method: 'GET', headers: { 'Authorization': `Bearer ${accessToken}` } });
+                            if (!pollResp.ok) continue;
+                            const pollData = await pollResp.json();
+                            if (pollData.status === 'complete') { data = pollData; break; }
+                            if (pollData.status === 'error') throw new Error(`Assessment fallito: ${pollData.error || 'errore sconosciuto'}`);
+                            // pending or running — continue polling
+                            if (loadingEl) {
+                                const msgEl = loadingEl.querySelector('p') || loadingEl;
+                                msgEl.textContent = `⏳ Assessment in corso… (${attempts * 10}s) – ${pollData.status}`;
+                            }
+                        } catch (pollErr) {
+                            if (pollErr.message.startsWith('Assessment fallito')) throw pollErr;
+                            // network error — retry
+                        }
+                    }
+                    if (!data) throw new Error('Timeout assessment: il job non ha completato entro 20 minuti.');
+                    results.push({ subscriptionId: subId, data });
+                    continue;
+                }
+
                 const response = await fetch(apiUrl, {
                     method: 'GET',
                     headers: reqHeaders
