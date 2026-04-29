@@ -29,9 +29,72 @@ function Get-JwtTenantId {
         if ($mod4 -gt 0) { $payload += '=' * (4 - $mod4) }
         $payload = $payload.Replace('-', '+').Replace('_', '/')
         $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($payload))
-        $claims = $decoded | ConvertFrom-Json
-        return [string]$claims.tid
+        return [string]($decoded | ConvertFrom-Json).tid
     } catch { return $null }
+}
+
+function Get-StorageCredentials {
+    $connStr = $env:AzureWebJobsStorage
+    $name = ($connStr -split ';' | Where-Object { $_ -match '^AccountName=' }) -replace 'AccountName=',''
+    $key  = ($connStr -split ';' | Where-Object { $_ -match '^AccountKey='  }) -replace 'AccountKey=',''
+    return @{ Name = $name; Key = $key }
+}
+
+function Get-StorageSignature {
+    param([string]$StringToSign, [string]$Key)
+    $hmac = [System.Security.Cryptography.HMACSHA256]::new([System.Convert]::FromBase64String($Key))
+    return [System.Convert]::ToBase64String($hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($StringToSign)))
+}
+
+function Send-QueueMessage {
+    param([string]$QueueName, [string]$Message)
+    $creds   = Get-StorageCredentials
+    $name    = $creds.Name
+    $key     = $creds.Key
+    $dateStr = (Get-Date).ToUniversalTime().ToString('R')
+    $b64Msg  = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Message))
+    $xmlBody = "<QueueMessage><MessageText>$b64Msg</MessageText></QueueMessage>"
+    $bodyLen = [System.Text.Encoding]::UTF8.GetByteCount($xmlBody)
+
+    $strToSign = "POST`n`napplication/xml`n`nx-ms-date:$dateStr`nx-ms-version:2020-04-08`n/$name/$QueueName/messages"
+    $sig = Get-StorageSignature -StringToSign $strToSign -Key $key
+
+    $headers = @{
+        Authorization  = "SharedKey ${name}:${sig}"
+        'x-ms-date'    = $dateStr
+        'x-ms-version' = '2020-04-08'
+        'Content-Type' = 'application/xml'
+    }
+    $uri = "https://${name}.queue.core.windows.net/$QueueName/messages"
+    Invoke-RestMethod -Method POST -Uri $uri -Headers $headers -Body $xmlBody -ErrorAction Stop | Out-Null
+}
+
+function Write-StatusBlob {
+    param([string]$JobId, [string]$Content)
+    try {
+        $creds   = Get-StorageCredentials
+        $name    = $creds.Name
+        $key     = $creds.Key
+        $container = 'm365assessment-results'
+        $blobName  = "$JobId.json"
+        $dateStr   = (Get-Date).ToUniversalTime().ToString('R')
+        $bytes     = [System.Text.Encoding]::UTF8.GetBytes($Content)
+
+        $strToSign = "PUT`n`napplication/json`n`nx-ms-blob-type:BlockBlob`nx-ms-date:$dateStr`nx-ms-version:2020-04-08`n/$name/$container/$blobName"
+        $sig = Get-StorageSignature -StringToSign $strToSign -Key $key
+
+        $headers = @{
+            Authorization      = "SharedKey ${name}:${sig}"
+            'x-ms-blob-type'   = 'BlockBlob'
+            'x-ms-date'        = $dateStr
+            'x-ms-version'     = '2020-04-08'
+            'Content-Type'     = 'application/json'
+        }
+        $uri = "https://${name}.blob.core.windows.net/${container}/${blobName}"
+        Invoke-RestMethod -Method PUT -Uri $uri -Headers $headers -Body $bytes -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Host "WARNING: blob write failed: $($_.Exception.Message)"
+    }
 }
 
 if ($Request.Method -eq 'OPTIONS') {
@@ -41,7 +104,7 @@ if ($Request.Method -eq 'OPTIONS') {
 
 $corsHeaders = Get-CorsHeaders $Request
 
-# --- Auth validation ---
+# --- Auth ---
 $authHeader = $Request.Headers['Authorization']
 if ($authHeader -is [array]) { $authHeader = $authHeader[0] }
 if ($authHeader -is [System.Security.SecureString]) {
@@ -71,40 +134,34 @@ if (-not $graphToken -or $graphToken.Length -lt 100) {
 $requestedTenantId = $Request.Query.TenantId
 if (-not $requestedTenantId) { $requestedTenantId = $Request.Query.tenantId }
 if ($requestedTenantId) { $requestedTenantId = $requestedTenantId.ToString().Trim() }
+$graphTenantId = Get-JwtTenantId $graphToken
+$tenantId = if ($requestedTenantId) { $requestedTenantId } elseif ($graphTenantId) { $graphTenantId } else { Get-JwtTenantId $accessToken }
 
-$graphTokenTenantId = Get-JwtTenantId $graphToken
-$tenantId = if ($requestedTenantId) { $requestedTenantId } elseif ($graphTokenTenantId) { $graphTokenTenantId } else { (Get-JwtTenantId $accessToken) }
-
-if ($requestedTenantId -and $graphTokenTenantId -and ($requestedTenantId -ne $graphTokenTenantId)) {
+if ($requestedTenantId -and $graphTenantId -and ($requestedTenantId -ne $graphTenantId)) {
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 403; Body = '{"error":"Token non appartiene al tenant selezionato"}'; Headers = $corsHeaders })
     return
 }
 
-# --- Generate jobId and enqueue ---
-$jobId = [System.Guid]::NewGuid().ToString('N')
-$jobMessage = [ordered]@{
-    jobId       = $jobId
-    tenantId    = $tenantId
-    graphToken  = $graphToken
-    startedAt   = (Get-Date).ToUniversalTime().ToString('o')
+# --- Enqueue job ---
+try {
+    $jobId = [System.Guid]::NewGuid().ToString('N')
+    $jobMsg = @{ jobId = $jobId; tenantId = $tenantId; graphToken = $graphToken; startedAt = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress -Depth 3
+
+    # Write pending blob first
+    $pendingBlob = @{ jobId = $jobId; status = 'pending'; tenantId = $tenantId } | ConvertTo-Json -Compress
+    Write-StatusBlob -JobId $jobId -Content $pendingBlob
+
+    # Enqueue to storage queue
+    Send-QueueMessage -QueueName 'm365assessment-jobs' -Message $jobMsg
+
+    Write-Host "Job enqueued: $jobId for tenant $tenantId"
+
+    $respBody = @{ jobId = $jobId; status = 'pending'; pollUrl = "/api/get-assessment-result?jobId=$jobId" } | ConvertTo-Json -Compress
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 202; Body = $respBody; Headers = $corsHeaders })
+} catch {
+    Write-Host "ERROR enqueuing job: $($_.Exception.Message)"
+    $err = @{ error = "Impossibile avviare l'assessment: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{ StatusCode = 500; Body = $err; Headers = $corsHeaders })
 }
-$jobJson = $jobMessage | ConvertTo-Json -Compress -Depth 3
 
-# Write job to queue (output binding)
-Push-OutputBinding -Name JobQueue -Value $jobJson
-
-Write-Host "Job enqueued: $jobId for tenant $tenantId"
-
-# Return jobId immediately — client will poll /api/get-assessment-result?jobId=...
-$response = [ordered]@{
-    jobId   = $jobId
-    status  = 'pending'
-    pollUrl = "/api/get-assessment-result?jobId=$jobId"
-} | ConvertTo-Json -Compress
-
-Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-    StatusCode = 202
-    Body       = $response
-    Headers    = $corsHeaders
-})
-Write-Host "=== END execute-assessment-365 (async) — returned 202 in <1s ==="
+Write-Host "=== END execute-assessment-365 (async) ==="
