@@ -2,7 +2,7 @@
 // CONFIGURAZIONE AMBIENTE
 // ========================================
 
-const API_BASE_URL = 'https://func-azsolportal-premium.azurewebsites.net';
+const API_BASE_URL = 'https://func-azsolportal-hack8b4f08d7.azurewebsites.net';
 const LS_SUBS = 'azsp.selectedSubIds';
 const LS_TENANT = 'azsp.selectedTenantId';
 const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
