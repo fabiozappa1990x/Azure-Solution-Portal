@@ -41,3 +41,16 @@ desktop.ini
 
 # ── Local downloaded log bundles ──
 tmp_func_logs2/
+**/tmp_func_logs*/
+
+# ── Azure Functions publish profile (segreto) ──
+**/*.PublishSettings
+**/publish-profile*.xml
+
+# ── Caveman memory backups ──
+**/*.original.md
+
+# ── Assessment output locali (report generati) ──
+**/assessment-output/
+**/*-report-*.html
+**/*-report-*.csv
