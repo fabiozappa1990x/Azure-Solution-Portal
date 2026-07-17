@@ -56,7 +56,8 @@ function Send-QueueMessage {
     $xmlBody = "<QueueMessage><MessageText>$b64Msg</MessageText></QueueMessage>"
     $bodyLen = [System.Text.Encoding]::UTF8.GetByteCount($xmlBody)
 
-    $strToSign = "POST`n`napplication/xml`n`nx-ms-date:$dateStr`nx-ms-version:2020-04-08`n/$name/$QueueName/messages"
+    # Azure Storage Shared Key StringToSign format (12 header lines + canonicalized headers + resource)
+    $strToSign = "POST`n`n`n$bodyLen`n`napplication/xml`n`n`n`n`n`n`nx-ms-date:$dateStr`nx-ms-version:2020-04-08`n/$name/$QueueName/messages"
     $sig = Get-StorageSignature -StringToSign $strToSign -Key $key
 
     $headers = @{
@@ -79,8 +80,10 @@ function Write-StatusBlob {
         $blobName  = "$JobId.json"
         $dateStr   = (Get-Date).ToUniversalTime().ToString('R')
         $bytes     = [System.Text.Encoding]::UTF8.GetBytes($Content)
+        $bodyLen   = $bytes.Length
 
-        $strToSign = "PUT`n`napplication/json`n`nx-ms-blob-type:BlockBlob`nx-ms-date:$dateStr`nx-ms-version:2020-04-08`n/$name/$container/$blobName"
+        # Canonical headers must be sorted alphabetically: blob-type, date, version
+        $strToSign = "PUT`n`n`n$bodyLen`n`napplication/json`n`n`n`n`n`n`nx-ms-blob-type:BlockBlob`nx-ms-date:$dateStr`nx-ms-version:2020-04-08`n/$name/$container/$blobName"
         $sig = Get-StorageSignature -StringToSign $strToSign -Key $key
 
         $headers = @{
