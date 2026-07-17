@@ -89,7 +89,7 @@ function parseSubscriptionIds(input) {
 }
 
 function isTenantWideSolution(solutionKey) {
-    return ['intune', 'defender-xdr', 'conditional-access', 'assessment-365'].includes(String(solutionKey || '').trim());
+    return ['intune', 'defender-xdr', 'conditional-access', 'assessment-365', 'entra-identity'].includes(String(solutionKey || '').trim());
 }
 
 async function fetchSubscriptionsForUser(accessToken) {
@@ -478,6 +478,87 @@ const SOLUTIONS = {
         psDownload: psDownloadUrl('Solution%20-%20Azure%20Update%20Manager/Azure%20Update%20Manager%20-%20Deploy%20to%20Azure', 'Deploy-UpdateManager.ps1'),
         psCommand: '.\\Deploy-UpdateManager.ps1 -SubscriptionId "YOUR-SUB-ID" -DeploymentName "updates-prod"',
         apiEndpoint: '/api/precheck-updates'
+    },
+    'azure-posture': {
+        name: 'Azure Posture Assessment',
+        detailsTitle: 'Azure Posture Assessment (WAF/CAF) — Dettagli',
+        details: {
+            whatIs: 'Assessment read-only della subscription Azure allineato al Well-Architected Framework e al Cloud Adoption Framework. Analizza Azure Advisor (5 pilastri), Secure Score, compliance delle Azure Policy e governance delle risorse, producendo un report consulenziale con readiness score.',
+            features: [
+                'Copertura dei 5 pilastri WAF: Security, Reliability, Cost, Performance, Operational Excellence',
+                'Secure Score Defender for Cloud e compliance Azure Policy',
+                'Governance: tagging, resource lock e inventario risorse',
+                'Report HTML executive-ready con guida operativa prioritizzata'
+            ],
+            notes: [
+                'Assessment 100% read-only: nessuna modifica alle risorse.',
+                'Richiede il ruolo Reader sulla subscription.',
+                'Per il dettaglio dei risparmi vedi la soluzione Azure Cost Optimization.'
+            ],
+            docsAnchor: 'azure-posture'
+        },
+        precheckTitle: 'Azure Posture Assessment',
+        precheckDesc: 'Analizza la subscription sui 5 pilastri Well-Architected (Advisor, Secure Score, Policy, governance) e genera un report nel portale.',
+        deployTitle: 'Azure Posture Assessment',
+        deployDesc: 'Assessment read-only: esegui l\'analisi e consulta il report generato nel portale.',
+        portalUrl: '#',
+        psDownload: null,
+        psCommand: '# Assessment eseguito via portale (Azure Function)',
+        apiEndpoint: '/api/assess-azure-posture'
+    },
+    'azure-cost': {
+        name: 'Azure Cost Optimization',
+        detailsTitle: 'Azure Cost Optimization — Dettagli',
+        details: {
+            whatIs: 'Assessment read-only focalizzato sugli sprechi e sulle opportunità di risparmio della subscription: raccomandazioni Cost di Azure Advisor con stima dei savings, dischi gestiti orfani, IP pubblici non associati, snapshot obsoleti e resource group vuoti.',
+            features: [
+                'Stima del risparmio annuo dalle raccomandazioni Cost di Advisor',
+                'Dischi gestiti orfani (Unattached) e IP pubblici non associati',
+                'Snapshot obsoleti (> 30 giorni) e resource group vuoti',
+                'Report HTML con quantificazione dello spreco e azioni prioritizzate'
+            ],
+            notes: [
+                'Assessment 100% read-only: nessuna risorsa viene eliminata.',
+                'Richiede il ruolo Reader sulla subscription.',
+                'Le stime di savings provengono da Azure Advisor.'
+            ],
+            docsAnchor: 'azure-cost'
+        },
+        precheckTitle: 'Azure Cost Optimization',
+        precheckDesc: 'Individua sprechi e opportunità di risparmio (Advisor, dischi/IP orfani, snapshot, RG vuoti) e genera un report nel portale.',
+        deployTitle: 'Azure Cost Optimization',
+        deployDesc: 'Assessment read-only: esegui l\'analisi e consulta il report generato nel portale.',
+        portalUrl: '#',
+        psDownload: null,
+        psCommand: '# Assessment eseguito via portale (Azure Function)',
+        apiEndpoint: '/api/assess-azure-cost'
+    },
+    'entra-identity': {
+        name: 'Entra ID Identity Assessment',
+        detailsTitle: 'Entra ID Identity Assessment — Dettagli',
+        details: {
+            whatIs: 'Assessment read-only della postura identity del tenant Entra ID via Microsoft Graph: ruoli privilegiati, Security Defaults vs Conditional Access, copertura MFA e blocco legacy auth, governance guest, igiene delle app registration e utenti inattivi.',
+            features: [
+                'Analisi ruoli privilegiati (Global Admin sprawl) e raccomandazione PIM',
+                'Copertura MFA / Conditional Access e blocco legacy authentication',
+                'Igiene credenziali app registration (segreti scaduti/in scadenza)',
+                'Governance guest B2B e utenti inattivi (> 90 giorni)'
+            ],
+            notes: [
+                'Assessment tenant-wide read-only: la subscription serve solo all\'autenticazione.',
+                'Richiede consenso admin agli scope Graph: Directory.Read.All, Policy.Read.All, RoleManagement.Read.Directory, Application.Read.All, AuditLog.Read.All.',
+                'Il conteggio utenti inattivi richiede Entra ID P1 (signInActivity).'
+            ],
+            docsAnchor: 'entra-identity'
+        },
+        precheckTitle: 'Entra ID Identity Assessment',
+        precheckDesc: 'Valuta la postura identity del tenant Entra ID (ruoli privilegiati, MFA/CA, app registration, guest) e genera un report nel portale.',
+        deployTitle: 'Entra ID Identity Assessment',
+        deployDesc: 'Assessment read-only tenant-wide: esegui l\'analisi e consulta il report generato nel portale.',
+        portalUrl: '#',
+        psDownload: null,
+        psCommand: '# Assessment eseguito via portale (Azure Function)',
+        apiEndpoint: '/api/assess-entra-identity'
     }
 };
 
@@ -2576,6 +2657,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     throw new Error(`Impossibile ottenere il token Microsoft Graph per Assessment 365.\n\nConcedi il consenso admin agli scope richiesti (Directory/Group/Organization/Policy/User read).\n\nDettaglio: ${e.message}`);
                 }
             }
+            if (currentSolution === 'entra-identity') {
+                try {
+                    graphToken = await getAssessment365GraphToken(selectedTenantId);
+                } catch (e) {
+                    throw new Error(`Impossibile ottenere il token Microsoft Graph per l'Entra ID Identity Assessment.\n\nConcedi il consenso admin agli scope: Directory.Read.All, Policy.Read.All, RoleManagement.Read.Directory, Application.Read.All, AuditLog.Read.All.\n\nDettaglio: ${e.message}`);
+                }
+            }
 
             for (const subId of subscriptionIds) {
                 const tenantPart = selectedTenantId ? `&tenantId=${encodeURIComponent(selectedTenantId)}` : '';
@@ -3073,6 +3161,45 @@ document.addEventListener('DOMContentLoaded', function() {
             setTabVisible('virtual-machines', true);
             setTabVisible('workspaces', true);
             setTabVisible('dcr', true);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'azure-posture') {
+            setTabText('overview', 'Panoramica');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', 'Postura Azure (Well-Architected / CAF)');
+            setPaneTitle('recommendations', 'Report e Action Plan');
+            setOverviewLabels(['Advisor recs', 'Secure Score', 'Policy compliance', 'Risorse']);
+            setTabVisible('virtual-machines', false);
+            setTabVisible('workspaces', false);
+            setTabVisible('dcr', false);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'azure-cost') {
+            setTabText('overview', 'Panoramica');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', 'Ottimizzazione costi Azure');
+            setPaneTitle('recommendations', 'Report e Action Plan');
+            setOverviewLabels(['Savings/anno', 'Dischi orfani', 'IP inutilizzati', 'Snapshot vecchi']);
+            setTabVisible('virtual-machines', false);
+            setTabVisible('workspaces', false);
+            setTabVisible('dcr', false);
+            setTabVisible('recommendations', true);
+            return;
+        }
+
+        if (solution === 'entra-identity') {
+            setTabText('overview', 'Panoramica');
+            setTabText('recommendations', 'Report');
+            setPaneTitle('overview', 'Postura identity Entra ID');
+            setPaneTitle('recommendations', 'Report e Action Plan');
+            setOverviewLabels(['Global Admins', 'CA policies', 'Guest', 'Segreti scaduti']);
+            setTabVisible('virtual-machines', false);
+            setTabVisible('workspaces', false);
+            setTabVisible('dcr', false);
             setTabVisible('recommendations', true);
             return;
         }
@@ -4320,6 +4447,17 @@ document.addEventListener('DOMContentLoaded', function() {
         renderReportHtmlInRecommendations(data);
     }
 
+    // Render condiviso per gli assessment Azure/Entra (report-only): KPI overview + readiness + report HTML.
+    function renderAzureAssessment(data, kpis) {
+        const ids = ['overview-vm-total', 'overview-vm-monitored', 'overview-workspaces', 'overview-dcr'];
+        for (let i = 0; i < ids.length; i++) {
+            const el = document.getElementById(ids[i]);
+            if (el) el.textContent = (kpis[i] ?? 0);
+        }
+        setStatusFromReadiness(data?.Summary || {});
+        renderReportHtmlInRecommendations(data);
+    }
+
     function populatePrecheckResultsSingle(data) {
         applyPrecheckUiForSolution(currentSolution);
 
@@ -4370,6 +4508,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (currentSolution === 'assessment-365') {
             renderAssessment365Precheck(data);
+            return;
+        }
+
+        if (currentSolution === 'azure-posture') {
+            const s = data?.Summary || {};
+            renderAzureAssessment(data, [s.AdvisorTotal ?? 0, (s.SecureScorePercent ?? 0) + '%', (s.PolicyCompliancePct ?? 0) + '%', s.TotalResources ?? 0]);
+            return;
+        }
+
+        if (currentSolution === 'azure-cost') {
+            const s = data?.Summary || {};
+            const cur = s.Currency || 'USD';
+            renderAzureAssessment(data, [`${s.AnnualSavings ?? 0} ${cur}`, s.OrphanDisks ?? 0, s.UnusedPublicIps ?? 0, s.OldSnapshots ?? 0]);
+            return;
+        }
+
+        if (currentSolution === 'entra-identity') {
+            const s = data?.Summary || {};
+            renderAzureAssessment(data, [s.GlobalAdmins ?? 0, s.CaPolicies ?? 0, s.Guests ?? 0, s.ExpiredSecrets ?? 0]);
             return;
         }
 

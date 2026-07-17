@@ -122,6 +122,39 @@
                     </ul>
                 </div>
 
+                <div class="solution-card" id="azure-posture">
+                    <h3>Azure Posture Assessment (WAF/CAF)</h3>
+                    <p>Assessment read-only della subscription allineato al Well-Architected Framework: analizza Azure Advisor (5 pilastri), Secure Score, compliance delle Azure Policy e governance risorse, con readiness score e action plan. Richiede solo il ruolo Reader.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Well-Architected Framework: <a target="_blank" href="https://learn.microsoft.com/azure/well-architected/">Microsoft Learn — Azure Well-Architected</a></li>
+                        <li><i class="fas fa-link"></i> Azure Advisor: <a target="_blank" href="https://learn.microsoft.com/azure/advisor/advisor-overview">Microsoft Learn — Azure Advisor</a></li>
+                        <li><i class="fas fa-link"></i> Cloud Adoption Framework: <a target="_blank" href="https://learn.microsoft.com/azure/cloud-adoption-framework/">Microsoft Learn — CAF</a></li>
+                        <li><i class="fas fa-shield-halved"></i> Endpoint: <code>/api/assess-azure-posture</code> — read-only, nessuna modifica alle risorse.</li>
+                    </ul>
+                </div>
+
+                <div class="solution-card" id="azure-cost">
+                    <h3>Azure Cost Optimization</h3>
+                    <p>Assessment read-only focalizzato su sprechi e risparmio: raccomandazioni Cost di Azure Advisor con stima savings annui, dischi gestiti orfani, IP pubblici non associati, snapshot obsoleti e resource group vuoti. Richiede solo il ruolo Reader.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Cost optimization: <a target="_blank" href="https://learn.microsoft.com/azure/advisor/advisor-reference-cost-recommendations">Advisor — Cost recommendations</a></li>
+                        <li><i class="fas fa-link"></i> Cost Management: <a target="_blank" href="https://learn.microsoft.com/azure/cost-management-billing/">Microsoft Learn — Cost Management</a></li>
+                        <li><i class="fas fa-shield-halved"></i> Endpoint: <code>/api/assess-azure-cost</code> — read-only, nessuna risorsa eliminata.</li>
+                    </ul>
+                </div>
+
+                <div class="solution-card" id="entra-identity">
+                    <h3>Entra ID Identity Assessment</h3>
+                    <p>Assessment tenant-wide read-only della postura identity di Entra ID via Microsoft Graph: ruoli privilegiati (Global Admin sprawl), Security Defaults vs Conditional Access, copertura MFA, blocco legacy auth, igiene app registration e governance guest.</p>
+                    <ul class="solution-features">
+                        <li><i class="fas fa-link"></i> Identity secure score: <a target="_blank" href="https://learn.microsoft.com/entra/identity/monitoring-health/concept-identity-secure-score">Microsoft Learn — Identity Secure Score</a></li>
+                        <li><i class="fas fa-link"></i> Conditional Access: <a target="_blank" href="https://learn.microsoft.com/entra/identity/conditional-access/">Microsoft Learn — Conditional Access</a></li>
+                        <li><i class="fas fa-link"></i> PIM (privileged roles): <a target="_blank" href="https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-configure">Microsoft Learn — Privileged Identity Management</a></li>
+                        <li><i class="fas fa-key"></i> Scope Graph richiesti: Directory.Read.All, Policy.Read.All, RoleManagement.Read.Directory, Application.Read.All, AuditLog.Read.All.</li>
+                        <li><i class="fas fa-shield-halved"></i> Endpoint: <code>/api/assess-entra-identity</code> — read-only, nessuna modifica al tenant.</li>
+                    </ul>
+                </div>
+
             </div>
         </section>
     </main>
