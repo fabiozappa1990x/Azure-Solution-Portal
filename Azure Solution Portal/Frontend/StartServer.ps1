@@ -110,7 +110,7 @@ while ($true) {
         # ========================================
         # STATIC FILES (CSS, JS)
         # ========================================
-        if ($path -match '^(styles\.css|script\.js|setup\.js)$') {
+        if ($path -match '^(styles\.css|script\.js|setup\.js|documentation\.html)$') {
             $filePath = Join-Path $root $path
             if (Test-Path $filePath) {
                 $body = [System.IO.File]::ReadAllText($filePath)
