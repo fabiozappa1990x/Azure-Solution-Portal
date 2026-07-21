@@ -24,11 +24,15 @@ echo.
 
 cd /d "%FRONTEND%"
 
+REM Preferisci PowerShell 7 (pwsh); fallback a Windows PowerShell 5.1
+set "PSEXE=powershell"
+where pwsh >nul 2>nul && set "PSEXE=pwsh"
+
 REM Server in una finestra dedicata
-start "Azure Solution Portal - Server" powershell -ExecutionPolicy Bypass -NoProfile -File "StartServer.ps1" -Port %PORT%
+start "Azure Solution Portal - Server" %PSEXE% -ExecutionPolicy Bypass -NoProfile -File "StartServer.ps1" -Port %PORT%
 
 REM Attendi che il listener sia pronto, poi apri il browser
-timeout /t 2 /nobreak >nul
+timeout /t 3 /nobreak >nul
 start "" "http://localhost:%PORT%"
 
 echo Server avviato in una finestra separata. Chiudi quella finestra per fermarlo.

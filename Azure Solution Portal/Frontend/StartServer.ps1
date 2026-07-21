@@ -45,18 +45,30 @@ function Write-Response {
 
 $listener = [System.Net.HttpListener]::new()
 $prefix = "http://localhost:$Port/"
-$listener.Prefixes.Add($prefix)
-$listener.Start()
+try {
+    $listener.Prefixes.Add($prefix)
+    $listener.Start()
+} catch {
+    Write-Host "[ERRORE] Impossibile avviare il server su $prefix" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host "Porta gia' in uso? Prova: .\StartServer.ps1 -Port 8788" -ForegroundColor Yellow
+    Read-Host "Premi INVIO per chiudere"
+    exit 1
+}
 
-# LA ROOT È LA CARTELLA Frontend (dove si trova lo script)
+# LA ROOT E' LA CARTELLA Frontend (dove si trova lo script)
 $root = $PSScriptRoot
-# LA ROOT DEL PROGETTO È UNA CARTELLA SOPRA
+# LA ROOT DEL PROGETTO E' UNA CARTELLA SOPRA
 $projectRoot = Split-Path $PSScriptRoot -Parent
 
-Write-Log "🚀 Server avviato su $prefix" "INFO"
-Write-Log "📁 Frontend directory: $root" "INFO"
-Write-Log "📁 Project root: $projectRoot" "INFO"
-Write-Log "📝 Log file: $logFile" "INFO"
+Write-Log "Server avviato su $prefix" "INFO"
+Write-Log "Frontend directory: $root" "INFO"
+Write-Log "Project root: $projectRoot" "INFO"
+Write-Log "Log file: $logFile" "INFO"
+Write-Host ""
+Write-Host "  Portale pronto: $prefix" -ForegroundColor Green
+Write-Host "  (chiudi questa finestra per fermare il server)" -ForegroundColor Cyan
+Write-Host ""
 
 while ($true) {
     try {
@@ -73,19 +85,19 @@ while ($true) {
         $uri = [System.Uri]::new("http://localhost" + $rawUrl)
         $path = $uri.AbsolutePath.TrimStart('/')
 
-        Write-Log "📥 Request: $($request.HttpMethod) $path" "INFO"
+        Write-Log "Request: $($request.HttpMethod) $path" "INFO"
 
         # ========================================
-        # HOMEPAGE → setup.html (pagina prerequisiti, nuova entry point)
+        # HOMEPAGE -> setup.html (pagina prerequisiti, entry point)
         # ========================================
         if ($path -eq '' -or $path -eq 'setup.html') {
             $filePath = Join-Path $root 'setup.html'
             if (Test-Path $filePath) {
                 $body = [System.IO.File]::ReadAllText($filePath)
                 Write-Response -Response $response -Body $body -ContentType 'text/html; charset=utf-8'
-                Write-Log "✓ Servito setup.html" "INFO"
+                Write-Log "Servito setup.html" "INFO"
             } else {
-                Write-Log "✗ setup.html non trovato: $filePath" "ERROR"
+                Write-Log "setup.html non trovato: $filePath" "ERROR"
                 Write-Response -Response $response -Body 'setup.html non trovato' -StatusCode 404
             }
             continue
@@ -99,36 +111,36 @@ while ($true) {
             if (Test-Path $filePath) {
                 $body = [System.IO.File]::ReadAllText($filePath)
                 Write-Response -Response $response -Body $body -ContentType 'text/html; charset=utf-8'
-                Write-Log "✓ Servito index.html" "INFO"
+                Write-Log "Servito index.html" "INFO"
             } else {
-                Write-Log "✗ index.html non trovato: $filePath" "ERROR"
+                Write-Log "index.html non trovato: $filePath" "ERROR"
                 Write-Response -Response $response -Body 'index.html non trovato' -StatusCode 404
             }
             continue
         }
 
         # ========================================
-        # STATIC FILES (CSS, JS)
+        # STATIC FILES (CSS, JS, documentazione)
         # ========================================
         if ($path -match '^(styles\.css|script\.js|setup\.js|documentation\.html)$') {
             $filePath = Join-Path $root $path
             if (Test-Path $filePath) {
                 $body = [System.IO.File]::ReadAllText($filePath)
                 Write-Response -Response $response -Body $body -ContentType (Get-ContentType -Path $filePath)
-                Write-Log "✓ Servito file: $path" "INFO"
+                Write-Log "Servito file: $path" "INFO"
             } else {
-                Write-Log "✗ File non trovato: $filePath" "ERROR"
+                Write-Log "File non trovato: $filePath" "ERROR"
                 Write-Response -Response $response -Body "File non trovato: $path" -StatusCode 404
             }
             continue
         }
 
         # ========================================
-        # API PRECHECK → gestita dalla Azure Function deployata, non da qui.
+        # API PRECHECK -> gestita dalla Azure Function deployata, non da qui.
         # Se ricevi questa route significa che API_BASE_URL punta ancora a localhost.
         # ========================================
         if ($path -like 'api/*') {
-            Write-Log "⚠️ Ricevuta chiamata API su server statico: $path — le API devono chiamare la Azure Function" "WARN"
+            Write-Log "Ricevuta chiamata API su server statico: $path - le API devono chiamare la Azure Function" "WARN"
             Write-Response -Response $response -Body (@{
                 error = "Questo server serve solo file statici. Le chiamate API devono puntare alla Azure Function."
                 hint  = "Verifica API_BASE_URL in script.js"
@@ -136,21 +148,19 @@ while ($true) {
             continue
         }
 
-
-
         # ========================================
         # 404
         # ========================================
-        Write-Log "✗ Route non trovata: $path" "WARN"
+        Write-Log "Route non trovata: $path" "WARN"
         Write-Response -Response $response -Body "Not Found: $path" -StatusCode 404
 
     } catch {
         $errorMsg = $_.Exception.Message
-        Write-Log "✗ Errore server: $errorMsg" "ERROR"
-        try { 
-            Write-Response -Response $response -Body (@{ error = $errorMsg } | ConvertTo-Json) -ContentType 'application/json' -StatusCode 500 
+        Write-Log "Errore server: $errorMsg" "ERROR"
+        try {
+            Write-Response -Response $response -Body (@{ error = $errorMsg } | ConvertTo-Json) -ContentType 'application/json' -StatusCode 500
         } catch {
-            Write-Log "✗ Impossibile inviare risposta di errore" "ERROR"
+            Write-Log "Impossibile inviare risposta di errore" "ERROR"
         }
     }
 }
